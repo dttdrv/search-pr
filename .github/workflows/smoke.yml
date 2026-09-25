@@ -35,6 +35,11 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: bash .github/scripts/smoke.sh
+      - name: Print screenshots
+        if: always()
+        run: |
+          pip install --quiet pillow
+          python3 .github/scripts/print_shots.py 360
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
