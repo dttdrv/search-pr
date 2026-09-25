@@ -1,0 +1,426 @@
+/*
+ * Reader View. The helper injects this into every page, so every rule is scoped to
+ * html.pane-reader, a class that exists only after the content script has swapped the document
+ * for a reader view. Ordinary pages never match anything here.
+ */
+
+:root.pane-reader {
+  --pane-scale: 1;
+  --pane-bg: #ffffff;
+  --pane-fg: #1d1d1f;
+  --pane-muted: #6e6e73;
+  --pane-link: #0a66d6;
+  --pane-rule: rgba(60, 60, 67, 0.16);
+  --pane-surface: #f2f2f7;
+  --pane-code: rgba(118, 118, 128, 0.12);
+  --pane-shadow: rgba(0, 0, 0, 0.16);
+  --pane-accent: #0a7aff;
+  color-scheme: light;
+  background: var(--pane-bg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+:root.pane-reader[data-theme="sepia"] {
+  --pane-bg: #f7f0e1;
+  --pane-fg: #3b2f22;
+  --pane-muted: #7c6a55;
+  --pane-link: #9a4e12;
+  --pane-rule: rgba(59, 47, 34, 0.16);
+  --pane-surface: #ede2cb;
+  --pane-code: rgba(59, 47, 34, 0.08);
+  --pane-shadow: rgba(59, 47, 34, 0.2);
+  --pane-accent: #b35c17;
+}
+
+:root.pane-reader[data-theme="dark"] {
+  --pane-bg: #121214;
+  --pane-fg: #e6e6eb;
+  --pane-muted: #98989f;
+  --pane-link: #64aaff;
+  --pane-rule: rgba(235, 235, 245, 0.14);
+  --pane-surface: #232326;
+  --pane-code: rgba(118, 118, 128, 0.28);
+  --pane-shadow: rgba(0, 0, 0, 0.5);
+  --pane-accent: #3395ff;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root.pane-reader[data-theme="auto"] {
+    --pane-bg: #121214;
+    --pane-fg: #e6e6eb;
+    --pane-muted: #98989f;
+    --pane-link: #64aaff;
+    --pane-rule: rgba(235, 235, 245, 0.14);
+    --pane-surface: #232326;
+    --pane-code: rgba(118, 118, 128, 0.28);
+    --pane-shadow: rgba(0, 0, 0, 0.5);
+    --pane-accent: #3395ff;
+    color-scheme: dark;
+  }
+}
+
+:root.pane-reader body {
+  margin: 0;
+  background: var(--pane-bg);
+  color: var(--pane-fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-size: calc(19px * var(--pane-scale));
+  font-weight: 400;
+  line-height: 1.6;
+  overflow-wrap: break-word;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+:root.pane-reader [hidden] {
+  display: none !important;
+}
+
+/* Page ---------------------------------------------------------------------------------------- */
+
+:root.pane-reader .pane-reader-page {
+  box-sizing: border-box;
+  max-width: 38em;
+  margin: 0 auto;
+  padding: 28px 22px 64px;
+}
+
+:root.pane-reader .pane-reader-header {
+  margin-bottom: 1.6em;
+  padding-bottom: 1.2em;
+  border-bottom: 1px solid var(--pane-rule);
+}
+
+:root.pane-reader .pane-reader-site {
+  margin: 0 48px 0.5em 0;
+  color: var(--pane-muted);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+:root.pane-reader .pane-reader-title {
+  margin: 0 0 0.45em;
+  font-size: 1.62em;
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: -0.012em;
+}
+
+:root.pane-reader .pane-reader-meta {
+  color: var(--pane-muted);
+  font-size: 0.8em;
+}
+
+/* Article ------------------------------------------------------------------------------------- */
+
+:root.pane-reader .pane-reader-content > div,
+:root.pane-reader .pane-reader-content section {
+  display: block;
+}
+
+:root.pane-reader .pane-reader-content p {
+  margin: 0 0 1.05em;
+}
+
+:root.pane-reader .pane-reader-content h1,
+:root.pane-reader .pane-reader-content h2,
+:root.pane-reader .pane-reader-content h3,
+:root.pane-reader .pane-reader-content h4,
+:root.pane-reader .pane-reader-content h5,
+:root.pane-reader .pane-reader-content h6 {
+  margin: 1.5em 0 0.5em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+:root.pane-reader .pane-reader-content h1 { font-size: 1.4em; }
+:root.pane-reader .pane-reader-content h2 { font-size: 1.28em; }
+:root.pane-reader .pane-reader-content h3 { font-size: 1.12em; }
+:root.pane-reader .pane-reader-content h4,
+:root.pane-reader .pane-reader-content h5,
+:root.pane-reader .pane-reader-content h6 { font-size: 1em; }
+
+:root.pane-reader .pane-reader-content a {
+  color: var(--pane-link);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
+:root.pane-reader .pane-reader-content img,
+:root.pane-reader .pane-reader-content video,
+:root.pane-reader .pane-reader-content picture,
+:root.pane-reader .pane-reader-content svg {
+  max-width: 100%;
+  height: auto;
+}
+
+:root.pane-reader .pane-reader-content img {
+  display: block;
+  margin: 1.2em auto;
+  border-radius: 12px;
+}
+
+:root.pane-reader .pane-reader-content figure {
+  margin: 1.4em 0;
+}
+
+:root.pane-reader .pane-reader-content figure img {
+  margin-bottom: 0.5em;
+}
+
+:root.pane-reader .pane-reader-content figcaption,
+:root.pane-reader .pane-reader-content .caption {
+  color: var(--pane-muted);
+  font-size: 0.78em;
+  line-height: 1.45;
+  text-align: center;
+}
+
+:root.pane-reader .pane-reader-content blockquote {
+  margin: 1.3em 0;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid var(--pane-rule);
+  color: var(--pane-muted);
+}
+
+:root.pane-reader .pane-reader-content ul,
+:root.pane-reader .pane-reader-content ol {
+  margin: 0 0 1.05em;
+  padding-left: 1.3em;
+}
+
+:root.pane-reader .pane-reader-content li {
+  margin: 0.3em 0;
+}
+
+:root.pane-reader .pane-reader-content hr {
+  margin: 2em 0;
+  border: none;
+  border-top: 1px solid var(--pane-rule);
+}
+
+:root.pane-reader .pane-reader-content code,
+:root.pane-reader .pane-reader-content kbd,
+:root.pane-reader .pane-reader-content samp {
+  padding: 0.1em 0.35em;
+  border-radius: 6px;
+  background: var(--pane-code);
+  font-family: ui-monospace, "SF Mono", "Roboto Mono", "Droid Sans Mono", monospace;
+  font-size: 0.84em;
+}
+
+:root.pane-reader .pane-reader-content pre {
+  margin: 1.2em 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border-radius: 12px;
+  background: var(--pane-code);
+  font-size: 0.84em;
+  line-height: 1.45;
+}
+
+:root.pane-reader .pane-reader-content pre code {
+  padding: 0;
+  background: none;
+  font-size: 1em;
+}
+
+:root.pane-reader .pane-reader-content table {
+  display: block;
+  max-width: 100%;
+  margin: 1.2em 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.86em;
+}
+
+:root.pane-reader .pane-reader-content th,
+:root.pane-reader .pane-reader-content td {
+  padding: 0.45em 0.7em;
+  border-bottom: 1px solid var(--pane-rule);
+  text-align: start;
+  vertical-align: top;
+}
+
+:root.pane-reader .pane-reader-content iframe {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  margin: 1.2em 0;
+  border: 0;
+  border-radius: 12px;
+}
+
+/* Footer -------------------------------------------------------------------------------------- */
+
+:root.pane-reader .pane-reader-footer {
+  margin-top: 2.4em;
+  padding-top: 1.6em;
+  border-top: 1px solid var(--pane-rule);
+  text-align: center;
+}
+
+:root.pane-reader .pane-reader-original {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 999px;
+  background: var(--pane-surface);
+  color: var(--pane-link);
+  font: 600 15px/1.2 system-ui, -apple-system, Roboto, sans-serif;
+  cursor: pointer;
+}
+
+/* Appearance controls --------------------------------------------------------------------------- */
+
+:root.pane-reader .pane-reader-controls {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  z-index: 2147483647;
+  font: 400 15px/1.2 system-ui, -apple-system, Roboto, sans-serif;
+}
+
+:root.pane-reader .pane-reader-aa {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--pane-surface);
+  box-shadow: 0 2px 10px var(--pane-shadow);
+  color: var(--pane-fg);
+  font: 600 15px/40px system-ui, -apple-system, Roboto, sans-serif;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+:root.pane-reader .pane-reader-aa:active {
+  transform: scale(0.92);
+}
+
+:root.pane-reader .pane-reader-panel {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  box-sizing: border-box;
+  width: 248px;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--pane-bg);
+  box-shadow: 0 12px 40px var(--pane-shadow), 0 0 0 1px var(--pane-rule);
+  animation: pane-reader-pop 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  transform-origin: top right;
+}
+
+@keyframes pane-reader-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+:root.pane-reader .pane-reader-sizes {
+  display: flex;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--pane-surface);
+}
+
+:root.pane-reader .pane-reader-size {
+  flex: 1;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--pane-fg);
+  font-family: system-ui, -apple-system, Roboto, sans-serif;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+:root.pane-reader .pane-reader-size + .pane-reader-size {
+  border-left: 1px solid var(--pane-rule);
+}
+
+:root.pane-reader .pane-reader-smaller {
+  font-size: 14px;
+}
+
+:root.pane-reader .pane-reader-larger {
+  font-size: 22px;
+}
+
+:root.pane-reader .pane-reader-size:disabled {
+  opacity: 0.35;
+}
+
+:root.pane-reader .pane-reader-themes {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+:root.pane-reader .pane-reader-theme {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--pane-muted);
+  font: 500 12px/1.2 system-ui, -apple-system, Roboto, sans-serif;
+  cursor: pointer;
+}
+
+:root.pane-reader .pane-reader-swatch {
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--pane-rule);
+  border-radius: 50%;
+}
+
+:root.pane-reader .pane-reader-theme[data-theme="auto"] .pane-reader-swatch {
+  background: linear-gradient(135deg, #ffffff 50%, #121214 50%);
+}
+
+:root.pane-reader .pane-reader-theme[data-theme="light"] .pane-reader-swatch {
+  background: #ffffff;
+}
+
+:root.pane-reader .pane-reader-theme[data-theme="sepia"] .pane-reader-swatch {
+  background: #f7f0e1;
+}
+
+:root.pane-reader .pane-reader-theme[data-theme="dark"] .pane-reader-swatch {
+  background: #121214;
+}
+
+:root.pane-reader .pane-reader-theme[aria-pressed="true"] {
+  color: var(--pane-fg);
+}
+
+:root.pane-reader .pane-reader-theme[aria-pressed="true"] .pane-reader-swatch {
+  box-shadow: 0 0 0 2px var(--pane-bg), 0 0 0 4px var(--pane-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root.pane-reader body,
+  :root.pane-reader .pane-reader-aa {
+    transition: none;
+  }
+
+  :root.pane-reader .pane-reader-panel {
+    animation: none;
+  }
+}
