@@ -2,4 +2,6 @@
 <resources>
     <string name="app_name">Pane</string>
     <string name="process_text_search">Search in Pane</string>
+    <string name="shortcut_new_tab">New Tab</string>
+    <string name="shortcut_new_private_tab">New Private Tab</string>
 </resources>

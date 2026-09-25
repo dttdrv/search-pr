@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_tab"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_new_tab"
+        android:shortcutShortLabel="@string/shortcut_new_tab">
+        <intent
+            android:action="app.pane.browser.NEW_TAB"
+            android:targetPackage="app.pane.browser"
+            android:targetClass="app.pane.browser.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_private_tab"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_private"
+        android:shortcutShortLabel="@string/shortcut_new_private_tab">
+        <intent
+            android:action="app.pane.browser.NEW_PRIVATE_TAB"
+            android:targetPackage="app.pane.browser"
+            android:targetClass="app.pane.browser.MainActivity" />
+    </shortcut>
+</shortcuts>

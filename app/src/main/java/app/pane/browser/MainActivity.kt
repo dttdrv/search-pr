@@ -75,6 +75,11 @@ class MainActivity : ComponentActivity() {
                 browser.submit(url ?: text, tabId = tab, private = false)
                 return true
             }
+            ACTION_NEW_TAB, ACTION_NEW_PRIVATE_TAB -> {
+                navigator.closeAll()
+                browser.newTab(private = intent.action == ACTION_NEW_PRIVATE_TAB)
+                return true
+            }
             Intent.ACTION_PROCESS_TEXT -> {
                 val text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return false
                 navigator.closeAll()
@@ -105,5 +110,10 @@ class MainActivity : ComponentActivity() {
                 if (fullscreen) controller.hide(WindowInsetsCompat.Type.systemBars()) else controller.show(WindowInsetsCompat.Type.systemBars())
             }
         }
+    }
+
+    companion object {
+        const val ACTION_NEW_TAB = "app.pane.browser.NEW_TAB"
+        const val ACTION_NEW_PRIVATE_TAB = "app.pane.browser.NEW_PRIVATE_TAB"
     }
 }
