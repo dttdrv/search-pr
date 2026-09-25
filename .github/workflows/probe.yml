@@ -1,0 +1,36 @@
+name: Probe dependency versions
+on:
+  push:
+    paths: ['.github/workflows/probe.yml']
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List latest stable versions
+        run: |
+          probe() {
+            local repo="$1" path="$2"
+            local v=$(curl -sL "$repo/$path/maven-metadata.xml" | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' | grep -viE 'alpha|beta|rc|dev|snapshot|-m[0-9]' | tail -6 | tr '\n' ' ')
+            echo "PROBE $path => $v"
+          }
+          G=https://dl.google.com/dl/android/maven2
+          for p in com/android/tools/build/gradle androidx/compose/compose-bom androidx/activity/activity-compose \
+                   androidx/core/core-ktx androidx/lifecycle/lifecycle-runtime-compose androidx/room/room-runtime \
+                   androidx/datastore/datastore-preferences androidx/biometric/biometric androidx/work/work-runtime-ktx \
+                   androidx/browser/browser androidx/core/core-splashscreen androidx/compose/material3/material3 \
+                   androidx/compose/ui/ui androidx/compose/animation/animation androidx/sqlite/sqlite-bundled \
+                   androidx/test/ext/junit androidx/test/espresso/espresso-core androidx/test/uiautomator/uiautomator \
+                   androidx/profileinstaller/profileinstaller androidx/compose/material/material-icons-extended; do
+            probe $G $p
+          done
+          M=https://maven.mozilla.org/maven2
+          for p in org/mozilla/geckoview/geckoview org/mozilla/geckoview/geckoview-arm64-v8a; do
+            curl -sL "$M/$p/maven-metadata.xml" | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' | tail -8 | sed "s|^|PROBE $p => |"
+          done
+          C=https://repo1.maven.org/maven2
+          probe $C com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin
+          probe $C org/jetbrains/kotlinx/kotlinx-serialization-json
+          probe $C org/jetbrains/kotlinx/kotlinx-coroutines-android
+          probe $C io/github/takahirom/roborazzi/roborazzi
+          probe $C org/robolectric/robolectric
