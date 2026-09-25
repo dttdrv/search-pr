@@ -1,12 +1,15 @@
 name: Release
 
-# Pushing a tag like v1.2.3 builds signed per-CPU APKs and publishes them as a GitHub Release.
-# Running it by hand builds the chosen branch or tag and publishes it under the given tag,
-# creating the tag if needed (or replacing an existing release's APKs, e.g. after adding the
-# signing secret: run it from that tag).
+# Builds signed per-CPU APKs and publishes them as a GitHub Release, creating the tag if needed:
+# - bumping /VERSION on the default branch releases that version (skipped if it already exists);
+# - pushing a tag like v1.2.3 releases that tag;
+# - running it by hand publishes the chosen branch or tag under the given tag, replacing an
+#   existing release's APKs (e.g. after adding the signing secret: run it from that tag).
 on:
   push:
     tags: ['v*']
+    branches: ['**']
+    paths: ['VERSION']
   workflow_dispatch:
     inputs:
       tag:
@@ -21,17 +24,38 @@ concurrency:
 
 jobs:
   release:
+    # Version bumps only release from the default branch.
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' || github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Which release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then TAG="${{ github.ref_name }}"
+          elif [ -n "$INPUT_TAG" ]; then TAG="$INPUT_TAG"
+          else
+            TAG="v$(tr -d '[:space:]' < VERSION)"
+            if gh release view "$TAG" > /dev/null 2>&1; then
+              echo "::notice::$TAG is already released; bump VERSION to publish a new one."
+              echo "SKIP=1" >> "$GITHUB_ENV"
+            fi
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "Release $TAG"
+
       - uses: actions/setup-java@v4
+        if: env.SKIP != '1'
         with: { distribution: temurin, java-version: '21' }
       - uses: gradle/actions/setup-gradle@v4
+        if: env.SKIP != '1'
 
       - name: Version from tag
+        if: env.SKIP != '1'
         run: |
           VERSION="${TAG#v}"
           IFS=. read -r MAJOR MINOR PATCH <<< "${VERSION%%-*}"
@@ -43,6 +67,7 @@ jobs:
       # The key is a repository secret (base64 of a PKCS12 keystore). Without it the build gets a
       # one-off key, which installs fine but can't be updated in place by a later release.
       - name: Signing key
+        if: env.SKIP != '1'
         env:
           KEYSTORE_BASE64: ${{ secrets.PANE_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.PANE_KEYSTORE_PASSWORD }}
@@ -71,9 +96,11 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Accept SDK licenses
+        if: env.SKIP != '1'
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Build release APKs
+        if: env.SKIP != '1'
         run: |
           ./gradlew :app:assembleRelease -Ppane.splitAbis -Ppane.versionName="$VERSION" -Ppane.versionCode="$VERSION_CODE" \
             2>&1 | tee build.log; exit ${PIPESTATUS[0]}
@@ -84,6 +111,7 @@ jobs:
           grep -E "^e: |error:|FAILURE|What went wrong" -A3 build.log | head -80 || true
 
       - name: Collect and verify
+        if: env.SKIP != '1'
         run: |
           mkdir -p dist
           for abi in arm64-v8a armeabi-v7a x86_64; do
@@ -104,6 +132,7 @@ jobs:
           ls -lh dist
 
       - name: Release notes
+        if: env.SKIP != '1'
         run: |
           {
             echo "## Pane $VERSION"
@@ -136,6 +165,7 @@ jobs:
           cat notes.md
 
       - name: Publish
+        if: env.SKIP != '1'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}

@@ -14,9 +14,16 @@ android {
         applicationId = "app.pane.browser"
         minSdk = 26
         targetSdk = 36
-        // Release builds pass these from the git tag (see .github/workflows/release.yml).
-        versionCode = providers.gradleProperty("pane.versionCode").orNull?.toInt() ?: 1
-        versionName = providers.gradleProperty("pane.versionName").orNull ?: "1.0.0"
+        // The version lives in /VERSION; bumping it on the default branch publishes a release
+        // (see .github/workflows/release.yml), which can also pass these explicitly.
+        val version = providers.gradleProperty("pane.versionName").orNull
+            ?: rootProject.file("VERSION").readText().trim()
+        versionName = version
+        versionCode = providers.gradleProperty("pane.versionCode").orNull?.toInt() ?: run {
+            // 1.2.3 → 10203, so every release installs over the previous one.
+            val (major, minor, patch) = version.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 } + listOf(0, 0, 0)
+            major * 10000 + minor * 100 + patch
+        }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val abis = providers.gradleProperty("pane.abis").orNull
         if (abis != null) {

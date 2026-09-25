@@ -105,9 +105,10 @@ crash and uploading screenshots.
 
 ### Releases
 
-Pushing a tag such as `v1.0.1`, or running `release.yml` by hand with a tag name (Actions ›
-Release › Run workflow), builds one APK per CPU type (arm64-v8a, armeabi-v7a, x86_64) and
-publishes them with checksums as a GitHub Release, creating the tag if needed.
+The version lives in `VERSION`. Bumping it on the default branch (or pushing a tag such as
+`v1.0.1`, or running `release.yml` by hand with a tag name) builds one APK per CPU type
+(arm64-v8a, armeabi-v7a, x86_64) and publishes them with checksums as a GitHub Release,
+creating the tag.
 
 Signing uses the repository secret `PANE_KEYSTORE_BASE64` (a base64-encoded PKCS12 keystore;
 optional `PANE_KEYSTORE_PASSWORD`, default `pane-release`, and `PANE_KEY_ALIAS`, default `pane`).
