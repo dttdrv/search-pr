@@ -1,6 +1,5 @@
 package app.pane.browser.ui.theme
 
-import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.spring
@@ -40,7 +39,7 @@ object Motion {
     val sizeSpring: FiniteAnimationSpec<IntSize> = spring(0.42f, 0.9f, IntSize(1, 1))
 
     /** For opacity, where a spring's overshoot would be meaningless. */
-    fun <T> fade(durationMs: Int = 180): AnimationSpec<T> = tween(durationMs)
+    fun <T> fade(durationMs: Int = 180): FiniteAnimationSpec<T> = tween(durationMs)
 }
 
 /** True when the user asked for reduced motion; springs collapse to quick fades. */
