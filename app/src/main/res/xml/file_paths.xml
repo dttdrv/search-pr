@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Downloads on Android 9 and older live in app-specific storage and are shared through FileProvider. -->
+<paths>
+    <external-files-path name="downloads" path="Download/" />
+    <files-path name="downloads_internal" path="downloads/" />
+</paths>
