@@ -29,7 +29,7 @@ class ProbeAutofillService : AutofillService() {
         val fields = mutableListOf<Field>()
         val domains = linkedSetOf<String>()
         structure.forEachNode { node ->
-            node.webDomain?.let { domains += "${node.webScheme ?: "?"}://$it" }
+            node.webDomain?.let { domains += it }
             val kind = kindOf(node) ?: return@forEachNode
             val id = node.autofillId ?: return@forEachNode
             fields += Field(id, kind)

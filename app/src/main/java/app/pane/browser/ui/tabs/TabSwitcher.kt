@@ -93,13 +93,14 @@ private data class Flight(val tabId: String?, val bitmap: Bitmap?, val card: Rec
 
 /**
  * The tab overview. Opening zooms the live page down into its card (the snapshot literally flies
- * there on a spring); choosing a card zooms it back up. Cards swipe sideways to close.
+ * there on a spring); choosing a card zooms it back up. Cards swipe sideways to close. While
+ * [privateLocked], private tabs show only a lock and never fly in or out.
  */
 @Composable
 fun TabSwitcher(
     visible: Boolean,
     chrome: BrowserChrome,
-    privateUnlocked: Boolean,
+    privateLocked: Boolean,
     onRequestUnlock: () -> Unit,
     onClosed: () -> Unit,
     onNewTab: (private: Boolean) -> Unit,
@@ -113,13 +114,13 @@ fun TabSwitcher(
     val progress = remember { Animatable(0f) }
     var shown by remember { mutableStateOf(false) }
     var flight by remember { mutableStateOf<Flight?>(null) }
-    var showPrivate by remember { mutableStateOf(false) }
     var confirmCloseAll by remember { mutableStateOf(false) }
     val cardRects = remember { mutableStateMapOf<String, Rect>() }
     val gridState = rememberLazyGridState()
 
+    // Which set is showing lives in the chrome, so the activity can block screenshots of private tabs.
+    val showPrivate = chrome.showPrivateTabs
     val tabs = state.tabsIn(showPrivate)
-    val locked = showPrivate && settings.lockPrivateTabs && !privateUnlocked
 
     suspend fun awaitCard(id: String): Rect? {
         repeat(6) {
@@ -132,9 +133,9 @@ fun TabSwitcher(
     LaunchedEffect(visible) {
         if (visible && !shown) {
             val selected = state.selectedTab
-            showPrivate = selected?.isPrivate ?: false
+            chrome.showPrivateTabs = selected?.isPrivate ?: false
             shown = true
-            val index = state.tabsIn(showPrivate).indexOfFirst { it.id == selected?.id }
+            val index = state.tabsIn(chrome.showPrivateTabs).indexOfFirst { it.id == selected?.id }
             if (index >= 0) gridState.scrollToItem(index)
             val snapshot = if (selected != null && selected.url.isNotEmpty()) chrome.capture() else null
             if (selected != null && snapshot != null) {
@@ -143,7 +144,8 @@ fun TabSwitcher(
                     container.store.updateTab(selected.id) { it.copy(thumbnailVersion = it.thumbnailVersion + 1) }
                 }
             }
-            val card = selected?.let { awaitCard(it.id) }
+            // A locked private page never flies, not even to a card left over from before it locked.
+            val card = selected?.takeUnless { it.isPrivate && privateLocked }?.let { awaitCard(it.id) }
             flight = if (selected != null && card != null && chrome.pageRect != Rect.Zero) {
                 Flight(selected.id, snapshot ?: container.thumbnails.get(selected.id), card, chrome.pageRect)
             } else {
@@ -157,7 +159,7 @@ fun TabSwitcher(
 
     fun closeInto(tab: TabState?) {
         scope.launch {
-            val card = tab?.let { cardRects[it.id] }
+            val card = tab?.takeUnless { it.isPrivate && privateLocked }?.let { cardRects[it.id] }
             if (tab != null) container.browser.select(tab.id)
             flight = if (tab != null && card != null && chrome.pageRect != Rect.Zero) {
                 Flight(tab.id, container.thumbnails.get(tab.id), card, chrome.pageRect)
@@ -202,7 +204,7 @@ fun TabSwitcher(
                 ) { privateMode ->
                     val modeTabs = state.tabsIn(privateMode)
                     when {
-                        privateMode && locked -> LockedPrivate(onRequestUnlock)
+                        privateMode && privateLocked -> LockedPrivate(onRequestUnlock)
                         modeTabs.isEmpty() -> EmptyTabs(privateMode)
                         else -> BoxWithConstraints(Modifier.fillMaxSize()) {
                             val columns = if (maxWidth > 600.dp) 4 else if (maxWidth > 420.dp) 3 else 2
@@ -261,7 +263,7 @@ fun TabSwitcher(
                         SegmentedControl(
                             options = listOf("Private", if (normalCount == 1) "1 Tab" else "$normalCount Tabs"),
                             selectedIndex = if (showPrivate) 0 else 1,
-                            onSelect = { showPrivate = it == 0 },
+                            onSelect = { chrome.showPrivateTabs = it == 0 },
                             modifier = Modifier.width(220.dp),
                         )
                     }

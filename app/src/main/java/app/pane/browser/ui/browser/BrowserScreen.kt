@@ -2,7 +2,6 @@ package app.pane.browser.ui.browser
 
 import android.app.Activity
 import androidx.activity.BackEventCompat
-import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -27,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -67,6 +67,7 @@ import kotlinx.coroutines.launch
 fun BrowserScreen() {
     val container = LocalAppContainer.current
     val navigator = LocalNavigator.current
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val state by container.store.state.collectAsStateWithLifecycle()
@@ -75,11 +76,36 @@ fun BrowserScreen() {
     val tab = state.selectedTab
     val private = tab?.isPrivate == true
     var privateUnlocked by remember { mutableStateOf(false) }
+    // The screen lock can change while Pane is in the background, so this is checked again on return.
+    var deviceCanLock by remember { mutableStateOf(BiometricGate.canLock(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { deviceCanLock = BiometricGate.canLock(context) }
+    // Private tabs stay hidden until the owner unlocks them, unless this device has no way to ask.
+    val privateLocked = settings.lockPrivateTabs && !privateUnlocked && deviceCanLock
+    val locked = private && privateLocked
+    val currentLocked by rememberUpdatedState(locked)
+    val unlockPrivate = rememberPrivateUnlock { privateUnlocked = true }
     var editText by remember { mutableStateOf("") }
 
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         privateUnlocked = false
+        // The editor may hold a private page's address, which mustn't be waiting once the tabs relock.
+        if (private && settings.lockPrivateTabs) chrome.editing = false
         container.privacyStats.flush()
+    }
+
+    // Locking hides everything about the page, including keyboard focus inside it.
+    LaunchedEffect(locked) {
+        BrowserChrome.pageLocked.value = locked
+        if (locked) {
+            chrome.findInPage = false
+            chrome.siteInfo = false
+            chrome.geckoView?.clearFocus()
+        }
+    }
+
+    // The activity blocks screenshots while the tab overview lists private tabs.
+    LaunchedEffect(chrome) {
+        snapshotFlow { chrome.showTabs && chrome.showPrivateTabs }.collect { BrowserChrome.privateTabsShowing.value = it }
     }
 
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -146,12 +172,14 @@ fun BrowserScreen() {
                     chrome.editing = true
                 }
                 Shortcut.CloseTab -> current?.let { container.browser.close(it.id) }
-                Shortcut.FocusAddress -> {
+                Shortcut.FocusAddress -> if (currentLocked) {
+                    unlockPrivate()
+                } else {
                     editText = current?.url?.let { container.browser.searchTermsFor(it) ?: UrlDisplay.editableText(it) }.orEmpty()
                     chrome.editing = true
                 }
                 Shortcut.Reload -> container.browser.reload()
-                Shortcut.Find -> if (current?.url?.isNotEmpty() == true) chrome.findInPage = true
+                Shortcut.Find -> if (!currentLocked && current?.url?.isNotEmpty() == true) chrome.findInPage = true
                 Shortcut.NextTab -> tabs.getOrNull((i + 1).mod(tabs.size.coerceAtLeast(1)))?.let { container.browser.select(it.id) }
                 Shortcut.PreviousTab -> tabs.getOrNull((i - 1).mod(tabs.size.coerceAtLeast(1)))?.let { container.browser.select(it.id) }
                 Shortcut.Back -> container.browser.goBack()
@@ -209,8 +237,6 @@ fun BrowserScreen() {
 
         val sameMode = state.tabsIn(private)
         val index = sameMode.indexOfFirst { it.id == tab?.id }
-        val locked = private && settings.lockPrivateTabs && !privateUnlocked && BiometricGate.isAvailable(LocalContext.current)
-        val activity = LocalActivity.current
 
         Box(Modifier.fillMaxSize().background(colors.background)) {
             // Page.
@@ -226,6 +252,7 @@ fun BrowserScreen() {
                     tab = tab,
                     modifier = Modifier.fillMaxSize(),
                     coverColor = colors.background.toArgb(),
+                    hidden = locked,
                     onViewCreated = { view ->
                         chrome.geckoView = view
                         view.setDynamicToolbarMaxHeight(dynamicPx.toInt())
@@ -247,7 +274,7 @@ fun BrowserScreen() {
                     nextThumb = sameMode.getOrNull(index + 1)?.let { container.thumbnails.get(it.id) },
                 )
                 if (locked) {
-                    PrivateLockCover(onUnlock = { activity?.let { BiometricGate.authenticate(it) { ok -> if (ok) privateUnlocked = true } } })
+                    PrivateLockCover(onUnlock = unlockPrivate)
                 }
             }
 
@@ -268,9 +295,15 @@ fun BrowserScreen() {
                     tabs = sameMode,
                     chrome = chrome,
                     navBarHeight = navBottom,
+                    locked = locked,
                     onAddress = {
-                        editText = tab?.url?.let { url -> container.browser.searchTermsFor(url) ?: UrlDisplay.editableText(url) }.orEmpty()
-                        chrome.editing = true
+                        // A locked page's address is never shown; tapping the bar offers to unlock instead.
+                        if (locked) {
+                            unlockPrivate()
+                        } else {
+                            editText = tab?.url?.let { url -> container.browser.searchTermsFor(url) ?: UrlDisplay.editableText(url) }.orEmpty()
+                            chrome.editing = true
+                        }
                     },
                     onBack = {
                         tab?.let { t ->
@@ -315,7 +348,7 @@ fun BrowserScreen() {
                 )
             }
 
-            if (chrome.findInPage && tab != null) {
+            if (chrome.findInPage && tab != null && !locked) {
                 FindInPageBar(tabId = tab.id, onClose = { chrome.findInPage = false }, modifier = Modifier.align(Alignment.BottomCenter))
             }
 
@@ -323,6 +356,7 @@ fun BrowserScreen() {
                 visible = chrome.editing,
                 initialText = editText,
                 private = private,
+                showOpenTabs = !locked,
                 onSubmit = { text ->
                     chrome.editing = false
                     container.browser.submit(text)
@@ -337,6 +371,7 @@ fun BrowserScreen() {
             MenuSheet(
                 visible = chrome.showMenu,
                 tab = tab,
+                locked = locked,
                 onDismiss = { chrome.showMenu = false },
                 onFindInPage = { chrome.findInPage = true },
                 onNewTab = { p ->
@@ -346,15 +381,19 @@ fun BrowserScreen() {
                 },
             )
 
-            SiteInfoSheet(visible = chrome.siteInfo, tabId = tab?.id, onDismiss = { chrome.siteInfo = false })
+            SiteInfoSheet(visible = chrome.siteInfo && !locked, tabId = tab?.id, onDismiss = { chrome.siteInfo = false })
         }
 
         TabSwitcher(
             visible = chrome.showTabs,
             chrome = chrome,
-            privateUnlocked = privateUnlocked,
-            onRequestUnlock = { activity?.let { BiometricGate.authenticate(it) { ok -> if (ok) privateUnlocked = true } } },
-            onClosed = { chrome.showTabs = false },
+            privateLocked = privateLocked,
+            onRequestUnlock = unlockPrivate,
+            onClosed = {
+                chrome.showTabs = false
+                // Start from the normal tabs next time, so opening from one never flips screenshot blocking.
+                chrome.showPrivateTabs = false
+            },
             onNewTab = { p ->
                 container.browser.newTab(p)
                 editText = ""

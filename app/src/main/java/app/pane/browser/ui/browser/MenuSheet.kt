@@ -53,12 +53,14 @@ import kotlinx.coroutines.launch
 
 /**
  * The "…" menu: page actions up top as big tappable tiles, extension buttons, then everything
- * else as a short grouped list. One sheet, no nested menus.
+ * else as a short grouped list. One sheet, no nested menus. A [locked] private page gets no page
+ * actions at all, so nothing can share, copy or search it.
  */
 @Composable
 fun MenuSheet(
     visible: Boolean,
     tab: TabState?,
+    locked: Boolean,
     onDismiss: () -> Unit,
     onFindInPage: () -> Unit,
     onNewTab: (private: Boolean) -> Unit,
@@ -70,7 +72,7 @@ fun MenuSheet(
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
     val colors = PaneTheme.colors
-    val url = tab?.url.orEmpty()
+    val url = if (locked) "" else tab?.url.orEmpty()
     val isPage = url.startsWith("http")
     val bookmarked by remember(url) {
         if (isPage) container.bookmarks.observeIsBookmarked(url) else flowOf(false)
@@ -126,7 +128,8 @@ fun MenuSheet(
                 }
             }
 
-            if (actions.isNotEmpty()) {
+            // Extension popups act on (and can show) the current page.
+            if (actions.isNotEmpty() && !locked) {
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),

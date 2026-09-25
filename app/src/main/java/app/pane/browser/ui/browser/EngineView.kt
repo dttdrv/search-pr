@@ -1,5 +1,6 @@
 package app.pane.browser.ui.browser
 
+import android.view.View
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -18,6 +19,7 @@ fun EngineView(
     tab: TabState?,
     modifier: Modifier = Modifier,
     coverColor: Int,
+    hidden: Boolean = false,
     onViewCreated: (GeckoView) -> Unit = {},
 ) {
     val container = LocalAppContainer.current
@@ -32,6 +34,9 @@ fun EngineView(
         },
         update = { view ->
             @Suppress("UNUSED_EXPRESSION") version
+            // A locked private page is covered on screen; screen readers mustn't walk into it either.
+            view.importantForAccessibility =
+                if (hidden) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
             val session = container.sessions.session(tab?.id)?.takeIf { it.isOpen }
             if (view.session !== session) {
                 if (view.session != null) view.releaseSession()

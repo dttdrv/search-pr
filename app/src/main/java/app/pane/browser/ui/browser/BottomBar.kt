@@ -74,7 +74,7 @@ object BarMetrics {
 /**
  * Safari-style bottom bar. The address pill shrinks into a slim host label as the page scrolls,
  * swipes sideways to move between tabs (past the last tab it opens a new one), and a swipe up
- * opens the tab overview.
+ * opens the tab overview. While private tabs are [locked] it names no page and doesn't swipe.
  */
 @Composable
 fun BottomBar(
@@ -82,6 +82,7 @@ fun BottomBar(
     tabs: List<TabState>,
     chrome: BrowserChrome,
     navBarHeight: Dp,
+    locked: Boolean,
     onAddress: () -> Unit,
     onBack: () -> Unit,
     onForward: () -> Unit,
@@ -136,12 +137,12 @@ fun BottomBar(
                 contentAlignment = Alignment.Center,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (tab?.security == SecurityState.Secure) {
+                    if (locked || tab?.security == SecurityState.Secure) {
                         Icon(PaneIcons.LockFill, null, tint = colors.secondaryLabel, modifier = Modifier.size(10.dp))
                         Spacer(Modifier.width(4.dp))
                     }
                     Text(
-                        tab?.let { UrlDisplay.toolbarText(it.url) }.orEmpty(),
+                        if (locked) LOCKED_LABEL else tab?.let { UrlDisplay.toolbarText(it.url) }.orEmpty(),
                         style = PaneTheme.type.caption.copy(fontWeight = FontWeight.Medium),
                         color = colors.label,
                         maxLines = 1,
@@ -196,6 +197,8 @@ fun BottomBar(
                             .draggable(
                                 orientation = Orientation.Horizontal,
                                 state = dragState,
+                                // Swiping would slide the neighbouring private tabs into view.
+                                enabled = !locked,
                                 onDragStarted = {
                                     thresholdPassed[0] = false
                                     onSwipeStart(next?.id ?: previous?.id)
@@ -236,6 +239,7 @@ fun BottomBar(
                             tab = tab,
                             collapse = c,
                             modifier = Modifier.offset { IntOffset(swipe.value.roundToInt(), 0) },
+                            locked = locked,
                             onClick = onAddress,
                             onReload = onReload,
                             onStop = onStop,
@@ -251,12 +255,16 @@ fun BottomBar(
     }
 }
 
-/** The rounded address field: security glyph, host, and reload/stop. */
+/** What the bar says instead of the page while private tabs are locked. */
+private const val LOCKED_LABEL = "Private Tabs Locked"
+
+/** The rounded address field: security glyph, host, and reload/stop. [locked] shows none of the page. */
 @Composable
 fun AddressPill(
     tab: TabState?,
     modifier: Modifier = Modifier,
     collapse: Float = 0f,
+    locked: Boolean = false,
     onClick: (() -> Unit)? = null,
     onReload: () -> Unit = {},
     onStop: () -> Unit = {},
@@ -266,12 +274,12 @@ fun AddressPill(
     val colors = PaneTheme.colors
     val shape = ContinuousRoundedShape(14.dp)
     val progress by animateFloatAsState(
-        targetValue = if (tab?.loading == true) (tab.progress / 100f).coerceIn(0.05f, 1f) else 1f,
+        targetValue = if (tab?.loading == true && !locked) (tab.progress / 100f).coerceIn(0.05f, 1f) else 1f,
         animationSpec = Motion.smooth(),
         label = "progress",
     )
-    val progressAlpha by animateFloatAsState(if (tab?.loading == true) 1f else 0f, Motion.fade(350), label = "progressAlpha")
-    val host = tab?.let { UrlDisplay.toolbarText(it.url) }.orEmpty()
+    val progressAlpha by animateFloatAsState(if (tab?.loading == true && !locked) 1f else 0f, Motion.fade(350), label = "progressAlpha")
+    val host = if (locked) "" else tab?.let { UrlDisplay.toolbarText(it.url) }.orEmpty()
     Box(
         modifier
             .fillMaxWidth()
@@ -289,7 +297,7 @@ fun AddressPill(
                     Modifier
                 },
             )
-            .semantics { contentDescription = "Address: $host" },
+            .semantics { contentDescription = if (locked) LOCKED_LABEL else "Address: $host" },
     ) {
         Row(
             Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = 4.dp),
@@ -298,6 +306,7 @@ fun AddressPill(
             // Leading: reader mode when available, otherwise the security state.
             Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
                 when {
+                    locked -> Icon(PaneIcons.LockFill, null, tint = colors.secondaryLabel, modifier = Modifier.size(14.dp))
                     tab == null || tab.url.isEmpty() -> Icon(PaneIcons.Search, null, tint = colors.secondaryLabel, modifier = Modifier.size(17.dp))
                     tab.readerable || tab.inReaderMode -> Icon(
                         PaneIcons.Reader,
@@ -320,7 +329,7 @@ fun AddressPill(
                 }
             }
             Text(
-                text = host.ifEmpty { "Search or enter website" },
+                text = if (locked) LOCKED_LABEL else host.ifEmpty { "Search or enter website" },
                 style = PaneTheme.type.body.copy(
                     fontSize = lerp(15.sp, 12.sp, collapse),
                     letterSpacing = (-0.01).em,
@@ -333,7 +342,7 @@ fun AddressPill(
                 modifier = Modifier.weight(1f),
             )
             Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-                if (tab != null && tab.url.isNotEmpty()) {
+                if (!locked && tab != null && tab.url.isNotEmpty()) {
                     if (tab.loading) {
                         Icon(PaneIcons.Stop, "Stop", tint = colors.label, modifier = Modifier.size(17.dp).pressDim(onClick = onStop))
                     } else {

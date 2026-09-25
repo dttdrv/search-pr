@@ -15,12 +15,12 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import app.pane.browser.engine.ClearOnExit
 import app.pane.browser.ui.AppRoot
+import app.pane.browser.ui.browser.BrowserChrome
 import app.pane.browser.ui.browser.KeyboardShortcuts
 import app.pane.browser.ui.navigation.Navigator
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import org.mozilla.geckoview.BasicSelectionActionDelegate
 
 class MainActivity : ComponentActivity() {
     private val container: AppContainer get() = (application as PaneApp).container
@@ -29,7 +29,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        container.sessions.selectionDelegateFactory = { BasicSelectionActionDelegate(this) }
+        // Sessions outlive this activity, so none is handed a selection delegate holding it. GeckoView
+        // lends its own (bound to the activity it was created in) to whichever session it shows.
 
         setContent { AppRoot(container, navigator) }
 
@@ -122,14 +123,17 @@ class MainActivity : ComponentActivity() {
         return false
     }
 
-    /** Screenshots are blocked while a private tab is showing; fullscreen video hides system bars. */
+    /**
+     * Screenshots are blocked while private tabs are on screen: a private tab is selected, or the tab
+     * overview lists the private tabs. Fullscreen video hides the system bars.
+     */
     private fun observeWindowFlags() {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         lifecycleScope.launch {
-            combine(container.store.state, container.settings.state) { state, settings ->
+            combine(container.store.state, container.settings.state, BrowserChrome.privateTabsShowing) { state, settings, privateTabsShowing ->
                 Triple(
-                    state.selectedTab?.isPrivate == true && settings.secureScreenInPrivate,
+                    settings.secureScreenInPrivate && (state.selectedTab?.isPrivate == true || privateTabsShowing),
                     state.selectedTab?.fullscreen == true,
                     Unit,
                 )

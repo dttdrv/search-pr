@@ -39,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.components.TextButton
+import app.pane.browser.ui.components.excludeFromAutofill
 import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.ContinuousRoundedShape
@@ -88,13 +90,15 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 /**
  * The address bar in edit mode: a field that rides on top of the keyboard, with inline
  * completion of known sites and a merged list of open tabs, history, bookmarks and search
- * suggestions above it. With nothing typed it shows favourites.
+ * suggestions above it. With nothing typed it shows favourites. Open tabs are only offered when
+ * [showOpenTabs] (never while private tabs are locked).
  */
 @Composable
 fun AddressEditor(
     visible: Boolean,
     initialText: String,
     private: Boolean,
+    showOpenTabs: Boolean,
     onSubmit: (String) -> Unit,
     onSwitchToTab: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -119,7 +123,7 @@ fun AddressEditor(
         enter = slideInVertically(Motion.smooth()) { it / 8 } + fadeIn(Motion.fade(140)),
         exit = slideOutVertically(Motion.smooth()) { it / 8 } + fadeOut(Motion.fade(120)),
     ) {
-        EditorContent(initialText, private, onSubmit, onSwitchToTab, onDismiss)
+        EditorContent(initialText, private, showOpenTabs, onSubmit, onSwitchToTab, onDismiss)
     }
 }
 
@@ -127,6 +131,7 @@ fun AddressEditor(
 private fun EditorContent(
     initialText: String,
     private: Boolean,
+    showOpenTabs: Boolean,
     onSubmit: (String) -> Unit,
     onSwitchToTab: (String) -> Unit,
     onDismiss: () -> Unit,
@@ -142,6 +147,7 @@ private fun EditorContent(
     /** What the user actually typed, without the inline completion. */
     var typed by remember { mutableStateOf(initialText) }
     var suggestions by remember { mutableStateOf<List<Suggestion>>(emptyList()) }
+    val openTabsAllowed by rememberUpdatedState(showOpenTabs)
 
     LaunchedEffect(Unit) {
         delay(40)
@@ -159,7 +165,7 @@ private fun EditorContent(
             val now = System.currentTimeMillis()
             val places = container.history.candidates(query) + container.bookmarks.candidates(query)
             val tabs = container.store.state.value.tabs
-                .filter { it.isPrivate == private && it.url.isNotEmpty() && it.id != container.store.state.value.selectedTabId }
+                .filter { openTabsAllowed && it.isPrivate == private && it.url.isNotEmpty() && it.id != container.store.state.value.selectedTabId }
                 .map { Suggestion.OpenTab(it.id, it.url, it.title) }
             suggestions = SuggestionRanker.rank(query, places, tabs, emptyList(), now)
 
@@ -282,6 +288,7 @@ private fun EditorContent(
                         modifier = Modifier
                             .fillMaxWidth()
                             .focusRequester(focus)
+                            .excludeFromAutofill()
                             // The keyboard eats the first Back; the next one should close the editor, not just unfocus.
                             .onPreviewKeyEvent { e ->
                                 if (e.key == Key.Back && e.type == KeyEventType.KeyUp) {

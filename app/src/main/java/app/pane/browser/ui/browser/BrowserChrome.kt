@@ -12,6 +12,7 @@ import app.pane.browser.ui.theme.Motion
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -32,6 +33,9 @@ class BrowserChrome(private val scope: CoroutineScope) {
     var showMenu by mutableStateOf(false)
     var findInPage by mutableStateOf(false)
     var siteInfo by mutableStateOf(false)
+
+    /** Which tabs the tab overview lists: the private ones, or the normal ones. */
+    var showPrivateTabs by mutableStateOf(false)
 
     /** Where the web content is drawn, in root coordinates; the anchor for zoom transitions. */
     var pageRect by mutableStateOf(Rect.Zero)
@@ -81,6 +85,17 @@ class BrowserChrome(private val scope: CoroutineScope) {
                 }
             }
         }
+    }
+
+    companion object {
+        /**
+         * Whether the tab overview is up on the private tabs. The browser screen keeps it in sync so
+         * the activity blocks screenshots then too, not only while a private tab is selected.
+         */
+        val privateTabsShowing = MutableStateFlow(false)
+
+        /** Whether the page on screen is a locked private tab; its prompts wait until it's unlocked. */
+        val pageLocked = MutableStateFlow(false)
     }
 }
 

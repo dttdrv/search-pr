@@ -1,7 +1,5 @@
 package app.pane.browser.ui.settings
 
-import android.app.KeyguardManager
-import android.content.Context
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +24,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.browser.BiometricGate
 import app.pane.browser.ui.components.CheckRow
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.IconTile
@@ -60,7 +59,8 @@ fun PrivacySettingsScreen() {
     val settings by rememberSettingsState()
     val backLabel = rememberBackLabel(Route.PrivacySettings)
     val summary = remember(settings) { ProtectionSummary.of(settings) }
-    val canLock = remember { isDeviceSecure(context) }
+    // The same check the browser uses to lock, so the switch never promises a lock that won't happen.
+    val canLock = remember { BiometricGate.canLock(context) }
 
     fun update(transform: (BrowserSettings) -> BrowserSettings) = container.settings.update(transform)
 
@@ -362,6 +362,3 @@ private fun dnsDescription(mode: DnsOverHttps) = when (mode) {
     DnsOverHttps.Default -> "Site names are looked up over an encrypted connection, falling back to your network if that fails."
     DnsOverHttps.Max -> "Site names are only looked up over an encrypted connection. If it fails, pages won't load."
 }
-
-private fun isDeviceSecure(context: Context): Boolean =
-    context.getSystemService(KeyguardManager::class.java)?.isDeviceSecure == true

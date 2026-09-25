@@ -46,6 +46,7 @@ import app.pane.browser.engine.prompts.RepostRequest
 import app.pane.browser.engine.prompts.ScriptDialogRequest
 import app.pane.browser.engine.prompts.ShareRequest
 import app.pane.browser.engine.prompts.Uploads
+import app.pane.browser.ui.browser.BrowserChrome
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
 import app.pane.browser.ui.components.LocalToasts
@@ -85,7 +86,11 @@ fun PromptHost() {
     // Only the selected tab matters here; progress ticks on other tabs shouldn't recompose prompts.
     val selectedTabId by remember { derivedStateOf { browserState.selectedTabId } }
     // Extension popups and options pages have no tab of their own.
-    val foreground = requests.filter { it.tabId == null || it.tabId == selectedTabId || it.tabId == ExtensionsManager.AUX_PROMPT_OWNER }
+    // A locked private tab's prompts wait behind the lock rather than showing its content over it.
+    val pageLocked by BrowserChrome.pageLocked.collectAsStateWithLifecycle()
+    val foreground = requests.filter {
+        it.tabId == null || (it.tabId == selectedTabId && !pageLocked) || it.tabId == ExtensionsManager.AUX_PROMPT_OWNER
+    }
     // Blocked pop-up banners don't stop the page, so they get their own lane and never hold up a dialog.
     val banner = rememberPresentation(foreground.firstOrNull { it.isBanner })
     val modal = rememberPresentation(foreground.firstOrNull { !it.isBanner })
