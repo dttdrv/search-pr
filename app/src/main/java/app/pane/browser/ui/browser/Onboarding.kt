@@ -113,85 +113,95 @@ private fun OnboardingContent(onDone: () -> Unit) {
             .background(colors.groupedBackground)
             .clickable(remember { MutableInteractionSource() }, indication = null) { },
     ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Column(Modifier.widthIn(max = 520.dp).fillMaxWidth()) {
-                Spacer(Modifier.height(48.dp))
-                Box(
-                    Modifier
-                        .align(Alignment.CenterHorizontally)
-                        .graphicsLayer {
-                            val a = appear.floatValue
-                            alpha = a
-                            scaleX = 0.7f + 0.3f * a
-                            scaleY = 0.7f + 0.3f * a
-                        }
-                        .size(84.dp)
-                        .clip(PaneShapes.card)
-                        .background(Color(0xFF0B0B0F)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(PaneIcons.Globe, null, tint = Color.White, modifier = Modifier.size(44.dp))
-                }
-                Spacer(Modifier.height(24.dp))
-                Text(
-                    "Welcome to Pane",
-                    style = PaneTheme.type.largeTitle,
-                    color = colors.label,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = appear.floatValue },
-                )
-                Spacer(Modifier.height(28.dp))
-                Column(
-                    Modifier.padding(horizontal = 16.dp).graphicsLayer {
-                        alpha = appear.floatValue
-                        translationY = (1f - appear.floatValue) * 40f
-                    },
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
-                    Feature(PaneIcons.ShieldCheck, colors.positive, "Private by default", "Strict tracking protection, isolated cookies, HTTPS-only and encrypted DNS. No telemetry, ever.")
-                    Feature(PaneIcons.Puzzle, Color(0xFFFF9F0A), "Real extensions", "Install Firefox add-ons like uBlock Origin, Bitwarden and Dark Reader.")
-                    Feature(PaneIcons.Tabs, colors.accent, "Built for your thumb", "The address bar lives at the bottom. Swipe it to switch tabs, swipe up for all tabs.")
-                }
-                Spacer(Modifier.height(12.dp))
-                GroupedSection(header = "Search engine") {
-                    row {
-                        Box(Modifier.padding(12.dp)) {
-                            SegmentedControl(choices.map { it.name }, engine, { engine = it }, Modifier.fillMaxWidth())
+        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Column(Modifier.widthIn(max = 520.dp).fillMaxWidth()) {
+                    Spacer(Modifier.height(36.dp))
+                    Box(
+                        Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .graphicsLayer {
+                                val a = appear.floatValue
+                                alpha = a
+                                scaleX = 0.7f + 0.3f * a
+                                scaleY = 0.7f + 0.3f * a
+                            }
+                            .size(76.dp)
+                            .clip(PaneShapes.card)
+                            .background(Color(0xFF0B0B0F)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(PaneIcons.Globe, null, tint = Color.White, modifier = Modifier.size(40.dp))
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    Text(
+                        "Welcome to Pane",
+                        style = PaneTheme.type.largeTitle,
+                        color = colors.label,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = appear.floatValue },
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    Column(
+                        Modifier.padding(horizontal = 16.dp).graphicsLayer {
+                            alpha = appear.floatValue
+                            translationY = (1f - appear.floatValue) * 40f
+                        },
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        Feature(PaneIcons.ShieldCheck, colors.positive, "Private by default", "Strict tracking protection, isolated cookies, HTTPS-only and encrypted DNS. No telemetry, ever.")
+                        Feature(PaneIcons.Puzzle, Color(0xFFFF9F0A), "Real extensions", "Install Firefox add-ons like uBlock Origin, Bitwarden and Dark Reader.")
+                        Feature(PaneIcons.Tabs, colors.accent, "Built for your thumb", "The address bar lives at the bottom. Swipe it to switch tabs, swipe up for all tabs.")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    GroupedSection(header = "Search engine") {
+                        row {
+                            Box(Modifier.padding(12.dp)) {
+                                SegmentedControl(choices.map { it.name }, engine, { engine = it }, Modifier.fillMaxWidth())
+                            }
                         }
                     }
-                }
-                GroupedSection(footer = "Downloads uBlock Origin from addons.mozilla.org. You'll be asked to approve its permissions.") {
-                    row {
-                        ToggleRow(
-                            "Block ads with uBlock Origin",
-                            checked = blocker,
-                            onCheckedChange = { blocker = it },
-                            leading = { IconTile(PaneIcons.Shield, Color(0xFF800000)) },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(24.dp))
-                Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PrimaryButton("Start Browsing", onClick = ::finish)
-                    if (Build.VERSION.SDK_INT >= 29) {
-                        val roles = context.getSystemService(RoleManager::class.java)
-                        if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roles.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-                            PrimaryButton(
-                                "Make Pane Your Default Browser",
-                                style = ButtonStyle.Tinted,
-                                onClick = { roleLauncher.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER)) },
+                    GroupedSection(footer = "Downloads uBlock Origin from addons.mozilla.org. You'll be asked to approve its permissions.") {
+                        row {
+                            ToggleRow(
+                                "Block ads with uBlock Origin",
+                                checked = blocker,
+                                onCheckedChange = { blocker = it },
+                                leading = { IconTile(PaneIcons.Shield, Color(0xFF800000)) },
                             )
                         }
                     }
+                    Spacer(Modifier.height(16.dp))
                 }
-                Spacer(Modifier.height(32.dp))
+            }
+            // Actions stay put at the bottom, like an iOS setup screen.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(colors.groupedBackground)
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                PrimaryButton("Start Browsing", onClick = ::finish, modifier = Modifier.widthIn(max = 480.dp))
+                if (Build.VERSION.SDK_INT >= 29) {
+                    val roles = context.getSystemService(RoleManager::class.java)
+                    if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roles.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+                        PrimaryButton(
+                            "Make Pane Your Default Browser",
+                            style = ButtonStyle.Plain,
+                            onClick = { roleLauncher.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER)) },
+                            modifier = Modifier.widthIn(max = 480.dp),
+                        )
+                    }
+                }
             }
         }
     }
