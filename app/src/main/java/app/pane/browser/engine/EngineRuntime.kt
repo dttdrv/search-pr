@@ -45,6 +45,8 @@ object EngineRuntime {
             .debugLogging(false)
             .inputAutoZoomEnabled(false)
             .translationsOfferPopup(false)
+            // Web content runs in Android isolated processes: no permissions, no app data access.
+            .isolatedProcessEnabled(true)
         val runtime = GeckoRuntime.create(context, builder.build())
         applyExtras(runtime, settings)
         return runtime
