@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.components.GroupedSection
@@ -117,7 +118,7 @@ fun MenuSheet(
                     QuickAction(PaneIcons.Copy, "Copy Link", Modifier.weight(1f)) {
                         val clean = if (container.settings.current.stripTrackingParams) TrackingParams.strip(url) else url
                         val cm = context.getSystemService(android.content.ClipboardManager::class.java)
-                        cm?.setPrimaryClip(android.content.ClipData.newRawUri("URL", android.net.Uri.parse(clean)))
+                        cm?.setPrimaryClip(android.content.ClipData.newRawUri("URL", clean.toUri()))
                         haptics.confirm()
                         onDismiss()
                         toasts.show("Link copied", PaneIcons.Link)

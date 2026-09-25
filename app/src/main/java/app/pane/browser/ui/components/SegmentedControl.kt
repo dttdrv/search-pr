@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.Motion
@@ -53,7 +54,7 @@ fun SegmentedControl(
         val thumbX by animateDpAsState(segment * selectedIndex, Motion.spring(0.35f, 0.82f), label = "segment")
         Box(
             Modifier
-                .offset(x = thumbX)
+                .offset { IntOffset(thumbX.roundToPx(), 0) }
                 .width(segment)
                 .fillMaxHeight()
                 .shadow(2.dp, inner)

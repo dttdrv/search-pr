@@ -1,6 +1,7 @@
 package app.pane.browser.settings
 
 import android.content.Context
+import androidx.core.content.edit
 import app.pane.core.settings.BrowserSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,7 @@ class SettingsStore(context: Context) {
         val next = transform(_state.value)
         if (next == _state.value) return
         _state.value = next
-        prefs.edit().putString(KEY, json.encodeToString(BrowserSettings.serializer(), next)).apply()
+        prefs.edit { putString(KEY, json.encodeToString(BrowserSettings.serializer(), next)) }
     }
 
     fun reset() = update { BrowserSettings(onboardingDone = true) }

@@ -6,10 +6,10 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
-import android.net.Uri
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.createBitmap
+import androidx.core.net.toUri
 import androidx.core.graphics.drawable.IconCompat
 import app.pane.browser.MainActivity
 import app.pane.core.url.UrlDisplay
@@ -27,7 +27,7 @@ object HomeShortcuts {
         val host = UrlDisplay.toolbarText(url)
         val intent = Intent(context, MainActivity::class.java)
             .setAction(Intent.ACTION_VIEW)
-            .setData(Uri.parse(url))
+            .setData(url.toUri())
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val info = ShortcutInfoCompat.Builder(context, "site:${url.hashCode()}")
             .setShortLabel(title.ifBlank { host }.take(24))

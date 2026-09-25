@@ -1,5 +1,6 @@
 package app.pane.browser.engine
 
+import android.annotation.SuppressLint
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoWebExecutor
@@ -13,6 +14,8 @@ import kotlin.coroutines.resume
 class WebFetcher(runtime: GeckoRuntime) {
     private val executor = GeckoWebExecutor(runtime)
 
+    // The flags parameter is a bit field; GeckoView's annotation just doesn't say so.
+    @SuppressLint("WrongConstant")
     suspend fun text(url: String, private: Boolean = false, maxBytes: Int = 2 shl 20): String? {
         val request = WebRequest.Builder(url)
             .header("Accept", "application/json, text/plain;q=0.9, */*;q=0.1")

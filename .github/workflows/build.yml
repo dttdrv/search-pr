@@ -41,10 +41,10 @@ jobs:
         if: failure()
         run: |
           echo "==== ERROR SUMMARY ===="
-          grep -E '^e: |^w: .*(deprecated|unchecked)|error:|Error:' build.log | grep -vE '^w: ' | sed -E 's|file:///home/runner/work/search-pr/search-pr/||' | sort -u | head -150
+          grep -E '^e: |error:' build.log | grep -vE '^w: ' | sed -E 's|file:///home/runner/work/search-pr/search-pr/||' | sort -u | head -150
           echo "==== WHAT WENT WRONG ===="
           grep -A12 'What went wrong' build.log | head -60
-          if ls app/build/reports/lint-results-debug.txt >/dev/null 2>&1; then echo "==== LINT ===="; head -150 app/build/reports/lint-results-debug.txt; fi
+          if ls app/build/reports/lint-results-debug.txt >/dev/null 2>&1; then echo "==== LINT ERRORS ===="; grep -A3 ': Error:' app/build/reports/lint-results-debug.txt | sed -E 's|/home/runner/work/search-pr/search-pr/||' | head -120; fi
       - name: Upload lint report
         if: always()
         uses: actions/upload-artifact@v4

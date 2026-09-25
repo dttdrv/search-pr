@@ -33,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -84,7 +85,7 @@ private fun OnboardingContent(onDone: () -> Unit) {
     val container = LocalAppContainer.current
     val context = LocalContext.current
     val colors = PaneTheme.colors
-    var engine by remember { mutableStateOf(0) }
+    var engine by remember { mutableIntStateOf(0) }
     var blocker by remember { mutableStateOf(true) }
     val appear = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(Unit) {

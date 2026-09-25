@@ -2,6 +2,7 @@ package app.pane.browser.ui.browser
 
 import android.app.Activity
 import androidx.activity.BackEventCompat
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -180,7 +181,7 @@ fun BrowserScreen() {
         val sameMode = state.tabsIn(private)
         val index = sameMode.indexOfFirst { it.id == tab?.id }
         val locked = private && settings.lockPrivateTabs && !privateUnlocked && BiometricGate.isAvailable(LocalContext.current)
-        val activity = LocalContext.current as? Activity
+        val activity = LocalActivity.current
 
         Box(Modifier.fillMaxSize().background(colors.background)) {
             // Page.

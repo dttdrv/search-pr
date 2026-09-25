@@ -1,6 +1,7 @@
 package app.pane.browser.engine
 
 import android.content.Context
+import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,13 +26,13 @@ class PrivacyStats(context: Context, private val clock: () -> Long = System::cur
     fun flush() {
         if (pending == 0) return
         val key = dayKey(clock())
-        prefs.edit().putInt(key, prefs.getInt(key, 0) + pending).apply()
+        prefs.edit { putInt(key, prefs.getInt(key, 0) + pending) }
         pending = 0
         prune()
     }
 
     fun reset() {
-        prefs.edit().clear().apply()
+        prefs.edit { clear() }
         pending = 0
         _weekTotal.value = 0
     }
@@ -43,9 +44,8 @@ class PrivacyStats(context: Context, private val clock: () -> Long = System::cur
 
     private fun prune() {
         val today = clock() / DAY
-        val editor = prefs.edit()
-        prefs.all.keys.filter { it.startsWith("d") && (it.drop(1).toLongOrNull() ?: 0) < today - 7 }.forEach(editor::remove)
-        editor.apply()
+        val stale = prefs.all.keys.filter { it.startsWith("d") && (it.drop(1).toLongOrNull() ?: 0) < today - 7 }
+        if (stale.isNotEmpty()) prefs.edit { stale.forEach(::remove) }
     }
 
     private fun dayKey(now: Long) = "d${now / DAY}"

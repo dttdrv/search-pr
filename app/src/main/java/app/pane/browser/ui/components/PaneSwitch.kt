@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneTheme
@@ -69,7 +70,7 @@ fun PaneSwitch(
     ) {
         Box(
             Modifier
-                .offset(x = offset)
+                .offset { IntOffset(offset.roundToPx(), 0) }
                 .width(thumbWidth)
                 .height(27.dp)
                 .shadow(3.dp, RoundedCornerShape(50), ambientColor = Color.Black.copy(alpha = 0.2f), spotColor = Color.Black.copy(alpha = 0.25f))

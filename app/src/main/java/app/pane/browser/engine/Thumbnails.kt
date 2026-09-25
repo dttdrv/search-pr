@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import androidx.core.graphics.scale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -34,7 +35,7 @@ class Thumbnails(context: Context) {
     suspend fun put(tabId: String, bitmap: Bitmap, private: Boolean) {
         val scaled = if (bitmap.width > MAX_WIDTH) {
             val h = (bitmap.height * (MAX_WIDTH.toFloat() / bitmap.width)).toInt().coerceAtLeast(1)
-            Bitmap.createScaledBitmap(bitmap, MAX_WIDTH, h, true)
+            bitmap.scale(MAX_WIDTH, h)
         } else {
             bitmap
         }
