@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             if (ClearOnExit.isPending(container)) ClearOnExit.run(container)
             val restored = container.store.state.value.tabs.isNotEmpty() || container.sessions.restore()
+            closeStaleTabs()
             val handled = savedInstanceState == null && handleIntent(intent)
             if (!handled && !restored) container.browser.newTab(private = false)
         }
@@ -61,6 +62,17 @@ class MainActivity : ComponentActivity() {
             container.scope.launch { ClearOnExit.run(container) }
         }
         super.onDestroy()
+    }
+
+    /** Honours "close tabs after N days" for tabs the user hasn't looked at since. */
+    private fun closeStaleTabs() {
+        val days = container.settings.current.closeTabsAfterDays
+        if (days <= 0) return
+        val cutoff = System.currentTimeMillis() - days * 86_400_000L
+        val state = container.store.state.value
+        state.normalTabs
+            .filter { it.id != state.selectedTabId && it.lastAccessed in 1 until cutoff }
+            .forEach { container.browser.close(it.id) }
     }
 
     /** Opens links, searches and shared text from other apps. Returns true if a tab was opened. */
