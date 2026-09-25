@@ -442,6 +442,7 @@ class SessionManager(
 
         private fun handleCrash() {
             sessions.remove(tabId)?.let { runCatching { it.close() } }
+            observers.forEach { it.onSessionClosed(tabId) }
             _sessionsVersion.value++
             if (activeTabId == tabId) activeTabId = null
             store.updateTab(tabId) { it.copy(crashed = true, loading = false) }
