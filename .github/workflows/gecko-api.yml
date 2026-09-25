@@ -1,0 +1,21 @@
+name: GeckoView API reference
+on:
+  push:
+    paths: ['.github/workflows/gecko-api.yml']
+  workflow_dispatch:
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump public GeckoView API
+        run: |
+          V=156.0.20260921121718
+          M=https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview
+          curl -sL -o gv.aar "$M/$V/geckoview-$V.aar"
+          unzip -o -q gv.aar classes.jar
+          unzip -l classes.jar | awk '{print $4}' | grep '^org/mozilla/geckoview/.*\.class$' | sed 's/\.class$//; s|/|.|g' | sort > classes.txt
+          echo "CLASSES $(wc -l < classes.txt)"
+          javap -public -constants -cp classes.jar $(cat classes.txt) 2>/dev/null \
+            | grep -vE '^Compiled from' \
+            | sed -E 's/org\.mozilla\.geckoview\.//g; s/java\.lang\.//g; s/androidx\.annotation\.//g; s/java\.util\.//g; s/android\.(os|view|content|graphics|net)\.//g' \
+            | grep -vE '^\s*$'
