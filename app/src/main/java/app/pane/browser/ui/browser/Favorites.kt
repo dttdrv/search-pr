@@ -36,6 +36,7 @@ import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.core.library.LetterTiles
 import app.pane.core.url.UrlDisplay
 import app.pane.core.url.UrlInput
 import kotlin.math.abs
@@ -92,14 +93,7 @@ fun FavoriteTile(site: FavoriteSite, onClick: () -> Unit) {
 }
 
 /** The part of a host people recognise: `en.m.wikipedia.org` → `wikipedia`. */
-fun siteName(host: String): String {
-    val labels = host.lowercase().split('.').filter { it.isNotEmpty() }
-    if (labels.size < 2) return host
-    // Skip a second-level public suffix such as co.uk or com.au.
-    val secondLevel = setOf("co", "com", "net", "org", "gov", "ac", "edu")
-    val tldIndex = if (labels.size >= 3 && labels[labels.size - 2] in secondLevel && labels.last().length == 2) labels.size - 2 else labels.size - 1
-    return labels.getOrNull(tldIndex - 1) ?: host
-}
+fun siteName(host: String): String = LetterTiles.siteName(host)
 
 /** First letter of the site on a colour derived from its name, so each site keeps its colour. */
 @Composable

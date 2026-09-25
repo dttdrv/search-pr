@@ -114,7 +114,7 @@ private val SitePalette = listOf(
 @Composable
 internal fun SiteTile(url: String, title: String?, modifier: Modifier = Modifier, size: Dp = 29.dp) {
     val letter = remember(url, title) { LetterTiles.letter(url, title) }
-    val key = remember(url) { LetterTiles.hostKey(url) }
+    val key = remember(url) { LetterTiles.siteName(LetterTiles.hostKey(url)) }
     LetterTile(letter, key, modifier, size)
 }
 

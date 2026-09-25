@@ -16,9 +16,19 @@ object LetterTiles {
         return if (prefix != null) host.removePrefix(prefix) else host
     }
 
-    /** Upper-case first letter or digit of the host, then of [title]; null when neither has one. */
+    private val secondLevel = setOf("co", "com", "net", "org", "gov", "ac", "edu")
+
+    /** The part of a host people recognise: `en.m.wikipedia.org` → `wikipedia`, `bbc.co.uk` → `bbc`. */
+    fun siteName(host: String): String {
+        val labels = host.lowercase().split('.').filter { it.isNotEmpty() }
+        if (labels.size < 2) return host
+        val tldIndex = if (labels.size >= 3 && labels[labels.size - 2] in secondLevel && labels.last().length == 2) labels.size - 2 else labels.size - 1
+        return labels.getOrNull(tldIndex - 1) ?: host
+    }
+
+    /** Upper-case first letter or digit of the site's name, then of [title]; null when neither has one. */
     fun letter(url: String, title: String? = null): String? {
-        val fromHost = if (UrlInput.hostOf(url) != null) hostKey(url).firstOrNull { it.isLetterOrDigit() } else null
+        val fromHost = if (UrlInput.hostOf(url) != null) siteName(hostKey(url)).firstOrNull { it.isLetterOrDigit() } else null
         val c = fromHost ?: title?.firstOrNull { it.isLetterOrDigit() } ?: return null
         return c.uppercase()
     }
