@@ -22,13 +22,18 @@ of the screen and gets out of the way when you scroll.
   large-title screens, springy sheets that follow the finger, and restrained haptics.
 
 **Privacy & security** (all on by default)
+- Web content runs in Android *isolated processes*: no permissions and no access to app data,
+  even if a renderer is compromised.
 - Strict Enhanced Tracking Protection, Total Cookie Protection, bounce-tracking protection,
   fingerprinting protection, query-parameter stripping and Safe Browsing.
 - HTTPS-Only mode, DNS over HTTPS (Quad9 by default), Global Privacy Control.
 - Private tabs: separate engine context, never written to disk, screenshots blocked, optional
   biometric lock.
 - No telemetry, no crash reporting, no accounts. Backups and device transfer exclude all browsing
-  data.
+  data. Optional "clear everything on exit", finished at next launch if interrupted.
+- Site permissions (location, camera, microphone, notifications, DRM, local network, …) are asked
+  in plain language with a Remember switch; unremembered answers expire. Audible autoplay is
+  blocked. Pages that spam dialogs can be silenced.
 - `javascript:`, `data:`, `file:` and `content:` URLs are never run from the address bar or from
   other apps; pages can't open other apps without asking you first.
 - Search suggestions and add-on store requests go through Gecko's own network stack
@@ -36,15 +41,21 @@ of the screen and gets out of the way when you scroll.
 - Links you share or copy have tracking parameters removed.
 
 **Features**
-- Firefox add-ons: an in-app store backed by addons.mozilla.org, install from file, browser-action
-  popups, options pages, per-extension private-browsing permission.
-- Built-in reader view, find in page, desktop mode, add to home screen.
-- Bookmarks with favourites, history grouped by day, downloads.
+- Firefox add-ons: an in-app store backed by addons.mozilla.org (search, ratings, one-tap
+  install), install from file, browser-action buttons with badges, popups, options pages,
+  per-extension private-browsing permission, daily update checks. Onboarding offers uBlock Origin.
+- Built-in reader view (Mozilla Readability; light, sepia and dark themes, text size, reading
+  time), find in page, desktop mode, add to home screen, site info sheet.
+- Context menus for links, images and media: open in (private) tab, copy clean link, share, save.
+- Native, iOS-style pickers for `<select>`, colours and date/time, plus sign-in, file upload
+  and share prompts.
+- Bookmarks with favourites, history grouped by day, a download manager.
 - Search engines with `@keyword` shortcuts (`@w`, `@yt`, `@gh`, …), inline autocomplete of known
   sites, open-tab suggestions.
 - Session restore, recently closed tabs, per-site permissions, clear browsing data.
 - Launcher shortcuts for a new tab and a new private tab; "Search in Pane" in the text selection
-  menu.
+  menu; hardware keyboard shortcuts (Ctrl+T/W/L/R/F, Ctrl+Tab, Alt+←/→).
+- Optionally closes tabs you haven't looked at for a while.
 
 ## Project layout
 
@@ -65,8 +76,10 @@ Requirements: JDK 17+ and an Android SDK with platform 37.1.
 ./gradlew -p core test                          # core unit tests, no Android SDK needed
 ```
 
-CI (`.github/workflows/`) builds, lints and tests every push, and a smoke test boots the app on an
-emulator, exercises the main screens and uploads screenshots.
+CI (`.github/workflows/`) builds, lints and tests every push, builds a minified (R8) release,
+and runs an emulator smoke test that walks through onboarding (including a real uBlock Origin
+install), a live page, the menu, tabs, search suggestions, settings, the add-on store, history
+and private browsing, failing on any crash and uploading screenshots.
 
 Release builds are signed with the debug key so CI artifacts are installable; use your own signing
 config for distribution.
