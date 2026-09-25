@@ -50,6 +50,15 @@ class SessionManager(
     private val scope: CoroutineScope,
 ) {
     private val sessions = LinkedHashMap<String, GeckoSession>()
+    private val backEntries = HashMap<String, BackEntry>()
+
+    /** The page a back navigation in [tabId] would return to, for the back-gesture preview. */
+    data class BackEntry(val url: String, val title: String)
+
+    fun backEntry(tabId: String): BackEntry? = backEntries[tabId]
+
+    /** Counts trackers blocked across all tabs, shown on the start page. */
+    var onTrackerBlocked: () -> Unit = {}
     private val engineState = HashMap<String, String>()
     private val json = Json { ignoreUnknownKeys = true }
     private val sessionFile = AtomicFile(File(context.filesDir, "session.json"))
@@ -171,6 +180,7 @@ class SessionManager(
     }
 
     private fun destroySession(tabId: String) {
+        backEntries.remove(tabId)
         sessions.remove(tabId)?.let { s ->
             if (activeTabId == tabId) activeTabId = null
             s.close()
@@ -270,6 +280,7 @@ class SessionManager(
             override fun onContentBlocked(session: GeckoSession, event: ContentBlocking.BlockEvent) {
                 if (event.antiTrackingCategory != 0 || event.cookieBehaviorCategory != 0) {
                     store.updateTab(tabId) { it.copy(trackersBlocked = it.trackersBlocked + 1) }
+                    onTrackerBlocked()
                 }
             }
         }
@@ -456,6 +467,12 @@ class SessionManager(
                 result.complete(true)
             }
             return result
+        }
+
+        override fun onHistoryStateChange(session: GeckoSession, historyList: GeckoSession.HistoryDelegate.HistoryList) {
+            val index = historyList.currentIndex
+            val back = if (index > 0) historyList[index - 1] else null
+            backEntries[tabId] = back?.let { BackEntry(it.uri, it.title.orEmpty()) }
         }
 
         override fun getVisited(session: GeckoSession, urls: Array<String>): GeckoResult<BooleanArray>? {

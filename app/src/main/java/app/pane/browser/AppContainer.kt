@@ -9,6 +9,8 @@ import app.pane.browser.data.PaneDatabase
 import app.pane.browser.downloads.DownloadController
 import app.pane.browser.engine.BrowserController
 import app.pane.browser.engine.EngineRuntime
+import app.pane.browser.engine.PageSnapshots
+import app.pane.browser.engine.PrivacyStats
 import app.pane.browser.engine.PromptQueue
 import app.pane.browser.engine.SessionManager
 import app.pane.browser.engine.Thumbnails
@@ -42,6 +44,8 @@ class AppContainer(val app: Application) {
     val store = BrowserStore()
     val prompts = PromptQueue()
     val thumbnails = Thumbnails(app)
+    val snapshots = PageSnapshots()
+    val privacyStats = PrivacyStats(app)
 
     val runtime: GeckoRuntime = EngineRuntime.create(app, settings.current)
     val fetcher = WebFetcher(runtime)
@@ -56,6 +60,7 @@ class AppContainer(val app: Application) {
         sessions.onExternalResponse = { tabId, response ->
             downloads.onExternalResponse(tabId, response, store.state.value.tab(tabId)?.isPrivate == true)
         }
+        sessions.onTrackerBlocked = privacyStats::increment
         sessions.onContextMenu = { tabId, x, y, element ->
             ContextMenus.request(prompts, tabId, store.state.value.tab(tabId)?.isPrivate == true, x, y, element)
         }
