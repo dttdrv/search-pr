@@ -68,7 +68,8 @@ front
 if menu "History"; then shot 08c-history 3; back; fi
 
 front
-if menu "Bookmark"; then sleep 1; fi
+# Bookmarking toggles in place ("Saved") and leaves the menu open.
+if menu "Bookmark"; then sleep 1; back; fi
 front
 if menu "Bookmarks"; then shot 08d-bookmarks 3; back; fi
 

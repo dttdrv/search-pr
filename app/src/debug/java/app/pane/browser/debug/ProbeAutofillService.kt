@@ -36,6 +36,7 @@ class ProbeAutofillService : AutofillService() {
             Log.i(TAG, "FIELD kind=$kind hints=${node.autofillHints?.joinToString()} html=${htmlOf(node)} focused=${node.isFocused}")
         }
         Log.i(TAG, "FILL_REQUEST activity=${structure.activityComponent?.shortClassName} domains=$domains fields=${fields.map { it.kind }}")
+        if (fields.isEmpty()) logTree(structure)
 
         val user = fields.firstOrNull { it.kind == "username" }
         val pass = fields.firstOrNull { it.kind == "password" }
@@ -85,6 +86,21 @@ class ProbeAutofillService : AutofillService() {
             listOf("user", "login", "email").any { it in name } -> "username"
             else -> "text"
         }
+    }
+
+    /** The view tree as the service sees it, for working out why no web fields arrived. */
+    private fun logTree(structure: AssistStructure) {
+        var lines = 0
+        fun walk(node: AssistStructure.ViewNode, depth: Int) {
+            if (lines++ > 150) return
+            Log.i(
+                TAG,
+                "TREE ${" ".repeat(depth)}${node.className?.substringAfterLast('.')} children=${node.childCount} " +
+                    "type=${node.autofillType} domain=${node.webDomain} html=${node.htmlInfo?.tag} visible=${node.visibility}",
+            )
+            for (i in 0 until node.childCount) walk(node.getChildAt(i), depth + 1)
+        }
+        for (i in 0 until structure.windowNodeCount) walk(structure.getWindowNodeAt(i).rootViewNode, 0)
     }
 
     private fun htmlOf(node: AssistStructure.ViewNode): String? = node.htmlInfo?.let { info ->
