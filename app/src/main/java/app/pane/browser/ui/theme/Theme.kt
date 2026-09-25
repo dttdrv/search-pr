@@ -1,6 +1,7 @@
 package app.pane.browser.ui.theme
 
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -13,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import app.pane.core.settings.ThemeMode
 
 object PaneTheme {
@@ -55,6 +58,8 @@ fun PaneTheme(
             error = colors.destructive,
         )
     }
+    val bounceDistance = with(LocalDensity.current) { 120.dp.toPx() }
+    val overscroll = remember(bounceDistance) { BounceOverscrollFactory(bounceDistance) }
     MaterialTheme(colorScheme = material) {
         CompositionLocalProvider(
             LocalPaneColors provides colors,
@@ -65,6 +70,7 @@ fun PaneTheme(
             // iOS highlights instead of rippling; a soft, bounded ripple is the closest native equivalent.
             LocalIndication provides ripple(color = colors.label.copy(alpha = 0.12f)),
             LocalTextSelectionColors provides TextSelectionColors(colors.accent, colors.accent.copy(alpha = 0.3f)),
+            LocalOverscrollFactory provides overscroll,
             content = content,
         )
     }
