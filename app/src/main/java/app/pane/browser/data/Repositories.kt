@@ -112,9 +112,14 @@ class HistoryRepository(database: PaneDatabase, private val clock: () -> Long = 
             .mapAll(::item)
     }
 
-    suspend fun search(query: String, limit: Int = 200): List<HistoryItem> = read { db ->
+    suspend fun search(query: String, limit: Int = 200): List<HistoryItem> = read { db -> searchQuery(db, query, limit) }
+
+    /** Like [search], but re-runs after every change so a filtered list stays current. */
+    fun observeSearch(query: String, limit: Int = 200): Flow<List<HistoryItem>> = observe { db -> searchQuery(db, query, limit) }
+
+    private fun searchQuery(db: SQLiteDatabase, query: String, limit: Int): List<HistoryItem> {
         val like = "%${likeEscape(query.trim())}%"
-        db.rawQuery(
+        return db.rawQuery(
             "SELECT url, title, visit_count, last_visited FROM history WHERE url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' ORDER BY last_visited DESC LIMIT ?",
             arrayOf(like, like, limit.toString()),
         ).mapAll(::item)
@@ -201,6 +206,23 @@ class BookmarksRepository(database: PaneDatabase, private val clock: () -> Long 
 
     suspend fun remove(id: Long) = write { db -> db.delete("bookmarks", "id = ?", arrayOf(id.toString())) }
 
+    /** Puts a removed bookmark back exactly as it was (id, position, date), for "Undo". */
+    suspend fun restore(bookmark: Bookmark) = write { db ->
+        db.insertWithOnConflict(
+            "bookmarks",
+            null,
+            ContentValues().apply {
+                put("id", bookmark.id)
+                put("url", bookmark.url)
+                put("title", bookmark.title)
+                put("created", bookmark.created)
+                put("position", bookmark.position)
+                put("favorite", if (bookmark.favorite) 1 else 0)
+            },
+            SQLiteDatabase.CONFLICT_IGNORE,
+        )
+    }
+
     /** Rewrites positions so [orderedIds] appear in that order. */
     suspend fun reorder(orderedIds: List<Long>) = write { db ->
         db.beginTransaction()
@@ -266,7 +288,37 @@ class DownloadsRepository(database: PaneDatabase, private val clock: () -> Long 
 
     suspend fun delete(id: Long) = write { db -> db.delete("downloads", "id = ?", arrayOf(id.toString())) }
 
-    suspend fun clearFinished() = write { db ->
-        db.delete("downloads", "status IN (?, ?, ?)", arrayOf(DownloadStatus.Completed.ordinal.toString(), DownloadStatus.Failed.ordinal.toString(), DownloadStatus.Cancelled.ordinal.toString()))
+    suspend fun clearFinished() = clearFinishedSince(0L)
+
+    /** Removes finished records created at or after [sinceMillis]; running downloads stay. */
+    suspend fun clearFinishedSince(sinceMillis: Long) = write { db ->
+        db.delete(
+            "downloads",
+            "status IN (?, ?, ?) AND created >= ?",
+            arrayOf(
+                DownloadStatus.Completed.ordinal.toString(),
+                DownloadStatus.Failed.ordinal.toString(),
+                DownloadStatus.Cancelled.ordinal.toString(),
+                sinceMillis.toString(),
+            ),
+        )
+    }
+
+    /**
+     * Downloads created before [beforeMillis] (app start) and still marked as in progress were cut
+     * off when the process died.
+     */
+    suspend fun markInterrupted(beforeMillis: Long) = write { db ->
+        db.update(
+            "downloads",
+            ContentValues().apply { put("status", DownloadStatus.Failed.ordinal) },
+            "status IN (?, ?, ?) AND created < ?",
+            arrayOf(
+                DownloadStatus.Pending.ordinal.toString(),
+                DownloadStatus.Running.ordinal.toString(),
+                DownloadStatus.Paused.ordinal.toString(),
+                beforeMillis.toString(),
+            ),
+        )
     }
 }
