@@ -14,12 +14,36 @@ android {
         applicationId = "app.pane.browser"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        // Release builds pass these from the git tag (see .github/workflows/release.yml).
+        versionCode = providers.gradleProperty("pane.versionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("pane.versionName").orNull ?: "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         val abis = providers.gradleProperty("pane.abis").orNull
         if (abis != null) {
             ndk { abiFilters += abis.split(",") }
+        }
+    }
+
+    // One APK per CPU type keeps downloads small: GeckoView's native code is most of the size.
+    splits {
+        abi {
+            isEnable = providers.gradleProperty("pane.splitAbis").isPresent
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
+    signingConfigs {
+        // The release key comes from the environment (a CI secret), never from the repository.
+        val keystore = providers.environmentVariable("PANE_KEYSTORE").orNull
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = providers.environmentVariable("PANE_KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("PANE_KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("PANE_KEY_PASSWORD").get()
+            }
         }
     }
 
@@ -28,8 +52,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so CI artifacts are installable; use your own key for distribution.
-            signingConfig = signingConfigs.getByName("debug")
+            // Without a release key (plain CI builds) the debug key keeps the APK installable.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

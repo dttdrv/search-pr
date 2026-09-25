@@ -77,6 +77,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.min
 import kotlin.math.roundToInt
+import app.pane.browser.ui.components.excludeFromAutofill
 
 // Shared building blocks for the library and settings screens.
 
@@ -438,7 +439,7 @@ internal fun FieldRow(
                 keyboardType = keyboardType,
                 imeAction = ImeAction.Done,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().excludeFromAutofill(),
         )
     }
 }
@@ -460,6 +461,7 @@ private fun backTitle(route: Route): String? = when (route) {
     Route.Settings -> "Settings"
     Route.SearchSettings -> "Search"
     Route.PrivacySettings -> "Privacy"
+    Route.PasswordSettings -> "Passwords"
     Route.SiteSettings -> "Sites"
     Route.AppearanceSettings -> "Appearance"
     Route.ClearData -> "Clear Data"

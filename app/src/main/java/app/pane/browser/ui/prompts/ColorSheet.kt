@@ -41,6 +41,7 @@ import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.prompts.ColorValues
+import app.pane.browser.ui.components.excludeFromAutofill
 
 private fun colorOf(hex: String): Color = Color(ColorValues.toArgb(hex) ?: 0xFF000000.toInt())
 
@@ -112,7 +113,7 @@ internal fun ColorSheet(request: ColorRequest, visible: Boolean, onDone: () -> U
                             imeAction = ImeAction.Done,
                         ),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().excludeFromAutofill(),
                     )
                 }
             }

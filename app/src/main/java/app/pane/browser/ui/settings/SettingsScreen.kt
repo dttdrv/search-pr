@@ -35,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.IconTile
@@ -64,6 +66,9 @@ fun SettingsScreen() {
     val backLabel = rememberBackLabel(Route.Settings)
     val engine = SearchEngines.byId(settings.searchEngineId)
     val protection = remember(settings) { ProtectionSummary.of(settings) }
+    val context = LocalContext.current
+    var autofill by remember { mutableStateOf(AutofillStatus.read(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { autofill = AutofillStatus.read(context) }
 
     LargeTitleScaffold(title = "Settings", onBack = navigator::pop, backLabel = backLabel) {
         item(key = "default") { DefaultBrowserCard() }
@@ -75,6 +80,18 @@ fun SettingsScreen() {
                         leading = { IconTile(PaneIcons.Search, TileColors.Blue) },
                         value = engine.name,
                         onClick = { navigator.push(Route.SearchSettings) },
+                    )
+                }
+            }
+        }
+        item(key = "passwords") {
+            GroupedSection(header = "Passwords") {
+                row {
+                    ListRow(
+                        title = "Passwords & Autofill",
+                        leading = { IconTile(PaneIcons.Key, TileColors.Gray) },
+                        value = autofill.serviceLabel ?: if (autofill.enabled) "On" else "Off",
+                        onClick = { navigator.push(Route.PasswordSettings) },
                     )
                 }
             }

@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -41,6 +42,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.components.TextButton
+import app.pane.browser.ui.components.autofill
+import app.pane.browser.ui.components.excludeFromAutofill
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.Motion
@@ -60,6 +63,7 @@ internal fun AlertTextField(
     imeAction: ImeAction = ImeAction.Done,
     onImeAction: () -> Unit = {},
     requester: FocusRequester? = null,
+    autofillType: ContentType? = null,
 ) {
     val colors = PaneTheme.colors
     val shape = ContinuousRoundedShape(8.dp)
@@ -95,7 +99,8 @@ internal fun AlertTextField(
             ),
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (requester != null) Modifier.focusRequester(requester) else Modifier),
+                .then(if (requester != null) Modifier.focusRequester(requester) else Modifier)
+                .then(if (autofillType != null) Modifier.autofill(autofillType) else Modifier.excludeFromAutofill()),
         )
     }
 }

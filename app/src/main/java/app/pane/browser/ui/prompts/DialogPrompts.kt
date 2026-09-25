@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -130,6 +131,7 @@ internal fun AuthDialog(request: AuthRequest, visible: Boolean, onDone: () -> Un
                         onValueChange = { username = it },
                         placeholder = "User Name",
                         imeAction = ImeAction.Next,
+                        autofillType = ContentType.Username,
                         onImeAction = { runCatching { passwordFocus.requestFocus() } },
                         requester = userFocus,
                     )
@@ -140,6 +142,7 @@ internal fun AuthDialog(request: AuthRequest, visible: Boolean, onDone: () -> Un
                     placeholder = "Password",
                     password = true,
                     imeAction = ImeAction.Go,
+                    autofillType = ContentType.Password,
                     onImeAction = { submit() },
                     requester = passwordFocus,
                 )

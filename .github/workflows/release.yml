@@ -1,0 +1,148 @@
+name: Release
+
+# Pushing a tag like v1.2.3 builds signed per-CPU APKs and publishes them as a GitHub Release.
+# Running it by hand rebuilds an existing tag's APKs (e.g. after adding the signing secret).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to (re)build, e.g. v1.0.0
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Version from tag
+        run: |
+          VERSION="${TAG#v}"
+          IFS=. read -r MAJOR MINOR PATCH <<< "${VERSION%%-*}"
+          CODE=$(( ${MAJOR:-0} * 10000 + ${MINOR:-0} * 100 + ${PATCH:-0} ))
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$CODE" >> "$GITHUB_ENV"
+          echo "Building Pane $VERSION ($CODE)"
+
+      # The key is a repository secret (base64 of a PKCS12 keystore). Without it the build gets a
+      # one-off key, which installs fine but can't be updated in place by a later release.
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.PANE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.PANE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.PANE_KEY_ALIAS }}
+        run: |
+          KS="$RUNNER_TEMP/pane-release.p12"
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$KS"
+            PASS="${KEYSTORE_PASSWORD:-pane-release}"
+            ALIAS="${KEY_ALIAS:-pane}"
+            echo "SIGNING=stable" >> "$GITHUB_ENV"
+          else
+            PASS=$(openssl rand -hex 24)
+            ALIAS=pane
+            keytool -genkeypair -keystore "$KS" -storetype PKCS12 -alias "$ALIAS" -keyalg EC -groupname secp256r1 \
+              -validity 36500 -storepass "$PASS" -keypass "$PASS" -dname "CN=Pane" -noprompt
+            echo "SIGNING=one-off" >> "$GITHUB_ENV"
+            echo "::warning::PANE_KEYSTORE_BASE64 is not set; this release is signed with a one-off key."
+          fi
+          echo "::add-mask::$PASS"
+          {
+            echo "PANE_KEYSTORE=$KS"
+            echo "PANE_KEYSTORE_PASSWORD=$PASS"
+            echo "PANE_KEY_ALIAS=$ALIAS"
+            echo "PANE_KEY_PASSWORD=$PASS"
+          } >> "$GITHUB_ENV"
+
+      - name: Accept SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      - name: Build release APKs
+        run: |
+          ./gradlew :app:assembleRelease -Ppane.splitAbis -Ppane.versionName="$VERSION" -Ppane.versionCode="$VERSION_CODE" \
+            2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+
+      - name: Error summary
+        if: failure()
+        run: |
+          grep -E "^e: |error:|FAILURE|What went wrong" -A3 build.log | head -80 || true
+
+      - name: Collect and verify
+        run: |
+          mkdir -p dist
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            apk="app/build/outputs/apk/release/app-$abi-release.apk"
+            # An APK without the engine's native library for its CPU would crash on launch.
+            if unzip -l "$apk" | grep -q "lib/$abi/libxul.so"; then
+              cp "$apk" "dist/Pane-$VERSION-$abi.apk"
+            else
+              echo "::warning::GeckoView ships no $abi engine; skipping that APK"
+            fi
+          done
+          test -f "dist/Pane-$VERSION-arm64-v8a.apk"
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "dist/Pane-$VERSION-arm64-v8a.apk" | tee certs.txt
+          CERT_SHA256=$(grep -m1 "SHA-256 digest" certs.txt | awk '{print $NF}')
+          echo "CERT_SHA256=$CERT_SHA256" >> "$GITHUB_ENV"
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          ls -lh dist
+
+      - name: Release notes
+        run: |
+          {
+            echo "## Pane $VERSION"
+            echo
+            echo "A private, minimal browser built on Firefox's GeckoView engine, with iOS-style motion and full add-on support."
+            echo
+            echo "### Which APK?"
+            echo "| Phone | File |"
+            echo "|---|---|"
+            echo "| Almost every phone from the last 7 years | **Pane-$VERSION-arm64-v8a.apk** |"
+            [ -f "dist/Pane-$VERSION-armeabi-v7a.apk" ] && echo "| Older 32-bit phones | Pane-$VERSION-armeabi-v7a.apk |"
+            [ -f "dist/Pane-$VERSION-x86_64.apk" ] && echo "| Emulators / Chromebooks (Intel) | Pane-$VERSION-x86_64.apk |"
+            echo
+            echo "Requires Android 8.0 or newer."
+            echo
+            echo "### Bitwarden and other password managers"
+            echo "1. In Pane, open **Settings › Passwords & Autofill** and tap **Use Bitwarden** (or pick it under Android's *Passwords & accounts*)."
+            echo "2. Tap any login field on a website: Bitwarden offers the matching logins for that site, and offers to save new ones after you sign in."
+            echo "3. Passkeys (Android 14+): set Bitwarden as your preferred service. The first time, Bitwarden asks whether to trust Pane as a browser; allow it."
+            echo
+            echo "### Verify"
+            echo "Signing certificate SHA-256: \`$CERT_SHA256\`"
+            if [ "$SIGNING" = "one-off" ]; then
+              echo
+              echo "> This build is signed with a one-off key, so a future release will need a reinstall rather than an in-place update."
+            fi
+            echo
+            echo "File checksums are in \`SHA256SUMS.txt\`."
+          } > notes.md
+          cat notes.md
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Pane ${{ env.VERSION }}
+          body_path: notes.md
+          files: |
+            dist/*.apk
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+          make_latest: true

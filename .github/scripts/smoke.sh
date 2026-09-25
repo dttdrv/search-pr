@@ -84,6 +84,51 @@ if menu "New Private Tab"; then
   if ui desc-contains " tabs"; then shot 10-private-tabs 4; ui text "Done"; sleep 2; fi
 fi
 
+# Passwords settings: status card, then the system picker for the autofill service.
+front
+if menu "Settings"; then
+  if ui text "Passwords & Autofill"; then
+    shot 11-passwords 3
+    if ui text "Autofill Service"; then shot 11b-autofill-picker 4; back; fi
+    back
+  fi
+  back
+fi
+
+# Landscape: the page and bar must stay clear of a side navigation bar or camera cutout.
+adb shell settings put system accelerometer_rotation 0
+adb shell settings put system user_rotation 1
+front
+shot 13-landscape 4
+adb shell settings put system user_rotation 0
+sleep 3
+
+# Autofill: switch on the debug probe (a stand-in password manager) and open a real login form.
+# It must receive the page's fields with the site's domain, exactly what Bitwarden matches on.
+adb shell settings put secure autofill_service app.pane.browser/app.pane.browser.debug.ProbeAutofillService
+echo "autofill service: $(adb shell settings get secure autofill_service)"
+adb shell am start -W -a android.intent.action.VIEW -d "https://github.com/login" app.pane.browser
+shot 12-login 15
+# The username field is autofocused; tap it anyway in case focus landed elsewhere.
+ui any-contains "Username or email" || adb shell input tap $((W / 2)) $((H * 38 / 100))
+shot 12b-autofill-offer 4
+if ui text "pane-probe-user"; then
+  shot 12c-filled 3
+  # Submitting the form commits the autofill session, which is when a password manager offers to save.
+  adb shell input keyevent KEYCODE_ENTER
+  sleep 8
+fi
+adb logcat -d -s PaneAutofillProbe:I > shots/autofill.txt
+echo "==== Autofill probe ===="
+cat shots/autofill.txt
+AUTOFILL_OK=1
+if ! grep -qE "FILL_REQUEST .*github\.com.*password" shots/autofill.txt; then
+  echo "==== AUTOFILL FAILED: the login form never reached the autofill service with its domain ===="
+  AUTOFILL_OK=0
+fi
+grep -q "SAVE_REQUEST .*github\.com" shots/autofill.txt && echo "autofill: save request received" \
+  || echo "autofill: no save request (fill or submit didn't happen in the walk-through)"
+
 adb logcat -d > shots/logcat.txt
 echo "==== Pane log excerpt ===="
 grep -E "app.pane|GeckoView|Gecko  " shots/logcat.txt | grep -iE "error|exception|fatal" | head -60
@@ -96,4 +141,5 @@ if ! adb shell pidof app.pane.browser > /dev/null; then
   echo "==== Pane is not running at the end of the smoke test ===="
   exit 1
 fi
+if [ "$AUTOFILL_OK" != 1 ]; then exit 1; fi
 echo "Smoke test passed"

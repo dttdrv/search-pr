@@ -40,6 +40,22 @@ of the screen and gets out of the way when you scroll.
   (same DoH/TLS settings), anonymously.
 - Links you share or copy have tracking parameters removed.
 
+**Passwords & passkeys**
+- Pane keeps no passwords itself. Login forms go to Android's autofill service with the site's
+  address, so **Bitwarden** (or any password manager) matches logins by website, fills them, and
+  offers to save new ones after you sign in. Pane's own fields (address bar, find, search) are
+  kept out of autofill; the HTTP sign-in prompt is marked as username/password.
+- Passkeys on Android 14+ go through Credential Manager on the site's behalf, like other
+  browsers; Bitwarden asks once whether to trust Pane.
+- **Settings › Passwords & Autofill** shows which service is active and opens the system picker.
+- CI checks this for real: the emulator test installs a stand-in autofill service (debug builds
+  only), opens github.com/login, and fails unless the form reaches it with its domain and
+  password field.
+
+**Edge to edge**
+- The page and bars draw under the status and navigation bars; in landscape the UI keeps clear
+  of a side navigation bar or camera cutout.
+
 **Features**
 - Firefox add-ons: an in-app store backed by addons.mozilla.org (search, ratings, one-tap
   install), install from file, browser-action buttons with badges, popups, options pages,
@@ -66,6 +82,11 @@ app/    The Android app: GeckoView integration (engine/), storage (data/), exten
         downloads and the Compose UI (ui/).
 ```
 
+## Install
+
+Grab the APK from the [latest release](../../releases/latest): `Pane-<version>-arm64-v8a.apk`
+fits almost every phone. Android 8.0 or newer.
+
 ## Building
 
 Requirements: JDK 17+ and an Android SDK with platform 37.1.
@@ -77,12 +98,30 @@ Requirements: JDK 17+ and an Android SDK with platform 37.1.
 ```
 
 CI (`.github/workflows/`) builds, lints and tests every push, builds a minified (R8) release,
-and runs an emulator smoke test that walks through onboarding (including a real uBlock Origin
-install), a live page, the menu, tabs, search suggestions, settings, the add-on store, history
-and private browsing, failing on any crash and uploading screenshots.
+and runs an emulator smoke test on Android 14 and Android 9 that walks through onboarding
+(including a real uBlock Origin install), a live page, the menu, tabs, search suggestions,
+settings, the add-on store, history, private browsing, landscape and autofill, failing on any
+crash and uploading screenshots.
 
-Release builds are signed with the debug key so CI artifacts are installable; use your own signing
-config for distribution.
+### Releases
+
+Pushing a tag such as `v1.0.1` runs `release.yml`, which builds one APK per CPU type
+(arm64-v8a, armeabi-v7a, x86_64) and publishes them with checksums as a GitHub Release.
+
+Signing uses the repository secret `PANE_KEYSTORE_BASE64` (a base64-encoded PKCS12 keystore;
+optional `PANE_KEYSTORE_PASSWORD`, default `pane-release`, and `PANE_KEY_ALIAS`, default `pane`).
+Keep the same key for every release so updates install over the previous version:
+
+```sh
+keytool -genkeypair -keystore pane.p12 -storetype PKCS12 -alias pane -keyalg EC -groupname secp256r1 \
+  -validity 36500 -storepass pane-release -dname "CN=Pane"
+base64 -w0 pane.p12   # paste into Settings › Secrets and variables › Actions › PANE_KEYSTORE_BASE64
+```
+
+Without the secret, a release is signed with a one-off key: it installs fine, but the next
+release won't update it in place. Re-run the workflow for an existing tag (Actions › Release ›
+Run workflow) to rebuild its APKs after adding the secret. Plain CI release builds use the debug
+key.
 
 ## Licences
 

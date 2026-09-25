@@ -58,6 +58,7 @@ import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.SessionFinder
 import kotlin.coroutines.resume
+import app.pane.browser.ui.components.excludeFromAutofill
 
 private class Match(val found: Boolean, val current: Int, val total: Int)
 
@@ -149,7 +150,7 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
                         cursorBrush = SolidColor(colors.accent),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { step(false) }),
-                        modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                        modifier = Modifier.fillMaxWidth().focusRequester(focus).excludeFromAutofill(),
                     )
                 }
                 val current = match
