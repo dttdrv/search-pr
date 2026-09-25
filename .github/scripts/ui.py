@@ -40,7 +40,12 @@ def tap(mode, needle):
         return False
     node = find(root, mode, needle)
     if node is None:
-        print(f"ui.py: '{needle}' ({mode}) not found")
+        seen = [
+            f"{n.get('class', '').split('.')[-1]}:{n.get('text', '')!r}/{n.get('content-desc', '')!r}"
+            for n in root.iter("node")
+            if n.get("text") or n.get("content-desc")
+        ]
+        print(f"ui.py: '{needle}' ({mode}) not found; {len(list(root.iter('node')))} nodes; labelled: {seen[:40]}")
         return False
     x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
     subprocess.run(["adb", "shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2)])
