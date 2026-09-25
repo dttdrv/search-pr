@@ -21,10 +21,11 @@ class BrowserStore(
 
     fun updateTab(id: String, update: (TabState) -> TabState) = dispatch(BrowserAction.UpdateTab(id, update))
 
-    fun snapshot(): PersistedSession {
+    /** Normal tabs only; [engineState] supplies each tab's serialized engine history when known. */
+    fun snapshot(engineState: (String) -> String? = { null }): PersistedSession {
         val s = state.value
         val tabs = s.normalTabs.map {
-            PersistedTab(it.id, it.url, it.title, it.parentId, it.createdAt, it.lastAccessed, it.desktopMode)
+            PersistedTab(it.id, it.url, it.title, it.parentId, it.createdAt, it.lastAccessed, it.desktopMode, engineState(it.id))
         }
         return PersistedSession(tabs = tabs, selectedTabId = s.selectedTabId?.takeIf { id -> tabs.any { it.id == id } })
     }

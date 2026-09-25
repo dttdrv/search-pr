@@ -60,6 +60,8 @@ data class PersistedTab(
     val createdAt: Long,
     val lastAccessed: Long,
     val desktopMode: Boolean = false,
+    /** Opaque engine history (back/forward list, scroll positions). */
+    val engineState: String? = null,
 )
 
 @Serializable
