@@ -31,8 +31,7 @@ ui desc-contains "Address"
 sleep 2
 adb shell input text "privacy"
 shot 06-search 4
-adb shell input keyevent KEYCODE_BACK
-adb shell input keyevent KEYCODE_BACK
+ui text "Cancel"
 sleep 2
 
 ui desc "Menu"
@@ -47,7 +46,19 @@ sleep 2
 ui text "Extensions"
 shot 08-extensions 4
 adb shell input keyevent KEYCODE_BACK
-sleep 1
+sleep 2
+
+# Private mode: new private tab from the menu, then back to the overview.
+ui desc "Menu"
+sleep 2
+ui text "New Private Tab"
+sleep 2
+ui text "Cancel"
+shot 09-private 3
+ui desc-contains " tabs"
+shot 10-private-tabs 4
+ui text "Done"
+sleep 2
 
 adb logcat -d > shots/logcat.txt
 echo "==== Pane log excerpt ===="

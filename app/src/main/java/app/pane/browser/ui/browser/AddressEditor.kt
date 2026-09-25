@@ -48,6 +48,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
@@ -274,7 +279,18 @@ private fun EditorContent(
                             imeAction = ImeAction.Go,
                         ),
                         keyboardActions = KeyboardActions(onGo = { if (field.text.isNotBlank()) onSubmit(field.text) }),
-                        modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focus)
+                            // The keyboard eats the first Back; the next one should close the editor, not just unfocus.
+                            .onPreviewKeyEvent { e ->
+                                if (e.key == Key.Back && e.type == KeyEventType.KeyUp) {
+                                    onDismiss()
+                                    true
+                                } else {
+                                    false
+                                }
+                            },
                     )
                 }
                 if (field.text.isNotEmpty()) {

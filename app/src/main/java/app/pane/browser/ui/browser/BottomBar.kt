@@ -295,7 +295,7 @@ fun AddressPill(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Leading: reader mode when available, otherwise the security state.
-            Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
                 when {
                     tab == null || tab.url.isEmpty() -> Icon(PaneIcons.Search, null, tint = colors.secondaryLabel, modifier = Modifier.size(17.dp))
                     tab.readerable || tab.inReaderMode -> Icon(
@@ -320,14 +320,14 @@ fun AddressPill(
             }
             Text(
                 text = host.ifEmpty { "Search or enter website" },
-                style = PaneTheme.type.body.copy(fontSize = lerp(17.sp, 12.sp, collapse), fontWeight = if (host.isEmpty()) FontWeight.Normal else FontWeight.Medium),
+                style = PaneTheme.type.body.copy(fontSize = lerp(16.sp, 12.sp, collapse), fontWeight = if (host.isEmpty()) FontWeight.Normal else FontWeight.Medium),
                 color = if (host.isEmpty()) colors.secondaryLabel else colors.label,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.weight(1f),
             )
-            Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
                 if (tab != null && tab.url.isNotEmpty()) {
                     if (tab.loading) {
                         Icon(PaneIcons.Stop, "Stop", tint = colors.label, modifier = Modifier.size(17.dp).pressDim(onClick = onStop))

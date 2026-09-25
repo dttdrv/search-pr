@@ -204,7 +204,7 @@ fun BrowserScreen() {
     PaneTheme(mode = settings.theme, private = private, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion) {
         val colors = PaneTheme.colors
         val tint = tab?.themeColor?.takeIf { settings.tintToolbarWithPage && !private && tab.url.isNotEmpty() }?.let { Color(it) }
-        val statusColor = tint ?: colors.background
+        val statusColor = tint ?: if (tab == null || tab.url.isEmpty()) colors.groupedBackground else colors.background
         StatusBarAppearance(lightIcons = statusColor.luminance() < 0.5f && navigator.isEmpty || (!navigator.isEmpty && colors.isDark))
 
         val sameMode = state.tabsIn(private)

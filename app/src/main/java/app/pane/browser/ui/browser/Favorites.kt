@@ -91,15 +91,26 @@ fun FavoriteTile(site: FavoriteSite, onClick: () -> Unit) {
     }
 }
 
-/** First letter of the site on a colour derived from its host, so each site keeps its colour. */
+/** The part of a host people recognise: `en.m.wikipedia.org` → `wikipedia`. */
+fun siteName(host: String): String {
+    val labels = host.lowercase().split('.').filter { it.isNotEmpty() }
+    if (labels.size < 2) return host
+    // Skip a second-level public suffix such as co.uk or com.au.
+    val secondLevel = setOf("co", "com", "net", "org", "gov", "ac", "edu")
+    val tldIndex = if (labels.size >= 3 && labels[labels.size - 2] in secondLevel && labels.last().length == 2) labels.size - 2 else labels.size - 1
+    return labels.getOrNull(tldIndex - 1) ?: host
+}
+
+/** First letter of the site on a colour derived from its name, so each site keeps its colour. */
 @Composable
 fun Monogram(host: String, size: Int, modifier: Modifier = Modifier) {
-    val letter = host.removePrefix("www.").firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "•"
+    val name = siteName(host)
+    val letter = name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "•"
     val palette = listOf(
         Color(0xFF5E5CE6), Color(0xFF0A84FF), Color(0xFF30B0C7), Color(0xFF34C759), Color(0xFFFF9F0A),
         Color(0xFFFF375F), Color(0xFFBF5AF2), Color(0xFF64D2FF), Color(0xFFAC8E68), Color(0xFF8E8E93),
     )
-    val color = palette[abs(host.hashCode()) % palette.size]
+    val color = palette[abs(name.hashCode()) % palette.size]
     Box(
         modifier
             .size(size.dp)

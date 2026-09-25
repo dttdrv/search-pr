@@ -43,14 +43,14 @@ object HomeShortcuts {
         val size = 216
         val bitmap = createBitmap(size, size)
         val canvas = Canvas(bitmap)
-        canvas.drawColor(palette[abs(host.hashCode()) % palette.size])
+        canvas.drawColor(palette[abs(siteName(host).hashCode()) % palette.size])
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFFFFFFF.toInt()
             textSize = size * 0.34f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             textAlign = Paint.Align.CENTER
         }
-        val letter = host.removePrefix("www.").firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "•"
+        val letter = siteName(host).firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "•"
         val y = size / 2f - (paint.descent() + paint.ascent()) / 2f
         canvas.drawText(letter, size / 2f, y, paint)
         return bitmap
