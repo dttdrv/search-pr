@@ -25,6 +25,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.engine.EngineEvent
+import app.pane.browser.extensions.ExtensionsManager
 import app.pane.browser.engine.PromptRequest
 import app.pane.browser.engine.prompts.AndroidPermissionRequest
 import app.pane.browser.engine.prompts.AuthRequest
@@ -83,7 +84,8 @@ fun PromptHost() {
     val browserState by container.store.state.collectAsStateWithLifecycle()
     // Only the selected tab matters here; progress ticks on other tabs shouldn't recompose prompts.
     val selectedTabId by remember { derivedStateOf { browserState.selectedTabId } }
-    val foreground = requests.filter { it.tabId == null || it.tabId == selectedTabId }
+    // Extension popups and options pages have no tab of their own.
+    val foreground = requests.filter { it.tabId == null || it.tabId == selectedTabId || it.tabId == ExtensionsManager.AUX_PROMPT_OWNER }
     // Blocked pop-up banners don't stop the page, so they get their own lane and never hold up a dialog.
     val banner = rememberPresentation(foreground.firstOrNull { it.isBanner })
     val modal = rememberPresentation(foreground.firstOrNull { !it.isBanner })
@@ -250,9 +252,6 @@ private fun onEngineEvent(container: AppContainer, context: Context, toasts: Toa
         // Links that fire without a tap are how redirect spam launches apps; drop them silently.
         is EngineEvent.ExternalLink -> if (event.userGesture) openExternally(container, context, toasts, event)
         is EngineEvent.OpenedInBackground -> toasts.show("Opened in new tab", PaneIcons.Tabs, "Show") { container.browser.select(event.tabId) }
-        is EngineEvent.Crashed -> if (event.tabId == container.store.state.value.selectedTabId) {
-            toasts.show("This page crashed", PaneIcons.Warning, "Reload") { container.sessions.reload(event.tabId) }
-        }
         else -> Unit
     }
 }

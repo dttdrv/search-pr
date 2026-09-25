@@ -16,6 +16,7 @@ import app.pane.browser.engine.SessionManager
 import app.pane.browser.engine.Thumbnails
 import app.pane.browser.engine.WebFetcher
 import app.pane.browser.engine.prompts.ContextMenus
+import app.pane.browser.engine.prompts.PromptEnvironment
 import app.pane.browser.engine.prompts.WebPermissionDelegate
 import app.pane.browser.engine.prompts.WebPromptDelegate
 import app.pane.browser.extensions.ExtensionsManager
@@ -56,6 +57,7 @@ class AppContainer(val app: Application) {
 
     init {
         downloads.runtime = runtime
+        PromptEnvironment.install(runtime, settings, store)
         sessions.promptDelegateFactory = { tabId -> WebPromptDelegate(tabId, prompts) }
         sessions.permissionDelegateFactory = { tabId -> WebPermissionDelegate(tabId, prompts) }
         sessions.onExternalResponse = { tabId, response ->

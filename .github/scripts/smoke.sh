@@ -13,6 +13,12 @@ adb shell am start -W -n app.pane.browser/.MainActivity
 shot 01-onboarding 12
 ui text "Start Browsing"
 shot 02-start-page 4
+# Onboarding opted into uBlock Origin: wait for the install sheet from addons.mozilla.org and approve it.
+for i in 1 2 3 4 5 6; do
+  if python3 .github/scripts/ui.py text "Add" >/dev/null 2>&1; then echo "approved uBlock Origin install"; break; fi
+  sleep 5
+done
+shot 02b-after-install 6
 
 adb shell am start -W -a android.intent.action.VIEW -d "https://en.wikipedia.org/wiki/Web_browser" app.pane.browser
 shot 03-page 18
@@ -46,6 +52,8 @@ sleep 2
 
 ui desc "Menu"
 sleep 2
+adb shell input swipe 540 1900 540 700 300
+sleep 1
 ui text "Extensions"
 shot 08-extensions 4
 ui text "Browse Add-ons"
