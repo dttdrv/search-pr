@@ -1,5 +1,6 @@
 package app.pane.browser
 
+import android.annotation.SuppressLint
 import android.app.SearchManager
 import android.content.Intent
 import android.os.Bundle
@@ -42,6 +43,9 @@ class MainActivity : ComponentActivity() {
         observeWindowFlags()
     }
 
+    // Keyboard shortcuts must be seen before GeckoView swallows them. Calling super is the public
+    // Activity API; androidx merely annotates its own override as restricted.
+    @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean =
         KeyboardShortcuts.handle(event) || super.dispatchKeyEvent(event)
 
