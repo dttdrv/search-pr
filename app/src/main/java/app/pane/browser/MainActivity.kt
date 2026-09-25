@@ -3,6 +3,7 @@ package app.pane.browser
 import android.app.SearchManager
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -12,6 +13,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import app.pane.browser.ui.AppRoot
+import app.pane.browser.ui.browser.KeyboardShortcuts
 import app.pane.browser.ui.navigation.Navigator
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -36,6 +38,9 @@ class MainActivity : ComponentActivity() {
         }
         observeWindowFlags()
     }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        KeyboardShortcuts.handle(event) || super.dispatchKeyEvent(event)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

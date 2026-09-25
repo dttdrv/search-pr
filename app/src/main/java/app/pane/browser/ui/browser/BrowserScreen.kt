@@ -132,6 +132,35 @@ fun BrowserScreen() {
             }
         }
     }
+    // Hardware keyboard.
+    LaunchedEffect(Unit) {
+        KeyboardShortcuts.events.collect { shortcut ->
+            val current = container.store.state.value.selectedTab
+            val mode = current?.isPrivate == true
+            val tabs = container.store.state.value.tabsIn(mode)
+            val i = tabs.indexOfFirst { it.id == current?.id }
+            when (shortcut) {
+                Shortcut.NewTab, Shortcut.NewPrivateTab -> {
+                    container.browser.newTab(shortcut == Shortcut.NewPrivateTab)
+                    editText = ""
+                    chrome.editing = true
+                }
+                Shortcut.CloseTab -> current?.let { container.browser.close(it.id) }
+                Shortcut.FocusAddress -> {
+                    editText = current?.url?.let { container.browser.searchTermsFor(it) ?: UrlDisplay.editableText(it) }.orEmpty()
+                    chrome.editing = true
+                }
+                Shortcut.Reload -> container.browser.reload()
+                Shortcut.Find -> if (current?.url?.isNotEmpty() == true) chrome.findInPage = true
+                Shortcut.NextTab -> tabs.getOrNull((i + 1).mod(tabs.size.coerceAtLeast(1)))?.let { container.browser.select(it.id) }
+                Shortcut.PreviousTab -> tabs.getOrNull((i - 1).mod(tabs.size.coerceAtLeast(1)))?.let { container.browser.select(it.id) }
+                Shortcut.Back -> container.browser.goBack()
+                Shortcut.Forward -> container.browser.goForward()
+                Shortcut.ShowTabs -> chrome.showTabs = true
+            }
+        }
+    }
+
     // Never leave a cover up for long, whatever happens to the page.
     LaunchedEffect(chrome.overlay) {
         val cover = chrome.overlay
