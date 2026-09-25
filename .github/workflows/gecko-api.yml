@@ -4,18 +4,27 @@ on:
     paths: ['.github/workflows/gecko-api.yml']
   workflow_dispatch:
 jobs:
-  dump:
+  docs:
     runs-on: ubuntu-latest
     steps:
-      - name: Dump public GeckoView API
+      - name: Extract javadoc for selected methods
         run: |
           V=156.0.20260921121718
           M=https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview
-          curl -sL -o gv.aar "$M/$V/geckoview-$V.aar"
-          unzip -o -q gv.aar classes.jar
-          unzip -l classes.jar | awk '{print $4}' | grep '^org/mozilla/geckoview/.*\.class$' | sed 's/\.class$//; s|/|.|g' | sort > classes.txt
-          echo "CLASSES $(wc -l < classes.txt)"
-          javap -public -constants -cp classes.jar $(cat classes.txt) 2>/dev/null \
-            | grep -vE '^Compiled from' \
-            | sed -E 's/org\.mozilla\.geckoview\.//g; s/java\.lang\.//g; s/androidx\.annotation\.//g; s/java\.util\.//g; s/android\.(os|view|content|graphics|net)\.//g' \
-            | grep -vE '^\s*$'
+          curl -sL -o src.jar "$M/$V/geckoview-$V-sources.jar"
+          unzip -o -q src.jar -d src
+          F=$(find src -name GeckoView.java | head -1)
+          for m in 'void setVerticalClipping' 'void setDynamicToolbarMaxHeight' 'void coverUntilFirstPaint' 'capturePixels()' 'void setViewBackend'; do
+            echo "===== $m"
+            grep -n "$m" "$F" | head -1 | cut -d: -f1 | while read L; do sed -n "$((L-25)),$((L+3))p" "$F"; done
+          done
+          S=$(find src -name GeckoSession.java | head -1)
+          for m in 'onNewSession(' 'onScrollChanged(' 'void setActive(' 'onShowDynamicToolbar'; do
+            echo "===== $m"
+            grep -n "$m" "$S" | head -1 | cut -d: -f1 | while read L; do sed -n "$((L-22)),$((L+3))p" "$S"; done
+          done
+          W=$(find src -name WebExtension.java | head -1)
+          for m in 'onNewTab(' 'onTogglePopup(' 'onOpenPopup('; do
+            echo "===== $m"
+            grep -n "$m" "$W" | head -1 | cut -d: -f1 | while read L; do sed -n "$((L-22)),$((L+3))p" "$W"; done
+          done
