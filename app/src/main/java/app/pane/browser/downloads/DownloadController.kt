@@ -18,4 +18,7 @@ class DownloadController(
     fun onExternalResponse(tabId: String, response: WebResponse, private: Boolean) {
         runCatching { response.body?.close() }
     }
+
+    /** Downloads [url] directly (context menu "Download Link" / "Save Image"). */
+    fun download(url: String, private: Boolean, referrer: String? = null) = Unit
 }

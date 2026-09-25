@@ -6,3 +6,6 @@ import androidx.compose.runtime.Composable
 
 /** Renders the head of the prompt queue (dialogs, permission sheets, context menus). */
 @Composable fun PromptHost() = Unit
+
+/** Site identity/permissions sheet opened from the lock icon. */
+@Composable fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) = Unit

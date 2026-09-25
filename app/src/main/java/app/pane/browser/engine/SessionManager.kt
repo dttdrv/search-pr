@@ -331,19 +331,30 @@ class SessionManager(
                 route(uri, true)
                 return null
             }
-            val parent = store.state.value.tab(tabId) ?: return null
-            val id = UUID.randomUUID().toString()
-            store.dispatch(
-                BrowserAction.AddTab(
-                    TabState(id = id, url = uri, isPrivate = private, parentId = tabId, desktopMode = parent.desktopMode, loading = true),
-                    select = true,
-                ),
-            )
+            store.state.value.tab(tabId) ?: return null
             // Gecko opens the returned session itself; it must not be open yet.
-            val child = newSession(id, private, parent.desktopMode)
-            onTabSelectedDeferred(id)
+            val (_, child) = createTabForEngine(uri, private, parentId = tabId, select = true)
             return GeckoResult.fromValue(child)
         }
+    }
+
+    /**
+     * Creates a tab whose session is handed to Gecko *unopened* (window.open, extension
+     * `tabs.create`). Gecko opens and loads it; this just registers it as a tab.
+     */
+    fun createTabForEngine(url: String?, private: Boolean, parentId: String?, select: Boolean): Pair<String, GeckoSession> {
+        val parent = parentId?.let { store.state.value.tab(it) }
+        val desktop = parent?.desktopMode ?: settings.current.desktopModeByDefault
+        val id = UUID.randomUUID().toString()
+        store.dispatch(
+            BrowserAction.AddTab(
+                TabState(id = id, url = url.orEmpty(), isPrivate = private, parentId = parentId, desktopMode = desktop, loading = url != null),
+                select = select,
+            ),
+        )
+        val session = newSession(id, private, desktop)
+        if (select) onTabSelectedDeferred(id) else _events.tryEmit(EngineEvent.OpenedInBackground(id))
+        return id to session
     }
 
     private fun onTabSelectedDeferred(tabId: String) {
