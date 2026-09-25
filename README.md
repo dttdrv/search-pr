@@ -105,8 +105,9 @@ crash and uploading screenshots.
 
 ### Releases
 
-Pushing a tag such as `v1.0.1` runs `release.yml`, which builds one APK per CPU type
-(arm64-v8a, armeabi-v7a, x86_64) and publishes them with checksums as a GitHub Release.
+Pushing a tag such as `v1.0.1`, or running `release.yml` by hand with a tag name (Actions ›
+Release › Run workflow), builds one APK per CPU type (arm64-v8a, armeabi-v7a, x86_64) and
+publishes them with checksums as a GitHub Release, creating the tag if needed.
 
 Signing uses the repository secret `PANE_KEYSTORE_BASE64` (a base64-encoded PKCS12 keystore;
 optional `PANE_KEYSTORE_PASSWORD`, default `pane-release`, and `PANE_KEY_ALIAS`, default `pane`).
@@ -119,8 +120,8 @@ base64 -w0 pane.p12   # paste into Settings › Secrets and variables › Action
 ```
 
 Without the secret, a release is signed with a one-off key: it installs fine, but the next
-release won't update it in place. Re-run the workflow for an existing tag (Actions › Release ›
-Run workflow) to rebuild its APKs after adding the secret. Plain CI release builds use the debug
+release won't update it in place. Run the workflow from an existing tag to rebuild its APKs
+after adding the secret. Plain CI release builds use the debug
 key.
 
 ## Licences

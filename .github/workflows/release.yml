@@ -1,14 +1,16 @@
 name: Release
 
 # Pushing a tag like v1.2.3 builds signed per-CPU APKs and publishes them as a GitHub Release.
-# Running it by hand rebuilds an existing tag's APKs (e.g. after adding the signing secret).
+# Running it by hand builds the chosen branch or tag and publishes it under the given tag,
+# creating the tag if needed (or replacing an existing release's APKs, e.g. after adding the
+# signing secret: run it from that tag).
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to (re)build, e.g. v1.0.0
+        description: Release tag, e.g. v1.0.0 (created at this commit if it doesn't exist)
         required: true
 
 permissions:
@@ -25,8 +27,6 @@ jobs:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '21' }
       - uses: gradle/actions/setup-gradle@v4
@@ -139,6 +139,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           name: Pane ${{ env.VERSION }}
           body_path: notes.md
           files: |
