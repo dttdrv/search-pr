@@ -7,30 +7,35 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: List latest stable versions
+      - name: Versions
         run: |
-          probe() {
-            local repo="$1" path="$2"
-            local v=$(curl -sL "$repo/$path/maven-metadata.xml" | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' | grep -viE 'alpha|beta|rc|dev|snapshot|-m[0-9]' | tail -6 | tr '\n' ' ')
-            echo "PROBE $path => $v"
-          }
           G=https://dl.google.com/dl/android/maven2
-          for p in com/android/tools/build/gradle androidx/compose/compose-bom androidx/activity/activity-compose \
-                   androidx/core/core-ktx androidx/lifecycle/lifecycle-runtime-compose androidx/room/room-runtime \
-                   androidx/datastore/datastore-preferences androidx/biometric/biometric androidx/work/work-runtime-ktx \
-                   androidx/browser/browser androidx/core/core-splashscreen androidx/compose/material3/material3 \
-                   androidx/compose/ui/ui androidx/compose/animation/animation androidx/sqlite/sqlite-bundled \
-                   androidx/test/ext/junit androidx/test/espresso/espresso-core androidx/test/uiautomator/uiautomator \
-                   androidx/profileinstaller/profileinstaller androidx/compose/material/material-icons-extended; do
-            probe $G $p
+          vers() { curl -sL "$1/$2/maven-metadata.xml" | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' | grep -viE 'alpha|beta|rc|dev|snapshot|-m[0-9]' | sort -V | tail -${3:-40} | tr '\n' ' '; }
+          for p in com/android/tools/build/gradle androidx/compose/compose-bom androidx/activity/activity-compose androidx/core/core-ktx androidx/lifecycle/lifecycle-runtime-compose androidx/room/room-runtime androidx/datastore/datastore-preferences androidx/work/work-runtime-ktx androidx/browser/browser androidx/profileinstaller/profileinstaller; do
+            echo "V $p => $(vers $G $p 30)"
           done
-          M=https://maven.mozilla.org/maven2
-          for p in org/mozilla/geckoview/geckoview org/mozilla/geckoview/geckoview-arm64-v8a; do
-            curl -sL "$M/$p/maven-metadata.xml" | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' | tail -8 | sed "s|^|PROBE $p => |"
+          echo "V geckoview => $(curl -sL https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview/maven-metadata.xml | grep -o '<version>[^<]*</version>' | sed 's/<[^>]*>//g' | sort -V | tail -12 | tr '\n' ' ')"
+          echo "LATEST gecko: $(curl -sL https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview/maven-metadata.xml | grep -E '<release>|<latest>')"
+          echo "V kotlin => $(vers https://repo1.maven.org/maven2 org/jetbrains/kotlin/kotlin-gradle-plugin 20)"
+          echo "SDK platforms on runner: $(ls $ANDROID_HOME/platforms) | build-tools: $(ls $ANDROID_HOME/build-tools | tr '\n' ' ')"
+          echo "Gradle on runner: $(gradle --version 2>/dev/null | grep Gradle)"
+      - name: minCompileSdk of candidate AARs
+        run: |
+          G=https://dl.google.com/dl/android/maven2
+          chk() { curl -sL -o x.aar "$G/$1/$2/$3/$(basename $2)-$3.aar"; echo "AAR $2:$3 => $(unzip -p x.aar META-INF/com/android/build/gradle/aar-metadata.properties 2>/dev/null | tr '\n' ' ')"; }
+          for v in 1.9.0 1.9.5 1.10.0 1.10.5 1.11.0 1.12.0; do chk androidx/compose/ui ui-android $v; done
+          for v in 1.10.1 1.11.0 1.12.0 1.13.0; do chk androidx/activity activity $v; done
+          for v in 1.16.0 1.17.0 1.18.0 1.19.0; do chk androidx/core core $v; done
+          for v in 1.3.2 1.4.0; do chk androidx/compose/material3 material3-android $v; done
+      - name: GeckoView API dump
+        run: |
+          M=https://maven.mozilla.org/maven2/org/mozilla/geckoview/geckoview
+          V=$(curl -sL $M/maven-metadata.xml | grep -o '<release>[^<]*' | sed 's/<release>//')
+          echo "Using $V"
+          curl -sL -o gv.aar "$M/$V/geckoview-$V.aar"; ls -la gv.aar
+          curl -sL -o gv.pom "$M/$V/geckoview-$V.pom"; grep -A3 '<dependency>' gv.pom | grep -E 'artifactId|version' | tr -s ' ' | paste - - 
+          unzip -p gv.aar AndroidManifest.xml | grep -iE 'minSdk|targetSdk'
+          unzip -o -q gv.aar classes.jar
+          for c in GeckoRuntimeSettings\$Builder ContentBlocking\$Settings\$Builder WebExtensionController WebExtensionController\$PromptDelegate WebExtension WebExtension\$Action WebExtension\$ActionDelegate WebExtension\$MetaData WebExtension\$SessionTabDelegate WebExtension\$TabDelegate WebExtension\$MessageDelegate GeckoSession\$ContentDelegate GeckoSession\$NavigationDelegate GeckoSession\$ProgressDelegate GeckoSession\$PermissionDelegate GeckoSession\$ScrollDelegate GeckoSession\$HistoryDelegate GeckoSessionSettings\$Builder GeckoView GeckoSession\$PromptDelegate StorageController GeckoSession\$SelectionActionDelegate GeckoSession\$MediaSessionDelegate; do
+            echo "===== $c"; javap -public -cp classes.jar "org.mozilla.geckoview.$c" | grep -vE '^Compiled|^\}' | sed -E 's/org\.mozilla\.geckoview\.//g; s/java\.lang\.//g; s/androidx\.annotation\.//g'
           done
-          C=https://repo1.maven.org/maven2
-          probe $C com/google/devtools/ksp/com.google.devtools.ksp.gradle.plugin
-          probe $C org/jetbrains/kotlinx/kotlinx-serialization-json
-          probe $C org/jetbrains/kotlinx/kotlinx-coroutines-android
-          probe $C io/github/takahirom/roborazzi/roborazzi
-          probe $C org/robolectric/robolectric
