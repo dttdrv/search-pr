@@ -59,7 +59,6 @@ import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.extensions.Amo
 import app.pane.core.search.SearchEngines
-import org.mozilla.geckoview.WebExtensionController
 
 /**
  * First launch: what Pane is, three choices that matter (search engine, content blocker, default
@@ -96,13 +95,8 @@ private fun OnboardingContent(onDone: () -> Unit) {
     fun finish() {
         container.settings.update { it.copy(searchEngineId = choices[engine].id, onboardingDone = true) }
         if (blocker) {
-            // Gecko asks for the add-on's permissions through the normal install sheet.
-            runCatching {
-                container.runtime.webExtensionController.install(
-                    Amo.latestXpiUrl("ublock-origin"),
-                    WebExtensionController.INSTALLATION_METHOD_ONBOARDING,
-                )
-            }
+            // The add-on's permissions are confirmed through the normal install sheet.
+            container.extensions.install(Amo.latestXpiUrl("ublock-origin"), slug = "ublock-origin")
         }
         onDone()
     }
