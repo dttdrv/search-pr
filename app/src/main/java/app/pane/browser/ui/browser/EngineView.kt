@@ -37,6 +37,10 @@ fun EngineView(
             // A locked private page is covered on screen; screen readers mustn't walk into it either.
             view.importantForAccessibility =
                 if (hidden) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+            // Password managers only see views marked important: on AUTO, Android drops GeckoView (no id,
+            // no hints) from the autofill structure, and with it every login form on the page.
+            view.importantForAutofill =
+                if (hidden) View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS else View.IMPORTANT_FOR_AUTOFILL_YES
             val session = container.sessions.session(tab?.id)?.takeIf { it.isOpen }
             if (view.session !== session) {
                 if (view.session != null) view.releaseSession()
