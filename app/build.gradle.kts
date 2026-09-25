@@ -5,7 +5,10 @@ plugins {
 
 android {
     namespace = "app.pane.browser"
-    compileSdk = 37
+    // GeckoView requires the 37.1 minor SDK.
+    compileSdk {
+        version = release(37) { minorApiLevel = 1 }
+    }
 
     defaultConfig {
         applicationId = "app.pane.browser"

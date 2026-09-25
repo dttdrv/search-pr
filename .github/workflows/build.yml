@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '21' }
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew -p core test --stacktrace
+      - run: ./gradlew -p core test
 
   android:
     name: Assemble, lint, unit test
@@ -30,13 +30,21 @@ jobs:
         with: { distribution: temurin, java-version: '21' }
       - uses: gradle/actions/setup-gradle@v4
       - name: Accept SDK licenses
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
       - name: Assemble debug
-        run: ./gradlew :app:assembleDebug -Ppane.abis=arm64-v8a,x86_64 --stacktrace
+        run: ./gradlew :app:assembleDebug -Ppane.abis=arm64-v8a,x86_64 --continue 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
       - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest -Ppane.abis=arm64-v8a,x86_64
+        run: ./gradlew :app:testDebugUnitTest -Ppane.abis=arm64-v8a,x86_64 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
       - name: Lint
-        run: ./gradlew :app:lintDebug -Ppane.abis=arm64-v8a,x86_64
+        run: ./gradlew :app:lintDebug -Ppane.abis=arm64-v8a,x86_64 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
+      - name: Error summary
+        if: failure()
+        run: |
+          echo "==== ERROR SUMMARY ===="
+          grep -E '^e: |^w: .*(deprecated|unchecked)|error:|Error:' build.log | grep -vE '^w: ' | sed -E 's|file:///home/runner/work/search-pr/search-pr/||' | sort -u | head -150
+          echo "==== WHAT WENT WRONG ===="
+          grep -A12 'What went wrong' build.log | head -60
+          if ls app/build/reports/lint-results-debug.txt >/dev/null 2>&1; then echo "==== LINT ===="; head -150 app/build/reports/lint-results-debug.txt; fi
       - name: Upload lint report
         if: always()
         uses: actions/upload-artifact@v4
