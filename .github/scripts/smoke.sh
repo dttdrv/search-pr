@@ -48,6 +48,34 @@ ui desc "Menu"
 sleep 2
 ui text "Extensions"
 shot 08-extensions 4
+ui text "Browse Add-ons"
+shot 08b-addon-store 8
+adb shell input keyevent KEYCODE_BACK
+sleep 2
+adb shell input keyevent KEYCODE_BACK
+sleep 2
+
+ui desc "Menu"
+sleep 2
+adb shell input swipe 540 1900 540 700 300
+sleep 1
+ui text "History"
+shot 08c-history 3
+adb shell input keyevent KEYCODE_BACK
+sleep 2
+
+ui desc "Menu"
+sleep 2
+ui text "Bookmark"
+sleep 2
+adb shell input keyevent KEYCODE_BACK
+sleep 1
+ui desc "Menu"
+sleep 2
+adb shell input swipe 540 1900 540 700 300
+sleep 1
+ui text "Bookmarks"
+shot 08d-bookmarks 3
 adb shell input keyevent KEYCODE_BACK
 sleep 2
 
