@@ -208,7 +208,7 @@ internal data class AutofillStatus(
             val pm = context.packageManager
             val bitwardenInstalled = pm.getLaunchIntentForPackage(BITWARDEN) != null
             val afm = context.getSystemService(AutofillManager::class.java)
-            if (afm == null || !afm.hasAutofillFeature() || !afm.isAutofillSupported) {
+            if (afm == null || !afm.isAutofillSupported) {
                 return AutofillStatus(false, false, null, null, bitwardenInstalled)
             }
             // Android 9+ names the service; 8.x only says whether one is active for this app.
