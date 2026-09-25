@@ -100,8 +100,8 @@ fun PasswordsScreen() {
                 row {
                     ListRow(
                         title = "Autofill Service",
+                        subtitle = status.serviceLabel ?: if (status.enabled) "On" else "None",
                         leading = { IconTile(PaneIcons.Key, TileColors.Gray) },
-                        value = status.serviceLabel ?: if (status.enabled) "On" else "Off",
                         onClick = chooseService,
                     )
                 }
@@ -148,8 +148,9 @@ private fun AutofillStatusCard(status: AutofillStatus, onChoose: () -> Unit) {
     val colors = PaneTheme.colors
     val (title, body) = when {
         !status.supported -> "Autofill Unavailable" to "This device doesn't offer an autofill service."
-        status.serviceLabel != null -> "${status.serviceLabel} Fills Your Logins" to
-            "Tap a login field on any site to pick an account. New passwords are offered for saving after you sign in."
+        status.serviceLabel != null -> "Autofill Is On" to
+            "${status.serviceLabel} fills your logins. Tap a login field on any site to pick an account; new " +
+            "passwords are offered for saving after you sign in."
         status.enabled -> "Autofill Is On" to
             "Tap a login field on any site to pick an account from your password manager."
         else -> "Autofill Is Off" to

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -145,7 +146,15 @@ fun ListRow(
             }
         }
         if (value != null) {
-            Text(value, style = PaneTheme.type.body, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Capped so a long value (an app name, say) truncates instead of squeezing the title.
+            Text(
+                value,
+                style = PaneTheme.type.body,
+                color = colors.secondaryLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 140.dp),
+            )
         }
         trailing?.invoke(this)
         if (onClick != null && showChevron) {

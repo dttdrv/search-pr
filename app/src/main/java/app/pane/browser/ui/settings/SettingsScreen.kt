@@ -90,7 +90,8 @@ fun SettingsScreen() {
                     ListRow(
                         title = "Passwords & Autofill",
                         leading = { IconTile(PaneIcons.Key, TileColors.Gray) },
-                        value = autofill.serviceLabel ?: if (autofill.enabled) "On" else "Off",
+                        // Short names only ("Bitwarden"); "Google Play services" would crowd the title.
+                        value = autofill.serviceLabel?.takeIf { it.length <= 12 } ?: if (autofill.enabled) "On" else "Off",
                         onClick = { navigator.push(Route.PasswordSettings) },
                     )
                 }
