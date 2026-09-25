@@ -76,15 +76,6 @@ if menu "Bookmarks"; then shot 08d-bookmarks 3; back; fi
 front
 if menu "Reader View"; then shot 08e-reader 5; fi
 
-# Private mode: new private tab from the menu, then the overview.
-front
-if menu "New Private Tab"; then
-  sleep 2
-  ui text "Cancel" || back
-  shot 09-private 3
-  if ui desc-contains " tabs"; then shot 10-private-tabs 4; ui text "Done"; sleep 2; fi
-fi
-
 # Passwords settings: status card, then the system picker for the autofill service.
 front
 if menu "Settings"; then
@@ -104,6 +95,16 @@ shot 13-landscape 4
 adb shell settings put system user_rotation 0
 sleep 3
 
+# Private mode: new private tab from the menu, then the overview. (Screenshots come out blank:
+# the window is FLAG_SECURE while private tabs are on screen.)
+front
+if menu "New Private Tab"; then
+  sleep 2
+  ui text "Cancel" || back
+  shot 09-private 3
+  if ui desc-contains " tabs"; then shot 10-private-tabs 4; ui text "Done"; sleep 2; fi
+fi
+
 # Autofill: switch on the debug probe (a stand-in password manager) and open a real login form.
 # It must receive the page's fields with the site's domain, exactly what Bitwarden matches on.
 adb shell settings put secure autofill_service app.pane.browser/app.pane.browser.debug.ProbeAutofillService
@@ -113,12 +114,13 @@ shot 12-login 15
 # The username field is autofocused; tap it anyway in case focus landed elsewhere.
 ui any-contains "Username or email" || adb shell input tap $((W / 2)) $((H * 38 / 100))
 shot 12b-autofill-offer 4
-if ui text "pane-probe-user"; then
-  shot 12c-filled 3
-  # Submitting the form commits the autofill session, which is when a password manager offers to save.
-  adb shell input keyevent KEYCODE_ENTER
-  sleep 8
-fi
+# Sign in by hand: submitting commits the autofill session, which is when a password manager
+# offers to save the new login (Android shows its save sheet; accepting it reaches the service).
+adb shell input text "pane-probe-user"
+ui text "Password" && adb shell input text "not-a-real-password"
+adb shell input keyevent KEYCODE_ENTER
+shot 12c-save-offer 6
+ui text "Save" && sleep 3
 adb logcat -d -s PaneAutofillProbe:I > shots/autofill.txt
 echo "==== Autofill probe ===="
 cat shots/autofill.txt
