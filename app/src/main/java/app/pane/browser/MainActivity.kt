@@ -12,6 +12,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import app.pane.browser.engine.ClearOnExit
 import app.pane.browser.ui.AppRoot
 import app.pane.browser.ui.browser.KeyboardShortcuts
 import app.pane.browser.ui.navigation.Navigator
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
         setContent { AppRoot(container, navigator) }
 
         lifecycleScope.launch {
+            if (ClearOnExit.isPending(container)) ClearOnExit.run(container)
             val restored = container.store.state.value.tabs.isNotEmpty() || container.sessions.restore()
             val handled = savedInstanceState == null && handleIntent(intent)
             if (!handled && !restored) container.browser.newTab(private = false)
@@ -50,6 +52,15 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         lifecycleScope.launch { container.sessions.persistNow() }
+    }
+
+    override fun onDestroy() {
+        // Leaving Pane with Back (or swiping it away) counts as exiting.
+        if (isFinishing && container.settings.current.clearOnExit) {
+            ClearOnExit.markPending(container)
+            container.scope.launch { ClearOnExit.run(container) }
+        }
+        super.onDestroy()
     }
 
     /** Opens links, searches and shared text from other apps. Returns true if a tab was opened. */
