@@ -92,6 +92,9 @@ class SessionManager(
     var onExternalResponse: (tabId: String, response: WebResponse) -> Unit = { _, _ -> }
     var onContextMenu: (tabId: String, x: Int, y: Int, element: GeckoSession.ContentDelegate.ContextElement) -> Unit = { _, _, _, _ -> }
 
+    /** Called after a tab is gone for good, to drop its prompts and snapshots. */
+    var onTabClosed: (tabId: String) -> Unit = {}
+
     fun session(tabId: String?): GeckoSession? = tabId?.let { sessions[it] }
 
     val liveSessionCount: Int get() = sessions.size
@@ -142,7 +145,7 @@ class SessionManager(
         }
         activeTabId = tabId
         val tab = store.state.value.tab(tabId) ?: return
-        val session = if (tab.url.isNotEmpty()) ensureSession(tabId) else sessions[tabId]
+        val session = if (tab.url.isNotEmpty()) ensureSession(tabId, loadIfEmpty = true) else sessions[tabId]
         session?.let {
             it.setActive(true)
             runtime.webExtensionController.setTabActive(it, true)
@@ -154,6 +157,7 @@ class SessionManager(
         store.dispatch(BrowserAction.RemoveTab(tabId))
         destroySession(tabId)
         engineState.remove(tabId)
+        onTabClosed(tabId)
         store.state.value.selectedTabId?.let(::onTabSelected)
         schedulePersist()
     }
@@ -164,6 +168,7 @@ class SessionManager(
         ids.forEach {
             destroySession(it)
             engineState.remove(it)
+            onTabClosed(it)
         }
         store.state.value.selectedTabId?.let(::onTabSelected)
         schedulePersist()
@@ -238,13 +243,19 @@ class SessionManager(
 
     // region Session construction
 
-    fun ensureSession(tabId: String): GeckoSession {
+    /**
+     * Returns the tab's session, creating and opening it if needed. A new session resumes the
+     * tab's saved history when there is one; otherwise, with [loadIfEmpty], it loads the tab's URL.
+     */
+    fun ensureSession(tabId: String, loadIfEmpty: Boolean = false): GeckoSession {
         sessions[tabId]?.let { return it }
         val tab = store.state.value.tab(tabId) ?: error("No tab $tabId")
         val session = newSession(tabId, tab.isPrivate, tab.desktopMode)
         session.open(runtime)
-        engineState[tabId]?.let { state ->
-            GeckoSession.SessionState.fromString(state)?.let(session::restoreState)
+        val saved = engineState[tabId]?.let { GeckoSession.SessionState.fromString(it) }
+        when {
+            saved != null -> session.restoreState(saved)
+            loadIfEmpty && tab.url.isNotEmpty() -> session.loadUri(tab.url)
         }
         return session
     }
@@ -472,7 +483,7 @@ class SessionManager(
         override fun onHistoryStateChange(session: GeckoSession, historyList: GeckoSession.HistoryDelegate.HistoryList) {
             val index = historyList.currentIndex
             val back = if (index > 0) historyList[index - 1] else null
-            backEntries[tabId] = back?.let { BackEntry(it.uri, it.title.orEmpty()) }
+            if (back == null) backEntries.remove(tabId) else backEntries[tabId] = BackEntry(back.uri, back.title.orEmpty())
         }
 
         override fun getVisited(session: GeckoSession, urls: Array<String>): GeckoResult<BooleanArray>? {

@@ -61,6 +61,10 @@ class AppContainer(val app: Application) {
             downloads.onExternalResponse(tabId, response, store.state.value.tab(tabId)?.isPrivate == true)
         }
         sessions.onTrackerBlocked = privacyStats::increment
+        sessions.onTabClosed = { tabId ->
+            prompts.dismissForTab(tabId)
+            thumbnails.remove(tabId)
+        }
         sessions.onContextMenu = { tabId, x, y, element ->
             ContextMenus.request(prompts, tabId, store.state.value.tab(tabId)?.isPrivate == true, x, y, element)
         }
