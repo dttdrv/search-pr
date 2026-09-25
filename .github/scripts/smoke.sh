@@ -36,6 +36,9 @@ sleep 2
 
 ui desc "Menu"
 sleep 2
+# Settings sits at the bottom of the menu sheet.
+adb shell input swipe 540 1900 540 700 300
+sleep 1
 ui text "Settings"
 shot 07-settings 3
 adb shell input keyevent KEYCODE_BACK

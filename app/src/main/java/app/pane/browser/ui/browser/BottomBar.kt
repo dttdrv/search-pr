@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import app.pane.browser.ui.components.ChromeButton
@@ -320,7 +321,11 @@ fun AddressPill(
             }
             Text(
                 text = host.ifEmpty { "Search or enter website" },
-                style = PaneTheme.type.body.copy(fontSize = lerp(16.sp, 12.sp, collapse), fontWeight = if (host.isEmpty()) FontWeight.Normal else FontWeight.Medium),
+                style = PaneTheme.type.body.copy(
+                    fontSize = lerp(15.sp, 12.sp, collapse),
+                    letterSpacing = (-0.01).em,
+                    fontWeight = if (host.isEmpty()) FontWeight.Normal else FontWeight.Medium,
+                ),
                 color = if (host.isEmpty()) colors.secondaryLabel else colors.label,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

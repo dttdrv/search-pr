@@ -55,6 +55,7 @@ class AppContainer(val app: Application) {
     val extensions = ExtensionsManager(app, runtime, sessions, browser, store, fetcher, scope)
 
     init {
+        downloads.runtime = runtime
         sessions.promptDelegateFactory = { tabId -> WebPromptDelegate(tabId, prompts) }
         sessions.permissionDelegateFactory = { tabId -> WebPermissionDelegate(tabId, prompts) }
         sessions.onExternalResponse = { tabId, response ->

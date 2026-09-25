@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -15,6 +16,7 @@ import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.ToastHost
 import app.pane.browser.ui.components.ToastState
 import app.pane.browser.ui.extensions.ExtensionOverlays
+import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Navigator
 import app.pane.browser.ui.navigation.RouteContent
@@ -27,6 +29,7 @@ import app.pane.browser.ui.theme.PaneTheme
 fun AppRoot(container: AppContainer, navigator: Navigator) {
     val settings by container.settings.state.collectAsStateWithLifecycle()
     val toasts = remember { ToastState() }
+    LaunchedEffect(container) { container.downloads.events.collect { toasts.show(it, PaneIcons.Download) } }
     CompositionLocalProvider(
         LocalAppContainer provides container,
         LocalNavigator provides navigator,
