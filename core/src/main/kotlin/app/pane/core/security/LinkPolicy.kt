@@ -61,7 +61,7 @@ data class IntentUri(
                     "package" -> pkg = value
                     "action" -> action = value
                     "S.browser_fallback_url" -> fallback = try {
-                        URLDecoder.decode(value, Charsets.UTF_8)
+                        URLDecoder.decode(value, "UTF-8")
                     } catch (_: IllegalArgumentException) {
                         null
                     }

@@ -24,6 +24,7 @@ object ClearOnExit {
     suspend fun run(container: AppContainer) {
         container.browser.closeAll(private = true)
         container.browser.closeAll(private = false)
+        container.browser.clearRecentlyClosed()
         container.sessions.deletePersistedSession()
         container.history.clear()
         container.thumbnails.clearAll()

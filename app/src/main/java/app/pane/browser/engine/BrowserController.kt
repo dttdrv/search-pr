@@ -2,6 +2,7 @@ package app.pane.browser.engine
 
 import app.pane.browser.settings.SettingsStore
 import app.pane.core.search.SearchEngines
+import app.pane.core.tabs.BrowserAction
 import app.pane.core.tabs.BrowserState
 import app.pane.core.tabs.BrowserStore
 import app.pane.core.tabs.TabState
@@ -34,7 +35,8 @@ class BrowserController(
                 is InputAction.Navigate -> action.url
                 is InputAction.Search -> SearchEngines.byId(settings.current.searchEngineId).searchUrl(action.query)
                 is InputAction.External -> {
-                    sessions.load(tabId ?: return, action.url)
+                    // Handed straight to the "Open in…" flow; the tab itself doesn't navigate.
+                    sessions.openExternally(tabId, action.url)
                     return
                 }
             }
@@ -69,6 +71,9 @@ class BrowserController(
     fun closeAll(private: Boolean) = sessions.closeAllTabs(private)
 
     fun undoClose(): Boolean = sessions.undoCloseTab()
+
+    /** Forgets closed tabs, so cleared browsing data doesn't linger on the start page. */
+    fun clearRecentlyClosed() = store.dispatch(BrowserAction.ClearRecentlyClosed)
 
     fun goBack() = store.state.value.selectedTabId?.let(sessions::goBack)
     fun goForward() = store.state.value.selectedTabId?.let(sessions::goForward)

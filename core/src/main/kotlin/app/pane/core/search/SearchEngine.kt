@@ -31,7 +31,7 @@ data class SearchEngine(
             .firstOrNull { it.startsWith("$param=") }
             ?.substringAfter('=') ?: return null
         return try {
-            java.net.URLDecoder.decode(query, Charsets.UTF_8).takeIf { it.isNotBlank() }
+            java.net.URLDecoder.decode(query, "UTF-8").takeIf { it.isNotBlank() }
         } catch (_: IllegalArgumentException) {
             null
         }
@@ -39,7 +39,7 @@ data class SearchEngine(
 
     companion object {
         const val TERMS = "{searchTerms}"
-        private fun encode(q: String) = URLEncoder.encode(q, Charsets.UTF_8)
+        private fun encode(q: String) = URLEncoder.encode(q, "UTF-8")
     }
 }
 

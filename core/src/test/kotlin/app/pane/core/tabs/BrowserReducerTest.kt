@@ -64,6 +64,17 @@ class BrowserReducerTest {
         assertEquals("b", selected)
     }
 
+    @Test fun clearRecentlyClosedForgetsClosedTabs() {
+        add("a"); add("b"); add("c")
+        store.dispatch(BrowserAction.RemoveTab("c"))
+        store.dispatch(BrowserAction.RemoveAllTabs(private = false))
+        assertEquals(3, store.state.value.recentlyClosed.size)
+        store.dispatch(BrowserAction.ClearRecentlyClosed)
+        assertTrue(store.state.value.recentlyClosed.isEmpty())
+        store.dispatch(BrowserAction.UndoClose)
+        assertTrue(ids.isEmpty())
+    }
+
     @Test fun removeAllOnlyTouchesOneMode() {
         add("a"); add("p", private = true); add("b")
         store.dispatch(BrowserAction.RemoveAllTabs(private = true))

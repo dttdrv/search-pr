@@ -97,7 +97,7 @@ object Amo {
     }
 
     private fun JsonObject.str(key: String) = (this[key] as? JsonPrimitive)?.takeIf { it !is JsonNull }?.contentOrNull
-    private fun enc(s: String) = URLEncoder.encode(s, Charsets.UTF_8)
+    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 }
 
 /** A hand-picked shortlist shown before the user searches, so the store never feels empty offline. */

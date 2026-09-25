@@ -8,6 +8,10 @@ sealed interface BrowserAction {
     data class SelectTab(val id: String) : BrowserAction
     data class MoveTab(val id: String, val toIndex: Int) : BrowserAction
     data object UndoClose : BrowserAction
+
+    /** Forgets closed tabs, e.g. when browsing data is cleared. */
+    data object ClearRecentlyClosed : BrowserAction
+
     data class Restore(val tabs: List<TabState>, val selectedTabId: String?) : BrowserAction
 
     /** Any change to a single tab's fields: url, title, progress, … */

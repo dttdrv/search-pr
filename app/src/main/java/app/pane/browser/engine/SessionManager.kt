@@ -13,6 +13,7 @@ import app.pane.core.tabs.BrowserStore
 import app.pane.core.tabs.PersistedSession
 import app.pane.core.tabs.SecurityState
 import app.pane.core.tabs.TabState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -136,6 +137,15 @@ class SessionManager(
 
     /** Keeps exactly one session active (rendering, timers at full speed) and recreates it if needed. */
     fun onTabSelected(tabId: String) {
+        // A stale id (a tab closed since a suggestion or toast was shown) must not deactivate the page on screen.
+        val tab = store.state.value.tab(tabId) ?: return
+        val session = if (tab.url.isNotEmpty()) ensureSession(tabId, loadIfEmpty = true) else sessions[tabId]
+        activate(tabId, session)
+        trimSessions()
+    }
+
+    /** Makes [tabId] the active tab: its [session], if any, runs at full speed and the previous one doesn't. */
+    private fun activate(tabId: String, session: GeckoSession?) {
         val previous = activeTabId
         if (previous != null && previous != tabId) {
             sessions[previous]?.let {
@@ -144,13 +154,10 @@ class SessionManager(
             }
         }
         activeTabId = tabId
-        val tab = store.state.value.tab(tabId) ?: return
-        val session = if (tab.url.isNotEmpty()) ensureSession(tabId, loadIfEmpty = true) else sessions[tabId]
         session?.let {
             it.setActive(true)
             runtime.webExtensionController.setTabActive(it, true)
         }
-        trimSessions()
     }
 
     fun closeTab(tabId: String) {
@@ -209,11 +216,19 @@ class SessionManager(
 
     // region Navigation
 
+    /** Navigates [tabId] to [url]. Does nothing if the tab has closed meanwhile (e.g. a late prompt's fallback). */
     fun load(tabId: String, url: String, flags: Int = GeckoSession.LOAD_FLAGS_NONE, headers: Map<String, String>? = null) {
+        if (store.state.value.tab(tabId) == null) return
         store.updateTab(tabId) { it.copy(url = url, loading = true, progress = 5, crashed = false) }
         val loader = GeckoSession.Loader().uri(url).flags(flags)
         if (headers != null) loader.additionalHeaders(headers)
-        ensureSession(tabId).load(loader)
+        ensureSession(tabId)?.load(loader)
+    }
+
+    /** Offers to open [uri] (a typed `mailto:`, `tel:`, …) in another app, without navigating the tab. */
+    fun openExternally(tabId: String?, uri: String, userGesture: Boolean = true) {
+        val fallback = IntentUri.parse(uri)?.fallbackUrl
+        _events.tryEmit(EngineEvent.ExternalLink(tabId, uri, fallback, userGesture))
     }
 
     fun goBack(tabId: String) = sessions[tabId]?.goBack()
@@ -244,14 +259,18 @@ class SessionManager(
     // region Session construction
 
     /**
-     * Returns the tab's session, creating and opening it if needed. A new session resumes the
-     * tab's saved history when there is one; otherwise, with [loadIfEmpty], it loads the tab's URL.
+     * Returns the tab's session, creating and opening it if needed, or null if there is no such
+     * tab. A new session resumes the tab's saved history when there is one; otherwise, with
+     * [loadIfEmpty], it loads the tab's URL.
      */
-    fun ensureSession(tabId: String, loadIfEmpty: Boolean = false): GeckoSession {
+    fun ensureSession(tabId: String, loadIfEmpty: Boolean = false): GeckoSession? {
         sessions[tabId]?.let { return it }
-        val tab = store.state.value.tab(tabId) ?: error("No tab $tabId")
+        val tab = store.state.value.tab(tabId) ?: return null
         val session = newSession(tabId, tab.isPrivate, tab.desktopMode)
         session.open(runtime)
+        // E.g. the first load from a start-page tab: the tab is already on screen, so its new
+        // session must be the active one (for rendering, and for extensions' `tabs.query`).
+        if (tabId == store.state.value.selectedTabId) activate(tabId, session)
         val saved = engineState[tabId]?.let { GeckoSession.SessionState.fromString(it) }
         when {
             saved != null -> session.restoreState(saved)
@@ -328,8 +347,9 @@ class SessionManager(
 
         override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) = store.updateTab(tabId) { it.copy(canGoForward = canGoForward) }
 
+        // Loads the app itself starts (GeckoSession.load) come without a gesture flag but are the user's doing.
         override fun onLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? =
-            route(request.uri, request.hasUserGesture)
+            route(request.uri, request.hasUserGesture || request.isDirectNavigation)
 
         override fun onSubframeLoadRequest(session: GeckoSession, request: GeckoSession.NavigationDelegate.LoadRequest): GeckoResult<AllowOrDeny>? =
             when (LinkPolicy.decide(request.uri)) {
@@ -342,8 +362,7 @@ class SessionManager(
             LinkDecision.LoadInBrowser -> null
             LinkDecision.Block -> GeckoResult.deny()
             LinkDecision.AskToOpenExternally -> {
-                val fallback = IntentUri.parse(uri)?.fallbackUrl
-                _events.tryEmit(EngineEvent.ExternalLink(tabId, uri, fallback, userGesture))
+                openExternally(tabId, uri, userGesture)
                 GeckoResult.deny()
             }
         }
@@ -420,7 +439,15 @@ class SessionManager(
             store.updateTab(tabId) { it.copy(title = t) }
             val tab = store.state.value.tab(tabId) ?: return
             if (!tab.isPrivate && t.isNotBlank() && settings.current.rememberHistory && tab.url.startsWith("http")) {
-                scope.launch { history.updateTitle(tab.url, t) }
+                scope.launch {
+                    try {
+                        history.updateTitle(tab.url, t)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Couldn't save title", e)
+                    }
+                }
             }
         }
 
@@ -440,12 +467,14 @@ class SessionManager(
 
         override fun onKill(session: GeckoSession) = handleCrash()
 
+        // activeTabId is kept: the reloaded session is created active and must be deactivated on the next switch.
         private fun handleCrash() {
             sessions.remove(tabId)?.let { runCatching { it.close() } }
+            backEntries.remove(tabId)
             observers.forEach { it.onSessionClosed(tabId) }
             _sessionsVersion.value++
-            if (activeTabId == tabId) activeTabId = null
-            store.updateTab(tabId) { it.copy(crashed = true, loading = false) }
+            // Fullscreen video and playing media died with the page; left set, they'd hide the chrome for good.
+            store.updateTab(tabId) { it.copy(crashed = true, loading = false, fullscreen = false, mediaPlaying = false) }
             _events.tryEmit(EngineEvent.Crashed(tabId))
         }
 
@@ -475,8 +504,18 @@ class SessionManager(
             val title = store.state.value.tab(tabId)?.title
             val result = GeckoResult<Boolean>()
             scope.launch {
-                history.recordVisit(url, title)
-                result.complete(true)
+                var recorded = false
+                try {
+                    history.recordVisit(url, title)
+                    recorded = true
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // E.g. storage full: skip the visit rather than crash, and never leave Gecko waiting.
+                    Log.w(TAG, "Couldn't record visit", e)
+                } finally {
+                    result.complete(recorded)
+                }
             }
             return result
         }
@@ -490,7 +529,18 @@ class SessionManager(
         override fun getVisited(session: GeckoSession, urls: Array<String>): GeckoResult<BooleanArray>? {
             if (private) return GeckoResult.fromValue(BooleanArray(urls.size))
             val result = GeckoResult<BooleanArray>()
-            scope.launch { result.complete(history.visited(urls)) }
+            scope.launch {
+                var visited = BooleanArray(urls.size)
+                try {
+                    visited = history.visited(urls)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Couldn't look up visited links", e)
+                } finally {
+                    result.complete(visited)
+                }
+            }
             return result
         }
     }
@@ -510,7 +560,12 @@ class SessionManager(
     }
 
     suspend fun persistNow() {
-        if (!settings.current.restoreTabs) return
+        if (!settings.current.restoreTabs) {
+            // Tabs saved before the setting was turned off mustn't come back if it's turned on again.
+            // Only the file: engineState still backs this run's closed-to-save-memory tabs.
+            withContext(Dispatchers.IO) { sessionFile.delete() }
+            return
+        }
         val snapshot = store.snapshot { engineState[it] }
         withContext(Dispatchers.IO) {
             val out = runCatching { sessionFile.startWrite() }.getOrNull() ?: return@withContext

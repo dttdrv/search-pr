@@ -11,6 +11,7 @@ object BrowserReducer {
         is BrowserAction.SelectTab -> selectTab(state, action.id, now)
         is BrowserAction.MoveTab -> moveTab(state, action.id, action.toIndex)
         BrowserAction.UndoClose -> undoClose(state, now)
+        BrowserAction.ClearRecentlyClosed -> state.copy(recentlyClosed = emptyList())
         is BrowserAction.Restore -> restore(state, action)
         is BrowserAction.UpdateTab -> state.copy(tabs = state.tabs.map { if (it.id == action.id) action.update(it) else it })
     }

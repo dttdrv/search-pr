@@ -77,5 +77,5 @@ object AddonMatching {
 
     internal fun normalize(name: String): String = name.lowercase().filter { it.isLetterOrDigit() }
 
-    private fun enc(s: String) = URLEncoder.encode(s, Charsets.UTF_8)
+    private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 }
