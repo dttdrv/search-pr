@@ -10,52 +10,28 @@ import android.provider.Settings
 import android.view.autofill.AutofillManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import app.pane.browser.ui.components.ButtonStyle
 import app.pane.browser.ui.components.GroupedSection
-import app.pane.browser.ui.components.IconTile
 import app.pane.browser.ui.components.LargeTitleScaffold
-import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
-import app.pane.browser.ui.components.PrimaryButton
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.library.TileColors
+import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
-import app.pane.browser.ui.theme.ContinuousRoundedShape
-import app.pane.browser.ui.theme.PaneShapes
-import app.pane.browser.ui.theme.PaneTheme
 
 /**
- * Pane keeps no passwords of its own: login forms are handed to Android's autofill service with
- * the site's address, so a password manager such as Bitwarden matches logins by website, fills
- * them, and offers to save new ones. This screen shows which service is doing that and links to
- * the system pickers for changing it.
+ * Pane keeps no passwords of its own: sign-in forms and passkey requests go to whatever password
+ * manager the phone has set up, with the site's address. This screen names that service and links
+ * to the system screens for changing it. Nothing here is specific to any one provider.
  */
 @Composable
 fun PasswordsScreen() {
@@ -79,115 +55,32 @@ fun PasswordsScreen() {
             } catch (_: SecurityException) {
             }
         }
-        toasts.show("Choose it in Settings › Passwords & accounts", PaneIcons.Info)
+        toasts.show("Open your phone's Settings and search for passwords", PaneIcons.Info)
     }
 
-    val chooseService = { launchFirst(*AutofillStatus.pickerIntents(context)) }
-
     LargeTitleScaffold(title = "Passwords", onBack = navigator::pop, backLabel = backLabel) {
-        item(key = "status") { AutofillStatusCard(status, onChoose = chooseService) }
-        item(key = "service") {
+        item(key = "system") {
             GroupedSection(
-                header = "Autofill",
-                footer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    "Your preferred service fills passwords and passkeys in Pane. Pane sends it the site's " +
-                        "address, never your browsing history."
-                } else {
-                    "Your autofill service fills passwords in Pane. Pane sends it the site's address, never " +
-                        "your browsing history."
-                },
+                modifier = Modifier.arrive(0),
+                footer = "Pane never stores your passwords.",
             ) {
                 row {
-                    ListRow(
-                        title = "Autofill Service",
-                        subtitle = status.serviceLabel ?: if (status.enabled) "On" else "None",
-                        leading = { IconTile(PaneIcons.Key, TileColors.Gray) },
-                        onClick = chooseService,
+                    NavRow(
+                        title = "Autofill service",
+                        // What the phone reports as active; nothing is assumed about which app it is.
+                        value = status.serviceLabel ?: if (!status.supported) "Unavailable" else if (status.enabled) "On" else "Not set",
+                        onClick = { launchFirst(*AutofillStatus.pickerIntents(context)) },
                     )
                 }
-            }
-        }
-        item(key = "bitwarden") {
-            GroupedSection(
-                header = "Bitwarden",
-                footer = if (status.bitwardenInstalled) {
-                    "When Bitwarden asks whether to trust Pane for passkeys, allow it once and passkeys work on every site."
-                } else {
-                    "Bitwarden is a free, open-source password manager that works with Pane's autofill."
-                },
-            ) {
-                row {
-                    if (status.bitwardenInstalled) {
-                        ListRow(
-                            title = "Open Bitwarden",
-                            leading = { IconTile(PaneIcons.Shield, TileColors.Blue) },
-                            onClick = {
-                                context.packageManager.getLaunchIntentForPackage(AutofillStatus.BITWARDEN)
-                                    ?.let { launchFirst(it) }
-                            },
-                        )
-                    } else {
-                        ListRow(
-                            title = "Get Bitwarden",
-                            leading = { IconTile(PaneIcons.Download, TileColors.Blue) },
-                            onClick = {
-                                launchFirst(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${AutofillStatus.BITWARDEN}")),
-                                )
-                            },
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    row {
+                        NavRow(
+                            title = "Passkeys",
+                            onClick = { launchFirst(*AutofillStatus.passkeyIntents()) },
                         )
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun AutofillStatusCard(status: AutofillStatus, onChoose: () -> Unit) {
-    val colors = PaneTheme.colors
-    val (title, body) = when {
-        !status.supported -> "Autofill Unavailable" to "This device doesn't offer an autofill service."
-        status.serviceLabel != null -> "Autofill Is On" to
-            "${status.serviceLabel} fills your logins. Tap a login field on any site to pick an account; new " +
-            "passwords are offered for saving after you sign in."
-        status.enabled -> "Autofill Is On" to
-            "Tap a login field on any site to pick an account from your password manager."
-        else -> "Autofill Is Off" to
-            "Choose Bitwarden or another password manager so it can fill logins in Pane."
-    }
-    val ready = status.supported && (status.enabled || status.serviceLabel != null)
-    Column(
-        Modifier
-            .padding(start = 16.dp, end = 16.dp, top = 16.dp)
-            .fillMaxWidth()
-            .clip(PaneShapes.large)
-            .background(colors.surface)
-            .padding(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .clip(ContinuousRoundedShape(12.dp))
-                    .background(if (ready) TileColors.Green else TileColors.Orange),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(if (ready) PaneIcons.Check else PaneIcons.Key, null, tint = Color.White, modifier = Modifier.size(28.dp))
-            }
-            Column(Modifier.weight(1f)) {
-                Text(title, style = PaneTheme.type.headline, color = colors.label)
-                Spacer(Modifier.height(2.dp))
-                Text(body, style = PaneTheme.type.subheadline, color = colors.secondaryLabel)
-            }
-        }
-        if (status.supported && (!ready || (!status.isBitwarden && status.bitwardenInstalled))) {
-            Spacer(Modifier.height(14.dp))
-            PrimaryButton(
-                text = if (status.bitwardenInstalled) "Use Bitwarden" else "Choose Autofill Service",
-                onClick = onChoose,
-                style = if (ready) ButtonStyle.Tinted else ButtonStyle.Filled,
-            )
         }
     }
 }
@@ -198,19 +91,13 @@ internal data class AutofillStatus(
     val enabled: Boolean,
     val servicePackage: String?,
     val serviceLabel: String?,
-    val bitwardenInstalled: Boolean,
 ) {
-    val isBitwarden: Boolean get() = servicePackage == BITWARDEN
-
     companion object {
-        const val BITWARDEN = "com.x8bit.bitwarden"
-
         fun read(context: Context): AutofillStatus {
             val pm = context.packageManager
-            val bitwardenInstalled = pm.getLaunchIntentForPackage(BITWARDEN) != null
             val afm = context.getSystemService(AutofillManager::class.java)
             if (afm == null || !afm.isAutofillSupported) {
-                return AutofillStatus(false, false, null, null, bitwardenInstalled)
+                return AutofillStatus(false, false, null, null)
             }
             // Android 9+ names the service; 8.x only says whether one is active for this app.
             val component: ComponentName? =
@@ -227,23 +114,26 @@ internal data class AutofillStatus(
                 enabled = component != null || afm.isEnabled,
                 servicePackage = servicePackage,
                 serviceLabel = label,
-                bitwardenInstalled = bitwardenInstalled,
             )
         }
 
         /**
-         * The screens where the user picks a password manager, best first. Android 14+ has one
-         * page for passwords, passkeys and autofill; earlier versions have the autofill picker,
-         * which lists every service even though the request names Pane.
+         * The screens where the user picks a password manager, best first: the system's autofill
+         * picker (which lists every service even though the request names Pane), then, on Android
+         * 14+, the page for passwords, passkeys and autofill, then the top of Settings.
          */
         fun pickerIntents(context: Context): Array<Intent> {
             val autofillPicker = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE, Uri.parse("package:${context.packageName}"))
             val fallback = Intent(Settings.ACTION_SETTINGS)
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                arrayOf(Intent(Settings.ACTION_CREDENTIAL_PROVIDER), autofillPicker, fallback)
+                arrayOf(autofillPicker, Intent(Settings.ACTION_CREDENTIAL_PROVIDER), fallback)
             } else {
                 arrayOf(autofillPicker, fallback)
             }
         }
+
+        /** Android 14+'s page for choosing where passkeys live, or the top of Settings. */
+        fun passkeyIntents(): Array<Intent> =
+            arrayOf(Intent(Settings.ACTION_CREDENTIAL_PROVIDER), Intent(Settings.ACTION_SETTINGS))
     }
 }

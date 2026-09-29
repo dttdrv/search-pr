@@ -2,7 +2,7 @@
  * Pane Helper: runs in the top frame of every page.
  *
  * Over a native port ("pane") it tells the app about the page:
- *   { type: "meta", url, themeColor, readerable, reader }
+ *   { type: "meta", url, themeColor, readerable, reader, icons: [{ href, sizes, type, rel }] }
  * and answers the app's requests:
  *   { type: "getMeta" }                              → report again
  *   { type: "reader", enter: true, theme, fontScale } → show Reader View in place
@@ -123,6 +123,37 @@
     return null;
   }
 
+  const MAX_ICONS = 8;
+  const ICON_SELECTOR =
+    'link[rel~="icon" i], link[rel="shortcut icon" i], link[rel~="apple-touch-icon" i], ' +
+    'link[rel~="apple-touch-icon-precomposed" i]';
+
+  /** The icons the page declares, as absolute http(s) URLs. Masks (`mask-icon`) don't match the selector. */
+  function pageIcons() {
+    const icons = [];
+    const seen = new Set();
+    for (const link of document.querySelectorAll(ICON_SELECTOR)) {
+      const raw = (link.getAttribute("href") || "").trim();
+      if (!raw) continue;
+      let href;
+      try {
+        href = new URL(raw, document.baseURI).href;
+      } catch (e) {
+        continue;
+      }
+      if (!/^https?:\/\//i.test(href) || seen.has(href)) continue;
+      seen.add(href);
+      icons.push({
+        href,
+        sizes: (link.getAttribute("sizes") || "").trim().toLowerCase() || null,
+        type: (link.getAttribute("type") || "").trim().toLowerCase() || null,
+        rel: (link.getAttribute("rel") || "").trim().toLowerCase(),
+      });
+      if (icons.length >= MAX_ICONS) break;
+    }
+    return icons;
+  }
+
   function readerBackground() {
     return document.body ? normalizeColor(getComputedStyle(document.body).backgroundColor) : null;
   }
@@ -153,6 +184,14 @@
       readerable: isReaderable(),
       reader: !!reader,
     };
+    // Reader View replaces the head, so there is nothing to read there; the app keeps what it has.
+    if (!reader) {
+      try {
+        meta.icons = pageIcons();
+      } catch (e) {
+        // Leave the icons out; the rest of the report is still useful.
+      }
+    }
     const key = JSON.stringify(meta);
     if (!force && key === lastMeta) return;
     lastMeta = key;
@@ -169,7 +208,11 @@
     }, delay);
   }
 
-  /** Titles and theme colours change as single-page apps navigate. */
+  function isIconLink(node) {
+    return !!node && node.nodeName === "LINK" && /icon/i.test(node.getAttribute("rel") || "");
+  }
+
+  /** Titles, theme colours and icons change as single-page apps navigate. */
   function watchHead() {
     const head = document.head;
     if (!head) return;
@@ -177,12 +220,12 @@
       const target = record.target;
       const node = target && target.nodeType === Node.TEXT_NODE ? target.parentNode : target;
       const name = node ? node.nodeName : "";
-      if (name === "META" || name === "TITLE") return true;
+      if (name === "META" || name === "TITLE" || isIconLink(node)) return true;
       for (const added of record.addedNodes) {
-        if (added.nodeName === "META" || added.nodeName === "TITLE") return true;
+        if (added.nodeName === "META" || added.nodeName === "TITLE" || isIconLink(added)) return true;
       }
       for (const removed of record.removedNodes) {
-        if (removed.nodeName === "META") return true;
+        if (removed.nodeName === "META" || isIconLink(removed)) return true;
       }
       return false;
     };
@@ -193,7 +236,7 @@
       subtree: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ["content", "media", "name"],
+      attributeFilter: ["content", "media", "name", "href", "rel", "sizes"],
     });
   }
 

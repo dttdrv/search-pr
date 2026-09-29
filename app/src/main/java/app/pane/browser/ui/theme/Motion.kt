@@ -13,6 +13,14 @@ import kotlin.math.PI
  * Springs described the way UIKit/SwiftUI describe them: a [response] (seconds for one
  * oscillation, i.e. how quick it feels) and a damping fraction. Everything in Pane moves on these,
  * so gestures hand off to animations without a visible seam.
+ *
+ * Which token for what (use these; don't invent springs at call sites):
+ *  - [snappy]      small things reacting: presses, toggles, icons swapping, counters, chips.
+ *  - [smooth]      things changing place or size without drama: layout, list reflow, text swaps.
+ *  - [bouncy]      things that arrive or land: sheets, the bar returning, a field opening, thumbs.
+ *  - [push]        whole screens and big surfaces travelling: navigation, tab overview closing.
+ *  - [interactive] tracking a finger while it is down.
+ *  - [fade]        opacity only; the one place a tween is right, since a spring's overshoot means nothing.
  */
 object Motion {
     fun stiffness(response: Float): Float = ((2 * PI / response) * (2 * PI / response)).toFloat()

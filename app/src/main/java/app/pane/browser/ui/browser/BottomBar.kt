@@ -1,14 +1,21 @@
 package app.pane.browser.ui.browser
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -19,16 +26,17 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -36,8 +44,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -48,14 +60,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
-import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
-import app.pane.browser.ui.components.ChromeButton
+import app.pane.browser.ui.components.GlassCircle
 import app.pane.browser.ui.components.pressDim
+import app.pane.browser.ui.components.pressScale
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.GlassStrength
 import app.pane.browser.ui.theme.Motion
+import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.glass
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.tabs.SecurityState
 import app.pane.core.tabs.TabState
@@ -64,17 +78,22 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** Heights of the bottom chrome, excluding the navigation bar inset. */
+/** Sizes of the floating bar. The page runs underneath it edge to edge. */
 object BarMetrics {
-    val expanded: Dp = 60.dp
-    val collapsed: Dp = 24.dp
-    val dynamic: Dp get() = expanded - collapsed
+    val pill: Dp = 50.dp
+    val gap: Dp = 10.dp
+
+    /** The strip the bar occupies above the navigation inset, gaps included. */
+    val zone: Dp = pill + gap * 2
+    val mini: Dp = 30.dp
 }
 
 /**
- * Safari-style bottom bar. The address pill shrinks into a slim host label as the page scrolls,
- * swipes sideways to move between tabs (past the last tab it opens a new one), and a swipe up
- * opens the tab overview. While private tabs are [locked] it names no page and doesn't swipe.
+ * The floating bar: back (only when there is somewhere to go), the address pill, the tab count and
+ * the menu, each a piece of frosted glass hovering over the page. The pill swipes sideways to move
+ * between tabs (past the last tab it opens a new one) and up for the tab overview. Scrolling the
+ * page melts the bar into a small host label; tapping that brings it back. While private tabs are
+ * [locked] it names no page and doesn't swipe.
  */
 @Composable
 fun BottomBar(
@@ -83,27 +102,28 @@ fun BottomBar(
     chrome: BrowserChrome,
     navBarHeight: Dp,
     locked: Boolean,
+    private: Boolean,
     onAddress: () -> Unit,
     onBack: () -> Unit,
-    onForward: () -> Unit,
     onTabs: () -> Unit,
     onNewTab: () -> Unit,
     onMenu: () -> Unit,
     onReload: () -> Unit,
     onStop: () -> Unit,
-    onReader: () -> Unit,
     onSiteInfo: () -> Unit,
     onSwipeCommit: (targetTabId: String?) -> Unit,
     onSwipeStart: (neighborId: String?) -> Unit,
     onSwipeCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val colors = PaneTheme.colors
     val haptics = rememberHaptics()
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    val c = chrome.collapse.value
-    val barHeight = BarMetrics.collapsed + BarMetrics.dynamic * (1f - c)
+    val collapse = chrome.collapse
+    // Whole-bar visibility flips rarely; the per-frame motion is read in graphicsLayer lambdas, so
+    // scrolling never recomposes the bar.
+    val miniShown by remember { derivedStateOf { collapse.value > 0.02f } }
+    val rowShown by remember { derivedStateOf { collapse.value < 0.59f } }
 
     val index = tabs.indexOfFirst { it.id == tab?.id }
     val previous = tabs.getOrNull(index - 1)
@@ -111,74 +131,86 @@ fun BottomBar(
 
     val swipe = remember { Animatable(0f) }
     val thresholdPassed = remember { booleanArrayOf(false) }
+    val canGoBack = tab?.canGoBack == true || tab?.parentId != null
 
-    Box(
-        modifier
-            .fillMaxWidth()
-            .height(barHeight + navBarHeight)
-            .background(colors.chrome)
-            .drawBehind {
-                drawLine(colors.chromeBorder, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 0.5.dp.toPx())
-            }
-            .draggable(
-                orientation = Orientation.Vertical,
-                state = rememberDraggableState { },
-                onDragStopped = { velocity -> if (velocity < -600f) onTabs() },
-            ),
-    ) {
-        // Collapsed: just the host, tap to bring the bar back.
-        if (c > 0.02f) {
+    Box(modifier.fillMaxWidth().padding(bottom = navBarHeight)) {
+        // Collapsed: just the host, floating low. Tap to bring the bar back.
+        if (miniShown) {
             Box(
                 Modifier
-                    .fillMaxWidth()
-                    .height(BarMetrics.collapsed)
-                    .graphicsLayer { alpha = ((c - 0.4f) / 0.6f).coerceIn(0f, 1f) }
-                    .pressDim { chrome.expand() },
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 8.dp)
+                    .graphicsLayer {
+                        val t = ((collapse.value - 0.25f) / 0.75f).coerceIn(0f, 1f)
+                        alpha = t
+                        val s = 0.86f + 0.14f * t
+                        scaleX = s
+                        scaleY = s
+                    }
+                    .height(BarMetrics.mini)
+                    .pressScale(pressedScale = 0.94f) { chrome.expand() }
+                    .glass(PaneShapes.pill, GlassStrength.Thin)
+                    .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (locked || tab?.security == SecurityState.Secure) {
-                        Icon(PaneIcons.LockFill, null, tint = colors.secondaryLabel, modifier = Modifier.size(10.dp))
-                        Spacer(Modifier.width(4.dp))
-                    }
-                    Text(
-                        if (locked) LOCKED_LABEL else tab?.let { UrlDisplay.toolbarText(it.url) }.orEmpty(),
-                        style = PaneTheme.type.caption.copy(fontWeight = FontWeight.Medium),
-                        color = colors.label,
-                        maxLines = 1,
-                    )
-                }
+                Text(
+                    if (locked) LOCKED_LABEL else tab?.let { UrlDisplay.toolbarText(it.url) }.orEmpty().ifEmpty { "New tab" },
+                    style = PaneTheme.type.caption.copy(fontWeight = FontWeight.Medium),
+                    color = PaneTheme.colors.label,
+                    maxLines = 1,
+                )
             }
         }
 
         // Expanded row.
-        val expandedAlpha = (1f - c * 1.8f).coerceIn(0f, 1f)
-        if (expandedAlpha > 0f) {
+        if (rowShown) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .height(barHeight)
-                    .padding(horizontal = 4.dp)
+                    .padding(horizontal = 12.dp)
                     .graphicsLayer {
-                        alpha = expandedAlpha
-                        val s = 1f - 0.12f * c
+                        val c = collapse.value
+                        alpha = (1f - c * 1.7f).coerceIn(0f, 1f)
+                        translationY = c * 26.dp.toPx()
+                        val s = 1f - 0.07f * c
                         scaleX = s
                         scaleY = s
                     },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ChromeButton(PaneIcons.Back, "Back", onBack, enabled = tab?.canGoBack == true || tab?.parentId != null, tint = colors.label)
                 AnimatedVisibility(
-                    visible = tab?.canGoForward == true,
-                    enter = expandHorizontally(Motion.snappy()) + fadeIn(Motion.fade()),
-                    exit = shrinkHorizontally(Motion.snappy()) + fadeOut(Motion.fade()),
+                    visible = canGoBack,
+                    enter = expandHorizontally(Motion.snappy()) + scaleIn(Motion.bouncy(), initialScale = 0.5f) + fadeIn(Motion.fade(140)),
+                    exit = shrinkHorizontally(Motion.snappy()) + scaleOut(Motion.snappy(), targetScale = 0.5f) + fadeOut(Motion.fade(120)),
                 ) {
-                    ChromeButton(PaneIcons.Forward, "Forward", onForward, tint = colors.label)
+                    Row {
+                        GlassCircle(onClick = onBack, size = BarMetrics.pill, contentDescription = "Back") {
+                            Icon(PaneIcons.Back, null, tint = PaneTheme.colors.label, modifier = Modifier.size(20.dp))
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
                 }
-                BoxWithConstraints(Modifier.weight(1f).height(44.dp)) {
+                BoxWithConstraints(
+                    Modifier
+                        .weight(1f)
+                        .height(BarMetrics.zone)
+                        // Neighbouring tabs slide in from the sides, so clip there but leave room for shadows.
+                        .drawWithContent {
+                            // Clip only while another tab is sliding in; at rest the pill's shadow may spill past the edge.
+                            if (swipe.value != 0f) {
+                                clipRect(left = 0f, top = -size.height, right = size.width, bottom = size.height * 2) {
+                                    this@drawWithContent.drawContent()
+                                }
+                            } else {
+                                drawContent()
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
                     val width = constraints.maxWidth.toFloat()
                     val stride = width + with(density) { 12.dp.toPx() }
-                    val fraction = swipe.value / stride
+                    val showPrevious by remember { derivedStateOf { swipe.value > 0f } }
+                    val showNext by remember { derivedStateOf { swipe.value < 0f } }
                     val dragState = rememberDraggableState { delta ->
                         val hasTarget = if (swipe.value + delta > 0) previous != null else true
                         val resisted = if (hasTarget) delta else delta * 0.25f
@@ -192,8 +224,12 @@ fun BottomBar(
                     }
                     Box(
                         Modifier
-                            .fillMaxWidth()
-                            .fillMaxHeight()
+                            .fillMaxSize()
+                            .draggable(
+                                orientation = Orientation.Vertical,
+                                state = rememberDraggableState { },
+                                onDragStopped = { velocity -> if (velocity < -600f) onTabs() },
+                            )
                             .draggable(
                                 orientation = Orientation.Horizontal,
                                 state = dragState,
@@ -223,33 +259,44 @@ fun BottomBar(
                                     }
                                 },
                             ),
+                        contentAlignment = Alignment.Center,
                     ) {
                         // Neighbours slide in alongside the current pill.
-                        if (fraction > 0f && previous != null) {
-                            AddressPill(previous, Modifier.offset { IntOffset((swipe.value - stride).roundToInt(), 0) }, collapse = 0f)
+                        if (showPrevious && previous != null) {
+                            AddressPill(previous, private, Modifier.offset { IntOffset((swipe.value - stride).roundToInt(), 0) }, lifted = false)
                         }
-                        if (fraction < 0f) {
+                        if (showNext) {
                             if (next != null) {
-                                AddressPill(next, Modifier.offset { IntOffset((swipe.value + stride).roundToInt(), 0) }, collapse = 0f)
+                                AddressPill(next, private, Modifier.offset { IntOffset((swipe.value + stride).roundToInt(), 0) }, lifted = false)
                             } else {
                                 NewTabPill(Modifier.offset { IntOffset((swipe.value + stride).roundToInt(), 0) })
                             }
                         }
                         AddressPill(
                             tab = tab,
-                            collapse = c,
-                            modifier = Modifier.offset { IntOffset(swipe.value.roundToInt(), 0) },
+                            private = private,
+                            modifier = Modifier
+                                .offset { IntOffset(swipe.value.roundToInt(), 0) }
+                                .onGloballyPositioned { chrome.pillRect = it.boundsInRoot() },
                             locked = locked,
                             onClick = onAddress,
                             onReload = onReload,
                             onStop = onStop,
-                            onReader = onReader,
                             onSiteInfo = onSiteInfo,
                         )
                     }
                 }
+                Spacer(Modifier.width(8.dp))
                 TabsButton(count = tabs.size, onClick = onTabs, onLongClick = onNewTab)
-                ChromeButton(PaneIcons.More, "Menu", onMenu, tint = colors.label)
+                Spacer(Modifier.width(8.dp))
+                GlassCircle(
+                    onClick = onMenu,
+                    size = BarMetrics.pill,
+                    contentDescription = "Menu",
+                    modifier = Modifier.onGloballyPositioned { chrome.menuRect = it.boundsInRoot() },
+                ) {
+                    Icon(PaneIcons.More, null, tint = PaneTheme.colors.label, modifier = Modifier.size(22.dp))
+                }
             }
         }
     }
@@ -258,108 +305,120 @@ fun BottomBar(
 /** What the bar says instead of the page while private tabs are locked. */
 private const val LOCKED_LABEL = "Private Tabs Locked"
 
-/** The rounded address field: security glyph, host, and reload/stop. [locked] shows none of the page. */
+/**
+ * The address pill: the site's host, centred, with loading shown as a soft fill that sweeps across
+ * the glass. A small lock marks a secure page, a dot marks one that isn't; reload and stop sit at
+ * the end. [locked] shows none of the page.
+ */
 @Composable
 fun AddressPill(
     tab: TabState?,
+    private: Boolean,
     modifier: Modifier = Modifier,
-    collapse: Float = 0f,
     locked: Boolean = false,
+    lifted: Boolean = true,
     onClick: (() -> Unit)? = null,
     onReload: () -> Unit = {},
     onStop: () -> Unit = {},
-    onReader: () -> Unit = {},
     onSiteInfo: () -> Unit = {},
 ) {
     val colors = PaneTheme.colors
-    val shape = ContinuousRoundedShape(14.dp)
-    val progress by animateFloatAsState(
-        targetValue = if (tab?.loading == true && !locked) (tab.progress / 100f).coerceIn(0.05f, 1f) else 1f,
+    // Both are read in the draw phase below, so loading never recomposes the pill per frame.
+    val progress = animateFloatAsState(
+        targetValue = if (tab?.loading == true && !locked) (tab.progress / 100f).coerceIn(0.08f, 1f) else 1f,
         animationSpec = Motion.smooth(),
         label = "progress",
     )
-    val progressAlpha by animateFloatAsState(if (tab?.loading == true && !locked) 1f else 0f, Motion.fade(350), label = "progressAlpha")
+    val progressAlpha = animateFloatAsState(if (tab?.loading == true && !locked) 1f else 0f, Motion.fade(400), label = "progressAlpha")
     val host = if (locked) "" else tab?.let { UrlDisplay.toolbarText(it.url) }.orEmpty()
+    val loaded = !locked && tab != null && tab.url.isNotEmpty()
     Box(
         modifier
             .fillMaxWidth()
-            .height(lerp(44.dp, 24.dp, collapse))
-            .clip(shape)
-            .background(colors.fill.copy(alpha = colors.fill.alpha * (1f - collapse)))
+            .height(BarMetrics.pill)
             .then(
                 if (onClick != null) {
-                    Modifier.combinedClickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onClick,
-                    )
+                    Modifier.pressScale(pressedScale = 0.975f, onClick = onClick)
                 } else {
                     Modifier
                 },
             )
+            .glass(PaneShapes.pill, GlassStrength.Regular, lifted = lifted)
             .semantics { contentDescription = if (locked) LOCKED_LABEL else "Address: $host" },
     ) {
+        // Loading sweeps a soft fill across the glass.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawBehind {
+                    val a = progressAlpha.value
+                    if (a > 0.01f) drawRect(colors.fill, size = Size(size.width * progress.value, size.height), alpha = a)
+                },
+        )
         Row(
-            Modifier.fillMaxWidth().fillMaxHeight().padding(horizontal = 4.dp),
+            Modifier.fillMaxSize().padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Leading: reader mode when available, otherwise the security state.
-            Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+            // Leading: the security mark, only where it means something.
+            Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
                 when {
-                    locked -> Icon(PaneIcons.LockFill, null, tint = colors.secondaryLabel, modifier = Modifier.size(14.dp))
-                    tab == null || tab.url.isEmpty() -> Icon(PaneIcons.Search, null, tint = colors.secondaryLabel, modifier = Modifier.size(17.dp))
-                    tab.readerable || tab.inReaderMode -> Icon(
-                        PaneIcons.Reader,
-                        contentDescription = "Reader view",
-                        tint = if (tab.inReaderMode) colors.accent else colors.label,
-                        modifier = Modifier.size(19.dp).pressDim(onClick = onReader),
-                    )
-                    tab.security == SecurityState.Insecure || tab.security == SecurityState.Broken -> Icon(
-                        PaneIcons.Warning,
-                        contentDescription = "Not secure",
-                        tint = colors.warning,
-                        modifier = Modifier.size(17.dp).pressDim(onClick = onSiteInfo),
-                    )
+                    locked -> Icon(PaneIcons.LockFill, null, tint = colors.tertiaryLabel, modifier = Modifier.size(12.dp))
+                    !loaded -> Unit
+                    tab.security == SecurityState.Insecure || tab.security == SecurityState.Broken -> Box(
+                        Modifier
+                            .size(34.dp)
+                            .pressDim(onClick = onSiteInfo),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(Modifier.size(7.dp).clip(PaneShapes.pill).background(colors.warning))
+                    }
                     else -> Icon(
                         PaneIcons.LockFill,
                         contentDescription = "Site information",
-                        tint = colors.secondaryLabel,
-                        modifier = Modifier.size(14.dp).pressDim(onClick = onSiteInfo),
+                        tint = colors.tertiaryLabel,
+                        modifier = Modifier.size(12.dp).pressDim(onClick = onSiteInfo),
                     )
                 }
             }
-            Text(
-                text = if (locked) LOCKED_LABEL else host.ifEmpty { "Search or enter website" },
-                style = PaneTheme.type.body.copy(
-                    fontSize = lerp(15.sp, 12.sp, collapse),
-                    letterSpacing = (-0.01).em,
-                    fontWeight = if (host.isEmpty()) FontWeight.Normal else FontWeight.Medium,
-                ),
-                color = if (host.isEmpty()) colors.secondaryLabel else colors.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
+            AnimatedContent(
+                targetState = if (locked) LOCKED_LABEL else host,
+                transitionSpec = {
+                    (slideInVertically(Motion.smooth()) { it / 2 } + fadeIn(Motion.fade(160)))
+                        .togetherWith(slideOutVertically(Motion.smooth()) { -it / 2 } + fadeOut(Motion.fade(120)))
+                },
                 modifier = Modifier.weight(1f),
-            )
-            Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-                if (!locked && tab != null && tab.url.isNotEmpty()) {
-                    if (tab.loading) {
-                        Icon(PaneIcons.Stop, "Stop", tint = colors.label, modifier = Modifier.size(17.dp).pressDim(onClick = onStop))
-                    } else {
-                        Icon(PaneIcons.Reload, "Reload", tint = colors.label, modifier = Modifier.size(18.dp).pressDim(onClick = onReload))
+                contentAlignment = Alignment.Center,
+                label = "host",
+            ) { text ->
+                Text(
+                    text = text.ifEmpty { if (private) "Search privately" else "Search or enter address" },
+                    style = PaneTheme.type.body.copy(
+                        fontSize = 15.sp,
+                        fontWeight = if (text.isEmpty()) FontWeight.Normal else FontWeight.Medium,
+                    ),
+                    color = if (text.isEmpty()) colors.secondaryLabel else colors.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                if (loaded) {
+                    AnimatedContent(
+                        targetState = tab.loading,
+                        transitionSpec = { (scaleIn(Motion.snappy(), 0.5f) + fadeIn(Motion.fade(120))).togetherWith(scaleOut(Motion.snappy(), 0.5f) + fadeOut(Motion.fade(100))) },
+                        label = "reloadStop",
+                    ) { loading ->
+                        if (loading) {
+                            Icon(PaneIcons.Stop, "Stop", tint = colors.secondaryLabel, modifier = Modifier.size(16.dp).pressDim(onClick = onStop))
+                        } else {
+                            Icon(PaneIcons.Reload, "Reload", tint = colors.secondaryLabel, modifier = Modifier.size(17.dp).pressDim(onClick = onReload))
+                        }
                     }
                 }
             }
         }
-        // Loading progress hugs the bottom edge of the pill.
-        Box(
-            Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth(progress)
-                .height(2.5.dp)
-                .graphicsLayer { alpha = progressAlpha * (1f - collapse) }
-                .background(colors.accent),
-        )
     }
 }
 
@@ -369,50 +428,40 @@ private fun NewTabPill(modifier: Modifier) {
     Box(
         modifier
             .fillMaxWidth()
-            .height(44.dp)
-            .clip(ContinuousRoundedShape(14.dp))
-            .background(colors.fill),
+            .height(BarMetrics.pill)
+            .glass(PaneShapes.pill, GlassStrength.Regular, lifted = false),
         contentAlignment = Alignment.Center,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Icon(PaneIcons.Plus, null, tint = colors.secondaryLabel, modifier = Modifier.size(16.dp))
-            Text("New Tab", style = PaneTheme.type.body, color = colors.secondaryLabel)
-        }
+        Text("New tab", style = PaneTheme.type.body.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium), color = colors.secondaryLabel)
     }
 }
 
-/** Tab count in a rounded square, like a stack of pages. Long-press opens a new tab. */
+/** The tab count in a rounded square, like a stack of pages. Long-press opens a new tab. */
 @Composable
 private fun TabsButton(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
     val colors = PaneTheme.colors
-    val haptics = rememberHaptics()
-    Box(
-        Modifier
-            .size(44.dp)
-            .semantics { contentDescription = "$count tabs" }
-            .combinedClickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onLongClick = {
-                    haptics.longPress()
-                    onLongClick()
-                },
-                onClick = onClick,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
+    GlassCircle(onClick = onClick, size = BarMetrics.pill, contentDescription = "$count tabs", onLongClick = onLongClick) {
         Box(
             Modifier
-                .size(22.dp)
-                .border(1.8.dp, colors.label, ContinuousRoundedShape(6.dp)),
+                .size(24.dp)
+                .border(1.7.dp, colors.label, PaneShapes.small),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                if (count > 99) ":)" else count.toString(),
-                style = PaneTheme.type.caption2.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
-                color = colors.label,
-            )
+            AnimatedContent(
+                targetState = count,
+                transitionSpec = {
+                    val up = targetState > initialState
+                    (slideInVertically(Motion.bouncy()) { if (up) it else -it } + fadeIn(Motion.fade(120)))
+                        .togetherWith(slideOutVertically(Motion.smooth()) { if (up) -it else it } + fadeOut(Motion.fade(100)))
+                },
+                label = "tabCount",
+            ) { n ->
+                Text(
+                    if (n > 99) ":)" else n.toString(),
+                    style = PaneTheme.type.caption2.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp),
+                    color = colors.label,
+                )
+            }
         }
     }
 }
-

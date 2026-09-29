@@ -4,7 +4,6 @@ import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -29,10 +28,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
-import app.pane.browser.ui.components.Separator
-import app.pane.browser.ui.components.pressDim
+import app.pane.browser.ui.components.GlassCircle
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
+import app.pane.browser.ui.theme.GlassStrength
 import app.pane.browser.ui.theme.PaneTheme
 import org.mozilla.geckoview.GeckoView
 
@@ -55,11 +54,8 @@ fun ExtensionOptionsScreen(extensionId: String) {
             .fillMaxSize()
             .background(colors.background),
     ) {
-        Column(Modifier.fillMaxWidth().background(colors.chrome)) {
-            Spacer(Modifier.height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding()))
-            NavBar(title = ext?.name ?: "Settings", onBack = navigator::pop)
-            Separator()
-        }
+        Spacer(Modifier.height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding()))
+        NavBar(title = ext?.name ?: "Settings", onBack = navigator::pop)
         if (ext?.optionsPageUrl == null) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
@@ -96,22 +92,19 @@ fun ExtensionOptionsScreen(extensionId: String) {
     }
 }
 
-/** A 44pt bar with a back button and a centred title. */
+/** A bar with a floating back circle and a centred title, sitting directly on the page. */
 @Composable
 internal fun NavBar(title: String, onBack: () -> Unit, backLabel: String = "Back") {
     val colors = PaneTheme.colors
-    Box(Modifier.fillMaxWidth().height(44.dp)) {
-        Row(
-            Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 4.dp)
-                .height(44.dp)
-                .pressDim(onClick = onBack)
-                .padding(end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    Box(Modifier.fillMaxWidth().height(56.dp)) {
+        GlassCircle(
+            onClick = onBack,
+            size = 48.dp,
+            strength = GlassStrength.Thin,
+            contentDescription = if (backLabel == "Back") "Back" else "Back to $backLabel",
+            modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp),
         ) {
-            Icon(PaneIcons.Back, contentDescription = "Back", tint = colors.accent, modifier = Modifier.size(26.dp))
-            Text(backLabel, style = PaneTheme.type.body, color = colors.accent, maxLines = 1)
+            Icon(PaneIcons.Back, contentDescription = null, tint = colors.label, modifier = Modifier.size(22.dp))
         }
         Text(
             title,
@@ -121,7 +114,7 @@ internal fun NavBar(title: String, onBack: () -> Unit, backLabel: String = "Back
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .align(Alignment.Center)
-                .padding(horizontal = 96.dp),
+                .padding(horizontal = 72.dp),
         )
     }
 }

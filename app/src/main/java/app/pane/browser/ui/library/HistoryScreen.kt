@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
@@ -30,7 +31,9 @@ import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneSheet
 import app.pane.browser.ui.components.SearchField
+import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.SheetHeader
+import app.pane.browser.ui.components.SiteIcon
 import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
@@ -44,6 +47,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val HISTORY_LIMIT = 1000
+
+/** Where a row's text starts (16dp padding, 30dp icon, 12dp gap), so hairlines line up with it. */
+private val TextInset = 58.dp
 
 /**
  * Visited pages grouped by day (Today, Yesterday, weekdays, Earlier), newest first. Search filters
@@ -88,6 +94,8 @@ fun HistoryScreen() {
         container.scope.launch {
             if (range == TimeRange.AllTime) {
                 container.history.clear()
+                // The icon cache is derived from what was visited, so it goes with the history.
+                container.favicons.clear()
             } else {
                 container.history.deleteSince(range.since(System.currentTimeMillis()))
             }
@@ -101,13 +109,19 @@ fun HistoryScreen() {
             onBack = navigator::pop,
             backLabel = backLabel,
             actions = {
-                TextButton("Clear", onClick = { clearVisible = true }, enabled = !items.isNullOrEmpty() || query.isNotBlank())
+                TextButton(
+                    "Clear",
+                    onClick = { clearVisible = true },
+                    enabled = !items.isNullOrEmpty() || query.isNotBlank(),
+                    color = colors.destructive,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                )
             },
             header = {
                 SearchField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = "Search History",
+                    placeholder = "Search history",
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             },
@@ -117,55 +131,62 @@ fun HistoryScreen() {
                 loaded == null -> Unit
                 loaded.isEmpty() && query.isNotBlank() -> item(key = "no-results") {
                     EmptyState(
-                        icon = PaneIcons.Search,
-                        title = "No Results",
+                        title = "No results",
                         message = "Nothing in your history matches “${query.trim()}”.",
                         modifier = Modifier.animateItem(),
                     )
                 }
                 loaded.isEmpty() -> item(key = "empty") {
                     EmptyState(
-                        icon = PaneIcons.Clock,
-                        title = if (settings.rememberHistory) "No History" else "History Is Off",
+                        title = if (settings.rememberHistory) "No history" else "History is off",
                         message = if (settings.rememberHistory) {
-                            "Pages you visit appear here. Private tabs are never remembered."
+                            "Pages you visit appear here."
                         } else {
-                            "Turn on Remember History in Privacy & Security to keep a list of pages you visit."
+                            "Turn on Remember history in Privacy to keep a list."
                         },
                         modifier = Modifier.animateItem(),
                     )
                 }
-                else -> groups.forEach { group ->
-                    item(key = "section:${group.section.daysAgo}") {
-                        SectionTitle(group.section.title(), Modifier.animateItem())
-                    }
-                    itemsIndexed(group.items, key = { _, h -> "h:${h.url}" }) { index, entry ->
-                        val first = index == 0
-                        SwipeToDelete(
-                            onDelete = { delete(entry) },
-                            modifier = Modifier.animateItem().groupedItem(first, index == group.items.lastIndex, colors.surface),
-                        ) {
-                            Column {
-                                if (!first) RowSeparator()
-                                LibraryRow(
-                                    title = entry.title.ifBlank { UrlDisplay.toolbarText(entry.url).ifEmpty { entry.url } },
-                                    subtitle = UrlDisplay.toolbarText(entry.url).ifEmpty { entry.url },
-                                    leading = { SiteTile(entry.url, entry.title) },
-                                    onClick = { open(entry) },
-                                    onLongClick = {
-                                        menuTarget = entry
-                                        menuVisible = true
-                                    },
-                                    trailing = {
-                                        Text(
-                                            visitTime(context, entry.lastVisited, group.section),
-                                            style = PaneTheme.type.footnote,
-                                            color = colors.tertiaryLabel,
-                                            maxLines = 1,
-                                            modifier = Modifier.padding(end = 6.dp),
-                                        )
-                                    },
-                                )
+                else -> {
+                    // Rows arrive in one cascade down the whole list, not once per day section.
+                    var arrivals = 0
+                    groups.forEach { group ->
+                        val base = arrivals
+                        arrivals += group.items.size
+                        item(key = "section:${group.section.daysAgo}") {
+                            SectionTitle(group.section.title(), Modifier.animateItem())
+                        }
+                        itemsIndexed(group.items, key = { _, h -> "h:${h.url}" }) { index, entry ->
+                            val first = index == 0
+                            SwipeToDelete(
+                                onDelete = { delete(entry) },
+                                modifier = Modifier
+                                    .animateItem()
+                                    .arrive(base + index)
+                                    .groupedItem(first, index == group.items.lastIndex, colors.surface),
+                            ) {
+                                Column {
+                                    if (!first) Separator(Modifier.padding(start = TextInset))
+                                    LibraryRow(
+                                        title = entry.title.ifBlank { UrlDisplay.toolbarText(entry.url).ifEmpty { entry.url } },
+                                        subtitle = UrlDisplay.toolbarText(entry.url).ifEmpty { entry.url },
+                                        leading = { SiteIcon(entry.url, 30.dp) },
+                                        onClick = { open(entry) },
+                                        onLongClick = {
+                                            menuTarget = entry
+                                            menuVisible = true
+                                        },
+                                        trailing = {
+                                            Text(
+                                                visitTime(context, entry.lastVisited, group.section),
+                                                style = PaneTheme.type.footnote,
+                                                color = colors.tertiaryLabel,
+                                                maxLines = 1,
+                                                modifier = Modifier.padding(end = 6.dp),
+                                            )
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
@@ -173,7 +194,7 @@ fun HistoryScreen() {
             }
             if (!loaded.isNullOrEmpty() && !settings.rememberHistory) {
                 item(key = "paused") {
-                    SectionFooter("History is paused. New pages won't be added until you turn Remember History back on.", Modifier.animateItem())
+                    SectionFooter("History is off. New pages aren't added.", Modifier.animateItem())
                 }
             }
         }
@@ -183,34 +204,28 @@ fun HistoryScreen() {
             visible = menuVisible,
             title = target?.title?.ifBlank { null } ?: target?.url.orEmpty(),
             subtitle = target?.let { UrlDisplay.toolbarText(it.url) },
-            leading = if (target != null) {
-                { SiteTile(target.url, target.title, size = 40.dp) }
-            } else {
-                null
-            },
             onDismiss = { menuVisible = false },
             actions = if (target == null) emptyList() else listOf(
-                SheetAction("Open in New Tab", PaneIcons.Plus) { open(target, newTab = true, private = false) },
-                SheetAction("Open in Private Tab", PaneIcons.Private) { open(target, newTab = true, private = true) },
-                SheetAction("Copy Link", PaneIcons.Copy) { copyToClipboard(context, target.url, toasts) },
-                SheetAction("Share…", PaneIcons.Share) { shareLink(context, target.url, target.title) },
-                SheetAction("Delete from History", PaneIcons.Trash, destructive = true) { delete(target) },
+                SheetAction("Open in new tab") { open(target, newTab = true, private = false) },
+                SheetAction("Open in private tab") { open(target, newTab = true, private = true) },
+                SheetAction("Copy link") { copyToClipboard(context, target.url, toasts) },
+                SheetAction("Share…") { shareLink(context, target.url, target.title) },
+                SheetAction("Delete from history", destructive = true) { delete(target) },
             ),
         )
 
         PaneSheet(visible = clearVisible, onDismiss = { clearVisible = false }) {
-            SheetHeader("Clear History", onDone = { clearVisible = false }, doneLabel = "Cancel")
-            GroupedSection(
-                footer = "Removes pages from your history. To also clear cookies and cached files, use Clear Browsing Data.",
-            ) {
+            SheetHeader("Clear history", onDone = { clearVisible = false }, doneLabel = "Cancel")
+            GroupedSection {
                 TimeRange.entries.forEach { range ->
-                    row { ActionRow(range.label, onClick = { clear(range) }, destructive = range == TimeRange.AllTime) }
+                    row { ActionRow(range.label, onClick = { clear(range) }, modifier = Modifier.heightIn(min = 56.dp), destructive = true) }
                 }
             }
             GroupedSection {
                 row {
                     ListRow(
-                        title = "Clear Browsing Data…",
+                        title = "Clear cookies and more…",
+                        modifier = Modifier.heightIn(min = 56.dp),
                         onClick = {
                             clearVisible = false
                             navigator.push(Route.ClearData)

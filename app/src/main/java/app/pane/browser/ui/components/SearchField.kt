@@ -36,14 +36,13 @@ fun SearchField(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(36.dp)
-            .clip(ContinuousRoundedShape(10.dp))
+            .height(42.dp)
+            .clip(app.pane.browser.ui.theme.PaneShapes.pill)
             .background(colors.fill)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(PaneIcons.Search, null, tint = colors.secondaryLabel, modifier = Modifier.size(17.dp))
-        Box(Modifier.weight(1f).padding(horizontal = 6.dp)) {
+        Box(Modifier.weight(1f)) {
             if (value.isEmpty()) Text(placeholder, style = PaneTheme.type.body, color = colors.secondaryLabel, maxLines = 1)
             BasicTextField(
                 value = value,

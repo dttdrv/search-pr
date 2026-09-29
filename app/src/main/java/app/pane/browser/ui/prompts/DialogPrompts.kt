@@ -96,12 +96,12 @@ internal fun AuthDialog(request: AuthRequest, visible: Boolean, onDone: () -> Un
     val passwordFocus = remember { FocusRequester() }
     val host = request.host.ifEmpty { "This site" }
 
-    val message = buildString {
-        if (request.previousFailed) append("The user name or password was incorrect. ")
-        append(if (request.isProxy) "The proxy $host requires a user name and password." else "$host requires a user name and password.")
-        if (request.crossOrigin) append("\n\nThis request comes from a different site than the page you’re on.")
-        if (request.insecure) append("\n\nYour password will be sent unencrypted.")
-    }
+    val message = buildList<String> {
+        if (request.previousFailed) add("Incorrect name or password.")
+        add(if (request.isProxy) "Proxy: $host" else host)
+        if (request.crossOrigin) add("Requested by a different site.")
+        if (request.insecure) add("Password will be sent unencrypted.")
+    }.joinToString("\n")
 
     fun submit() {
         request.submit(username, password)
@@ -160,7 +160,7 @@ internal fun RepostDialog(request: RepostRequest, visible: Boolean, onDone: () -
     PaneAlert(
         visible = visible,
         title = "Resend Form?",
-        message = "This page was made with information you entered. Sending it again may repeat an action, like a purchase.",
+        message = "Sending it again may repeat an action.",
         actions = listOf(
             AlertAction("Cancel", AlertStyle.Cancel) {
                 request.answer(false)

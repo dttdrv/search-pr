@@ -9,6 +9,7 @@ import app.pane.browser.data.PaneDatabase
 import app.pane.browser.downloads.DownloadController
 import app.pane.browser.engine.BrowserController
 import app.pane.browser.engine.EngineRuntime
+import app.pane.browser.engine.FaviconStore
 import app.pane.browser.engine.PageSnapshots
 import app.pane.browser.engine.PrivacyStats
 import app.pane.browser.engine.PromptQueue
@@ -20,6 +21,7 @@ import app.pane.browser.engine.prompts.PromptEnvironment
 import app.pane.browser.engine.prompts.WebPermissionDelegate
 import app.pane.browser.engine.prompts.WebPromptDelegate
 import app.pane.browser.extensions.ExtensionsManager
+import app.pane.browser.extensions.HelperBridge
 import app.pane.browser.settings.SettingsStore
 import app.pane.core.tabs.BrowserStore
 import kotlinx.coroutines.CoroutineScope
@@ -50,6 +52,7 @@ class AppContainer(val app: Application) {
 
     val runtime: GeckoRuntime = EngineRuntime.create(app, settings.current)
     val fetcher = WebFetcher(runtime)
+    val favicons = FaviconStore(app, fetcher)
     val sessions = SessionManager(app, runtime, store, settings, history, scope)
     val browser = BrowserController(store, sessions, settings)
     val downloads = DownloadController(app, downloadsRepository, scope)
@@ -70,6 +73,13 @@ class AppContainer(val app: Application) {
         }
         sessions.onContextMenu = { tabId, x, y, element ->
             ContextMenus.request(prompts, tabId, store.state.value.tab(tabId)?.isPrivate == true, x, y, element)
+        }
+        // Site icons are learned from normal-tab pages that have loaded, and, like history, only
+        // remembered while history is on. Private tabs never reach the store.
+        HelperBridge.onIcons = { pageUrl, icons, isPrivate ->
+            if (!isPrivate && settings.current.rememberHistory) {
+                scope.launch { favicons.onPageIcons(pageUrl, icons, isPrivate) }
+            }
         }
         scope.launch {
             settings.state.drop(1).distinctUntilChanged().collect { EngineRuntime.apply(runtime, it) }

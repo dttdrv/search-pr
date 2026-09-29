@@ -141,4 +141,24 @@ object PaneIcons {
         icon("qr", "M4 4h6v6H4z", "M14 4h6v6h-6z", "M4 14h6v6H4z", "M14 14h2.5v2.5H14z", "M18 18h2v2h-2z", "M18 14h2", "M14 19.5v.5")
     }
     val Stop by lazy { icon("stop", "M6.5 6.5l11 11", "M17.5 6.5l-11 11", stroke = 2f) }
+
+    // Settings glyphs, all at the house weight (1.75) so a column of tiles reads evenly.
+
+    /** A magnifier at the house weight; [Search] is drawn heavier for the address bar. */
+    val Magnifier by lazy { icon("magnifier", "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13z", "M15.5 15.5L20 20") }
+
+    /** A key: round bow, shaft and two teeth. */
+    val KeyRound by lazy {
+        icon("keyRound", "M15.5 13a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z", "M12.3 11.7L4.5 19.5", "M9.5 14.5l2 2", "M7 17l1.5 1.5")
+    }
+
+    /** Two sliders with round knobs: the place for options that are rarely changed. */
+    val Options by lazy {
+        icon("options", "M4 7.5h9.5", "M16.5 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", "M10.5 16.5H20", "M7.5 19.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z")
+    }
+
+    /** One arrow down, one up: what goes back and forth between Pane and the network. */
+    val Transfer by lazy {
+        icon("transfer", "M8 5.5v13", "M4.75 15.25L8 18.5l3.25-3.25", "M16 18.5v-13", "M12.75 8.75L16 5.5l3.25 3.25")
+    }
 }

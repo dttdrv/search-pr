@@ -58,34 +58,10 @@ object SearchEngines {
         searchTemplate = "https://duckduckgo.com/?q={searchTerms}",
         suggestTemplate = "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
     )
-    val Startpage = SearchEngine(
-        id = "startpage", name = "Startpage", keyword = "sp", privacyFocused = true,
-        searchTemplate = "https://www.startpage.com/sp/search?query={searchTerms}",
-        suggestTemplate = "https://www.startpage.com/osuggestions?q={searchTerms}",
-    )
-    val Brave = SearchEngine(
-        id = "brave", name = "Brave Search", keyword = "brave", privacyFocused = true,
-        searchTemplate = "https://search.brave.com/search?q={searchTerms}",
-        suggestTemplate = "https://search.brave.com/api/suggest?q={searchTerms}",
-    )
-    val Kagi = SearchEngine(
-        id = "kagi", name = "Kagi", keyword = "kagi", privacyFocused = true,
-        searchTemplate = "https://kagi.com/search?q={searchTerms}",
-        suggestTemplate = "https://kagi.com/api/autosuggest?q={searchTerms}",
-    )
-    val Mojeek = SearchEngine(
-        id = "mojeek", name = "Mojeek", keyword = "mojeek", privacyFocused = true,
-        searchTemplate = "https://www.mojeek.com/search?q={searchTerms}",
-    )
     val Qwant = SearchEngine(
         id = "qwant", name = "Qwant", keyword = "qwant", privacyFocused = true,
         searchTemplate = "https://www.qwant.com/?q={searchTerms}",
         suggestTemplate = "https://api.qwant.com/api/suggest/?q={searchTerms}&client=opensearch",
-    )
-    val Ecosia = SearchEngine(
-        id = "ecosia", name = "Ecosia", keyword = "eco",
-        searchTemplate = "https://www.ecosia.org/search?q={searchTerms}",
-        suggestTemplate = "https://ac.ecosia.org/autocomplete?q={searchTerms}&type=list",
     )
     val Google = SearchEngine(
         id = "google", name = "Google", keyword = "g",
@@ -111,8 +87,8 @@ object SearchEngines {
         searchTemplate = "https://github.com/search?q={searchTerms}",
     )
 
-    /** Engines offered as the default, privacy-respecting ones first. */
-    val defaults: List<SearchEngine> = listOf(DuckDuckGo, Startpage, Brave, Kagi, Mojeek, Qwant, Ecosia, Google, Bing)
+    /** Engines offered as the default: DuckDuckGo first, then the other three Pane supports. */
+    val defaults: List<SearchEngine> = listOf(DuckDuckGo, Google, Bing, Qwant)
 
     /** Every engine, including the keyword-only ones. */
     val all: List<SearchEngine> = defaults + listOf(Wikipedia, YouTube, GitHub)

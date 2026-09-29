@@ -6,9 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,17 +21,18 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.extensions.InstalledExtension
-import app.pane.browser.ui.components.ActionRow
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
 import app.pane.browser.ui.components.GroupedSection
-import app.pane.browser.ui.components.IconTile
 import app.pane.browser.ui.components.LargeTitleScaffold
 import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.PaneAlert
-import app.pane.browser.ui.components.ToggleRow
-import app.pane.browser.ui.icons.PaneIcons
+import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.navigation.LocalNavigator
+import app.pane.browser.ui.settings.ActionButtonRow
+import app.pane.browser.ui.settings.AdvancedSection
+import app.pane.browser.ui.settings.NavRow
+import app.pane.browser.ui.settings.SwitchRow
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.extensions.ExtensionPermissions
 
@@ -70,15 +70,16 @@ fun ExtensionDetailScreen(extensionId: String) {
 
     Box(Modifier.fillMaxSize()) {
         LargeTitleScaffold(title = ext.name, onBack = navigator::pop, backLabel = "Extensions") {
-            item(key = "header") { Header(ext) }
+            item(key = "header") { Header(ext, Modifier.arrive(0)) }
             ext.problem?.let { problem ->
                 item(key = "problem") {
-                    GroupedSection {
+                    GroupedSection(modifier = Modifier.arrive(1)) {
                         row {
                             ListRow(
-                                title = if (ext.isBlocked) "Blocked" else "Needs Attention",
+                                title = if (ext.isBlocked) "Blocked" else "Needs attention",
+                                modifier = Modifier.heightIn(min = 56.dp),
                                 subtitle = problem,
-                                leading = { IconTile(PaneIcons.Warning, if (ext.isBlocked) TileColors.red else TileColors.orange) },
+                                titleColor = if (ext.isBlocked) PaneTheme.colors.destructive else PaneTheme.colors.warning,
                                 showChevron = false,
                             )
                         }
@@ -87,14 +88,11 @@ fun ExtensionDetailScreen(extensionId: String) {
             }
             item(key = "switches") {
                 GroupedSection(
-                    footer = if (ext.canRunInPrivate) {
-                        "Extensions allowed in private tabs can see and change what you do there."
-                    } else {
-                        "This extension doesn’t run in private tabs."
-                    },
+                    modifier = Modifier.arrive(2),
+                    footer = if (ext.canRunInPrivate) null else "Doesn't run in private tabs.",
                 ) {
                     row {
-                        ToggleRow(
+                        SwitchRow(
                             title = "Enabled",
                             checked = ext.enabled,
                             onCheckedChange = { manager.setEnabled(ext.id, it) },
@@ -103,62 +101,50 @@ fun ExtensionDetailScreen(extensionId: String) {
                     }
                     if (ext.canRunInPrivate) {
                         row {
-                            ToggleRow(
-                                title = "Allow in Private Tabs",
+                            SwitchRow(
+                                title = "Allow in private tabs",
                                 checked = ext.allowedInPrivateBrowsing,
                                 onCheckedChange = { manager.setAllowedInPrivateBrowsing(ext.id, it) },
                             )
                         }
                     }
-                }
-            }
-            val listingUrl = ext.amoListingUrl
-            val homepage = ext.homepageUrl
-            if (ext.optionsPageUrl != null || listingUrl != null || homepage != null) {
-                item(key = "links") {
-                    GroupedSection(separatorInset = TileRowInset) {
-                        if (ext.optionsPageUrl != null) {
-                            row {
-                                ListRow(
-                                    title = "Settings",
-                                    leading = { IconTile(PaneIcons.Sliders, TileColors.gray) },
-                                    value = if (ext.openOptionsPageInTab) "Opens in a tab" else null,
-                                    onClick = { openExtensionOptions(container, navigator, ext.id) },
-                                )
-                            }
-                        }
-                        if (listingUrl != null) {
-                            row {
-                                ListRow(
-                                    title = "View on addons.mozilla.org",
-                                    leading = { IconTile(PaneIcons.Puzzle, TileColors.blue) },
-                                    showChevron = false,
-                                    onClick = { openInNewTab(container, navigator, listingUrl) },
-                                ) {
-                                    OpenIcon()
-                                }
-                            }
-                        }
-                        if (homepage != null && homepage != listingUrl) {
-                            row {
-                                ListRow(
-                                    title = "Developer’s Website",
-                                    subtitle = ext.creator,
-                                    leading = { IconTile(PaneIcons.Globe, TileColors.indigo) },
-                                    showChevron = false,
-                                    onClick = { openInNewTab(container, navigator, homepage) },
-                                ) {
-                                    OpenIcon()
-                                }
-                            }
+                    if (ext.optionsPageUrl != null) {
+                        row {
+                            NavRow(
+                                title = "Settings",
+                                value = if (ext.openOptionsPageInTab) "Opens in a tab" else null,
+                                onClick = { openExtensionOptions(container, navigator, ext.id) },
+                            )
                         }
                     }
                 }
             }
-            item(key = "permissions") { Permissions(ext) }
+            item(key = "permissions") { Permissions(ext, Modifier.arrive(3)) }
             item(key = "remove") {
-                GroupedSection {
-                    row { ActionRow("Remove Extension", onClick = { confirmRemove = true }, destructive = true) }
+                GroupedSection(modifier = Modifier.arrive(4)) {
+                    row { ActionButtonRow("Remove extension", onClick = { confirmRemove = true }, destructive = true) }
+                }
+            }
+            val listingUrl = ext.amoListingUrl
+            val homepage = ext.homepageUrl
+            if (listingUrl != null || homepage != null) {
+                item(key = "advanced") {
+                    AdvancedSection(modifier = Modifier.arrive(5)) {
+                        GroupedSection {
+                            if (listingUrl != null) {
+                                row { NavRow("View on addons.mozilla.org", onClick = { openInNewTab(container, navigator, listingUrl) }) }
+                            }
+                            if (homepage != null && homepage != listingUrl) {
+                                row {
+                                    NavRow(
+                                        title = "Developer's website",
+                                        subtitle = ext.creator,
+                                        onClick = { openInNewTab(container, navigator, homepage) },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -180,29 +166,27 @@ fun ExtensionDetailScreen(extensionId: String) {
 }
 
 @Composable
-private fun Header(ext: InstalledExtension) {
+private fun Header(ext: InstalledExtension, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
-    Column(Modifier.padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 2.dp)) {
+    Column(modifier.padding(horizontal = 20.dp).padding(top = 6.dp, bottom = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             ExtensionIcon(ext.icon, 64.dp, dimmed = !ext.enabled)
             Column(Modifier.weight(1f)) {
                 Text(
                     ext.creator?.let { "by $it" } ?: "Extension",
-                    style = PaneTheme.type.subheadline,
+                    style = PaneTheme.type.body,
                     color = colors.label,
                     maxLines = 2,
                 )
                 Text("Version ${ext.version}", style = PaneTheme.type.footnote, color = colors.secondaryLabel)
-                if (!ext.enabled) {
-                    Text("Turned off", style = PaneTheme.type.footnote, color = colors.warning)
-                }
             }
         }
         ext.description?.let {
             Text(
                 it,
                 style = PaneTheme.type.body,
-                color = colors.secondaryLabel,
+                color = colors.label,
+                maxLines = 4,
                 modifier = Modifier.padding(top = 14.dp),
             )
         }
@@ -210,33 +194,20 @@ private fun Header(ext: InstalledExtension) {
 }
 
 @Composable
-private fun Permissions(ext: InstalledExtension) {
+private fun Permissions(ext: InstalledExtension, modifier: Modifier = Modifier) {
     val sentences = ext.permissionDescriptions
     val unlisted = ExtensionPermissions.unlisted(ext.permissions + ext.grantedOptionalPermissions)
     val footer = listOfNotNull(
         ext.dataCollectionDescription,
         unlisted.takeIf { it.isNotEmpty() }?.let { "Also uses: ${it.joinToString(", ")}." },
     ).joinToString("\n\n").ifEmpty { null }
-    GroupedSection(header = "Permissions", footer = footer, separatorInset = 46.dp) {
+    GroupedSection(modifier = modifier, header = "Permissions", footer = footer) {
         if (sentences.isEmpty()) {
-            row { ListRow(title = "No special permissions", titleColor = PaneTheme.colors.secondaryLabel, showChevron = false) }
+            row { ListRow(title = "No special permissions", modifier = Modifier.heightIn(min = 56.dp), showChevron = false) }
         } else {
             sentences.forEach { sentence ->
-                row {
-                    ListRow(
-                        title = sentence,
-                        leading = {
-                            Icon(PaneIcons.Check, contentDescription = null, tint = PaneTheme.colors.accent, modifier = Modifier.size(18.dp))
-                        },
-                        showChevron = false,
-                    )
-                }
+                row { ListRow(title = sentence, modifier = Modifier.heightIn(min = 56.dp), showChevron = false) }
             }
         }
     }
-}
-
-@Composable
-private fun OpenIcon() {
-    Icon(PaneIcons.OpenExternal, contentDescription = null, tint = PaneTheme.colors.tertiaryLabel, modifier = Modifier.size(16.dp))
 }

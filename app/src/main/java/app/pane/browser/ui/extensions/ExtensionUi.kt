@@ -2,17 +2,15 @@ package app.pane.browser.ui.extensions
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -32,10 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -46,7 +41,6 @@ import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.pressScale
-import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.Navigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.ContinuousRoundedShape
@@ -55,25 +49,13 @@ import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.extensions.Amo
 import app.pane.core.extensions.AmoAddon
-import app.pane.core.extensions.ExtensionFormat
-
-/** Tile colours for rows, matching the iOS system palette used across settings. */
-internal object TileColors {
-    val blue = Color(0xFF0A84FF)
-    val gray = Color(0xFF8E8E93)
-    val green = Color(0xFF34C759)
-    val orange = Color(0xFFFF9500)
-    val purple = Color(0xFFAF52DE)
-    val red = Color(0xFFFF3B30)
-    val indigo = Color(0xFF5856D6)
-}
 
 /** Separator inset for rows that start with a 29pt tile: 16 padding + 29 tile + 12 gap. */
 internal val TileRowInset = 57.dp
 
 /**
- * An extension's icon on continuous corners; a neutral puzzle-piece tile while it loads or when
- * the extension has none. [dimmed] is used for extensions that are turned off.
+ * An extension's own icon on continuous corners; a plain neutral tile while it loads or when the
+ * extension has none (no stand-in glyph). [dimmed] is used for extensions that are turned off.
  */
 @Composable
 internal fun ExtensionIcon(icon: ImageBitmap?, size: Dp, modifier: Modifier = Modifier, dimmed: Boolean = false) {
@@ -88,8 +70,6 @@ internal fun ExtensionIcon(icon: ImageBitmap?, size: Dp, modifier: Modifier = Mo
     ) {
         if (icon != null) {
             Image(bitmap = icon, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-        } else {
-            Icon(PaneIcons.Puzzle, contentDescription = null, tint = colors.secondaryLabel, modifier = Modifier.size(size * 0.56f))
         }
     }
 }
@@ -104,117 +84,62 @@ internal fun AmoIcon(url: String?, size: Dp, modifier: Modifier = Modifier, fall
         value = cached
         if (url != null && cached == null) value = amo.icon(url, px)
     }
-    Crossfade(targetState = bitmap, animationSpec = tween(180), modifier = modifier.size(size), label = "amoIcon") { image ->
+    Crossfade(targetState = bitmap, animationSpec = Motion.fade(180), modifier = modifier.size(size), label = "amoIcon") { image ->
         if (image != null) ExtensionIcon(image, size) else fallback()
-    }
-}
-
-/** A tile standing in for a curated add-on's icon, by category, until (or unless) the real one loads. */
-@Composable
-internal fun CategoryTile(category: String, size: Dp) {
-    val (icon, color) = when (category) {
-        "Privacy" -> PaneIcons.Shield to TileColors.blue
-        "Security" -> PaneIcons.Key to TileColors.gray
-        "Appearance" -> PaneIcons.Palette to TileColors.purple
-        "Media" -> PaneIcons.Star to TileColors.red
-        "Power tools" -> PaneIcons.Sliders to TileColors.orange
-        else -> PaneIcons.Puzzle to TileColors.indigo
-    }
-    Box(
-        Modifier
-            .size(size)
-            .clip(ContinuousRoundedShape(size * 0.225f))
-            .background(color),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(size * 0.62f))
     }
 }
 
 internal enum class GetState { Get, Installing, Installed }
 
-/** The App Store "Get" capsule: turns into a spinner while installing and "Installed" after. */
+/** The "Get" capsule: turns into a spinner while installing and "Installed" after. */
 @Composable
 internal fun GetButton(state: GetState, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
+    // The capsule is small; the touch target around it is not.
     Box(
         modifier
-            .height(30.dp)
-            .widthIn(min = 76.dp)
-            .pressScale(enabled = state == GetState.Get, pressedScale = 0.9f, haptic = true, onClick = onClick)
-            .clip(PaneShapes.pill)
-            .background(colors.fill)
-            .padding(horizontal = 14.dp),
+            .defaultMinSize(minWidth = 76.dp, minHeight = 48.dp)
+            .pressScale(enabled = state == GetState.Get, pressedScale = 0.9f, haptic = true, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        AnimatedContent(
-            targetState = state,
-            transitionSpec = {
-                (fadeIn(tween(160)) + scaleIn(Motion.snappy(), initialScale = 0.7f)).togetherWith(fadeOut(tween(90)))
-            },
+        Box(
+            Modifier
+                .height(32.dp)
+                .widthIn(min = 76.dp)
+                .clip(PaneShapes.pill)
+                .background(colors.fill)
+                .padding(horizontal = 14.dp),
             contentAlignment = Alignment.Center,
-            label = "get",
-        ) { target ->
-            when (target) {
-                GetState.Get -> Text(
-                    "Get",
-                    style = PaneTheme.type.subheadline.copy(fontWeight = FontWeight.Bold),
-                    color = colors.accent,
-                    maxLines = 1,
-                )
-                GetState.Installing -> CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    color = colors.accent,
-                    strokeWidth = 2.dp,
-                )
-                GetState.Installed -> Text(
-                    "Installed",
-                    style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
-                    color = colors.secondaryLabel,
-                    maxLines = 1,
-                )
-            }
-        }
-    }
-}
-
-/** Five small stars filled to the nearest half. */
-@Composable
-internal fun StarRating(rating: Double, modifier: Modifier = Modifier, starSize: Dp = 11.dp, color: Color = PaneTheme.colors.secondaryLabel) {
-    val colors = PaneTheme.colors
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(1.dp), verticalAlignment = Alignment.CenterVertically) {
-        ExtensionFormat.starFills(rating).forEach { fill ->
-            Box(Modifier.size(starSize)) {
-                Icon(PaneIcons.Star, contentDescription = null, tint = colors.tertiaryLabel, modifier = Modifier.fillMaxSize())
-                if (fill > 0f) {
-                    Icon(
-                        PaneIcons.StarFill,
-                        contentDescription = null,
-                        tint = color,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .drawWithContent { clipRect(right = size.width * fill) { this@drawWithContent.drawContent() } },
+        ) {
+            AnimatedContent(
+                targetState = state,
+                transitionSpec = {
+                    (fadeIn(Motion.fade(160)) + scaleIn(Motion.snappy(), initialScale = 0.7f)).togetherWith(fadeOut(Motion.fade(90)))
+                },
+                contentAlignment = Alignment.Center,
+                label = "get",
+            ) { target ->
+                when (target) {
+                    GetState.Get -> Text(
+                        "Get",
+                        style = PaneTheme.type.subheadline.copy(fontWeight = FontWeight.Bold),
+                        color = colors.accent,
+                        maxLines = 1,
+                    )
+                    GetState.Installing -> CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = colors.accent,
+                        strokeWidth = 2.dp,
+                    )
+                    GetState.Installed -> Text(
+                        "Installed",
+                        style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
+                        color = colors.secondaryLabel,
+                        maxLines = 1,
                     )
                 }
             }
         }
-    }
-}
-
-/** "Recommended" capsule for add-ons in Mozilla's Recommended Extensions programme. */
-@Composable
-internal fun RecommendedBadge(modifier: Modifier = Modifier) {
-    val colors = PaneTheme.colors
-    Row(
-        modifier
-            .clip(PaneShapes.pill)
-            .background(colors.accent.copy(alpha = 0.12f))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        Icon(PaneIcons.ShieldCheck, contentDescription = null, tint = colors.accent, modifier = Modifier.size(11.dp))
-        Text("Recommended", style = PaneTheme.type.caption2.copy(fontWeight = FontWeight.SemiBold), color = colors.accent, maxLines = 1)
     }
 }
 
@@ -223,13 +148,19 @@ internal fun RecommendedBadge(modifier: Modifier = Modifier) {
  * lazy item per row, for lists too long to compose at once.
  */
 @Composable
-internal fun GroupedItem(index: Int, count: Int, separatorInset: Dp, content: @Composable () -> Unit) {
+internal fun GroupedItem(
+    index: Int,
+    count: Int,
+    separatorInset: Dp,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
     val colors = PaneTheme.colors
-    val top = if (index == 0) CornerSize(12.dp) else CornerSize(0.dp)
-    val bottom = if (index == count - 1) CornerSize(12.dp) else CornerSize(0.dp)
+    val top = if (index == 0) CornerSize(20.dp) else CornerSize(0.dp)
+    val bottom = if (index == count - 1) CornerSize(20.dp) else CornerSize(0.dp)
     val shape = remember(index == 0, index == count - 1) { ContinuousRoundedShape(top, top, bottom, bottom) }
     Column(
-        Modifier
+        modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .clip(shape)

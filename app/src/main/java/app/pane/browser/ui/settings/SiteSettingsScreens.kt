@@ -2,13 +2,9 @@ package app.pane.browser.ui.settings
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,31 +14,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.downloads.await
-import app.pane.browser.ui.components.ActionRow
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
 import app.pane.browser.ui.components.GroupedSection
-import app.pane.browser.ui.components.IconTile
 import app.pane.browser.ui.components.LargeTitleScaffold
-import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneAlert
 import app.pane.browser.ui.components.SearchField
-import app.pane.browser.ui.components.ToggleRow
-import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.library.EmptyState
-import app.pane.browser.ui.library.FileGlyphs
 import app.pane.browser.ui.library.RowSeparator
 import app.pane.browser.ui.library.SectionTitle
-import app.pane.browser.ui.library.SiteTile
-import app.pane.browser.ui.library.TileColors
+import app.pane.browser.ui.library.arrive
+import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.library.groupedItem
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
@@ -63,46 +50,24 @@ internal enum class SitePermission(
     val type: Int,
     val key: String,
     val title: String,
-    val icon: ImageVector,
-    val color: Color,
-    val description: String,
+    /** Shown up front; the rest sit under Advanced. */
+    val common: Boolean = false,
 ) {
-    Location(
-        PermissionDelegate.PERMISSION_GEOLOCATION, "geolocation", "Location",
-        PaneIcons.Location, TileColors.Blue, "Lets the site see where you are.",
-    ),
-    Notifications(
-        PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION, "desktop-notification", "Notifications",
-        PaneIcons.Bell, TileColors.Red, "Lets the site send you notifications, even while it isn't open.",
-    ),
-    ProtectedContent(
-        PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS, "media-key-system-access", "Protected Content",
-        PaneIcons.Key, TileColors.Orange, "Lets the site play copy-protected (DRM) video and music.",
-    ),
-    PersistentStorage(
-        PermissionDelegate.PERMISSION_PERSISTENT_STORAGE, "persistent-storage", "Persistent Storage",
-        PaneIcons.Download, TileColors.Gray, "Keeps the site's offline data even when your device runs low on space.",
-    ),
-    LocalNetwork(
-        PermissionDelegate.PERMISSION_LOCAL_NETWORK_ACCESS, "local-network", "Local Network",
-        PaneIcons.Grid, TileColors.Teal, "Lets the site reach devices on your network, such as printers and TVs.",
-    ),
-    LocalApps(
-        PermissionDelegate.PERMISSION_LOCAL_DEVICE_ACCESS, "loopback-network", "Apps on This Device",
-        PaneIcons.Phone, TileColors.Mint, "Lets the site talk to other apps running on this device.",
-    ),
-    VirtualReality(
-        PermissionDelegate.PERMISSION_XR, "xr", "Virtual Reality",
-        PaneIcons.Desktop, TileColors.Purple, "Lets the site use virtual and augmented reality devices.",
-    ),
+    Location(PermissionDelegate.PERMISSION_GEOLOCATION, "geolocation", "Location", common = true),
+    Notifications(PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION, "desktop-notification", "Notifications", common = true),
+    ProtectedContent(PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS, "media-key-system-access", "Protected content"),
+    PersistentStorage(PermissionDelegate.PERMISSION_PERSISTENT_STORAGE, "persistent-storage", "Persistent storage"),
+    LocalNetwork(PermissionDelegate.PERMISSION_LOCAL_NETWORK_ACCESS, "local-network", "Local network"),
+    LocalApps(PermissionDelegate.PERMISSION_LOCAL_DEVICE_ACCESS, "loopback-network", "Apps on this device"),
+    VirtualReality(PermissionDelegate.PERMISSION_XR, "xr", "Virtual reality"),
 }
 
 /** Autoplay is two Gecko permissions (with and without sound) shown as one choice, as in Safari. */
 private enum class AutoplayChoice(val label: String, val audible: Int, val inaudible: Int) {
-    Default("Use Default", ContentPermission.VALUE_PROMPT, ContentPermission.VALUE_PROMPT),
-    AllowAll("Allow All Auto-Play", ContentPermission.VALUE_ALLOW, ContentPermission.VALUE_ALLOW),
-    StopSound("Stop Media with Sound", ContentPermission.VALUE_DENY, ContentPermission.VALUE_ALLOW),
-    Never("Never Auto-Play", ContentPermission.VALUE_DENY, ContentPermission.VALUE_DENY),
+    Default("Use default", ContentPermission.VALUE_PROMPT, ContentPermission.VALUE_PROMPT),
+    AllowAll("Allow all", ContentPermission.VALUE_ALLOW, ContentPermission.VALUE_ALLOW),
+    StopSound("Stop media with sound", ContentPermission.VALUE_DENY, ContentPermission.VALUE_ALLOW),
+    Never("Never", ContentPermission.VALUE_DENY, ContentPermission.VALUE_DENY),
     ;
 
     companion object {
@@ -172,7 +137,7 @@ private fun summarize(permissions: List<ContentPermission>): String {
     if (permissions.any { it.permission == PermissionDelegate.PERMISSION_TRACKING && it.value == ContentPermission.VALUE_ALLOW }) {
         parts += "Tracking protection off"
     }
-    if (parts.isEmpty()) return "Asks before using anything"
+    if (parts.isEmpty()) return "Asks first"
     return parts.mapIndexed { i, p -> if (i == 0) p else p.lowercase() }.joinToString(", ")
 }
 
@@ -218,7 +183,7 @@ fun SiteSettingsScreen() {
 
     Box(Modifier.fillMaxSize()) {
         LargeTitleScaffold(
-            title = "Site Settings",
+            title = "Site permissions",
             onBack = navigator::pop,
             backLabel = backLabel,
             header = if (!sites.isNullOrEmpty()) {
@@ -226,7 +191,7 @@ fun SiteSettingsScreen() {
                     SearchField(
                         value = query,
                         onValueChange = { query = it },
-                        placeholder = "Search Sites",
+                        placeholder = "Search sites",
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     )
                 }
@@ -235,23 +200,19 @@ fun SiteSettingsScreen() {
             },
         ) {
             item(key = "defaults") {
-                GroupedSection(header = "All Sites", separatorInset = 57.dp) {
+                GroupedSection(modifier = Modifier.arrive(0), header = "All sites") {
                     row {
-                        ToggleRow(
-                            title = "Block Auto-Play with Sound",
-                            subtitle = "Videos with sound wait until you press play",
-                            checked = settings.autoplayBlocked,
-                            onCheckedChange = { on -> container.settings.update { it.copy(autoplayBlocked = on) } },
-                            leading = { IconTile(FileGlyphs.Video, TileColors.Pink) },
+                        SwitchRow(
+                            title = "Block pop-ups",
+                            checked = settings.blockPopups,
+                            onCheckedChange = { on -> container.settings.update { it.copy(blockPopups = on) } },
                         )
                     }
                     row {
-                        ToggleRow(
-                            title = "Block Pop-ups",
-                            subtitle = "Only open new windows when you tap",
-                            checked = settings.blockPopups,
-                            onCheckedChange = { on -> container.settings.update { it.copy(blockPopups = on) } },
-                            leading = { IconTile(PaneIcons.Tabs, TileColors.Indigo) },
+                        SwitchRow(
+                            title = "Block auto-play with sound",
+                            checked = settings.autoplayBlocked,
+                            onCheckedChange = { on -> container.settings.update { it.copy(autoplayBlocked = on) } },
                         )
                     }
                 }
@@ -261,16 +222,14 @@ fun SiteSettingsScreen() {
                 loaded == null -> Unit
                 loaded.isEmpty() -> item(key = "empty") {
                     EmptyState(
-                        icon = PaneIcons.Globe,
-                        title = "No Site Permissions",
-                        message = "When a site asks for your location, to send notifications or to play protected content, your answer is remembered here.",
+                        title = "No site permissions",
+                        message = "Answers you give to sites appear here.",
                         modifier = Modifier.animateItem(),
                     )
                 }
                 shown.isEmpty() -> item(key = "no-results") {
                     EmptyState(
-                        icon = PaneIcons.Search,
-                        title = "No Results",
+                        title = "No results",
                         message = "No sites match “${query.trim()}”.",
                         modifier = Modifier.animateItem(),
                     )
@@ -278,21 +237,22 @@ fun SiteSettingsScreen() {
                 else -> {
                     item(key = "sites-title") { SectionTitle("Sites", Modifier.animateItem()) }
                     itemsIndexed(shown, key = { _, site -> "site:${site.origin}" }) { index, site ->
-                        Box(Modifier.animateItem().groupedItem(index == 0, index == shown.lastIndex, colors.surface)) {
+                        Box(Modifier.animateItem().arrive(index).groupedItem(index == 0, index == shown.lastIndex, colors.surface)) {
                             Column {
                                 if (index > 0) RowSeparator()
-                                ListRow(
+                                NavRow(
                                     title = SiteOrigins.displayName(site.origin),
                                     subtitle = summarize(site.permissions),
-                                    leading = { SiteTile(site.origin, null) },
                                     onClick = { navigator.push(Route.SitePermissions(site.origin)) },
                                 )
                             }
                         }
                     }
-                    item(key = "reset") {
-                        GroupedSection(modifier = Modifier.animateItem()) {
-                            row { ActionRow("Reset All Site Permissions", onClick = { confirmReset = true }, destructive = true) }
+                    item(key = "advanced") {
+                        AdvancedSection(modifier = Modifier.animateItem()) {
+                            GroupedSection {
+                                row { ActionButtonRow("Reset all permissions", onClick = { confirmReset = true }, destructive = true) }
+                            }
                         }
                     }
                 }
@@ -301,8 +261,8 @@ fun SiteSettingsScreen() {
 
         PaneAlert(
             visible = confirmReset,
-            title = "Reset All Site Permissions?",
-            message = "Every site will have to ask again before using your location, notifications and more.",
+            title = "Reset all permissions?",
+            message = "Every site will have to ask again.",
             actions = listOf(
                 AlertAction("Cancel", AlertStyle.Cancel) { confirmReset = false },
                 AlertAction("Reset", AlertStyle.Destructive) {
@@ -372,24 +332,12 @@ fun SitePermissionsScreen(origin: String) {
 
     Box(Modifier.fillMaxSize()) {
         LargeTitleScaffold(title = name, onBack = navigator::pop, backLabel = backLabel) {
-            item(key = "hero") {
-                Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    SiteTile(origin, null, size = 64.dp)
-                    Spacer(Modifier.height(8.dp))
-                    Text(origin, style = PaneTheme.type.footnote, color = colors.secondaryLabel)
-                }
-            }
-            item(key = "permissions") {
-                GroupedSection(
-                    header = "Permissions",
-                    footer = "Ask means $name has to ask you first. Camera and microphone are asked for every visit.",
-                    separatorInset = 57.dp,
-                ) {
-                    SitePermission.entries.forEach { kind ->
+            item(key = "essentials") {
+                GroupedSection(modifier = Modifier.arrive(0), header = origin) {
+                    SitePermission.entries.filter { it.common }.forEach { kind ->
                         row {
-                            ListRow(
+                            NavRow(
                                 title = kind.title,
-                                leading = { IconTile(kind.icon, kind.color) },
                                 value = valueLabel(current(kind.key, kind.type)),
                                 onClick = {
                                     pickerKind = kind
@@ -399,40 +347,53 @@ fun SitePermissionsScreen(origin: String) {
                         }
                     }
                     row {
-                        ListRow(
-                            title = "Auto-Play",
-                            leading = { IconTile(FileGlyphs.Video, TileColors.Pink) },
-                            value = if (autoplay == AutoplayChoice.Default) "Default" else autoplay.label.removeSuffix(" Auto-Play"),
+                        NavRow(
+                            title = "Auto-play",
+                            value = when (autoplay) {
+                                AutoplayChoice.Default -> "Default"
+                                AutoplayChoice.AllowAll -> "Allow"
+                                AutoplayChoice.StopSound -> "No sound"
+                                AutoplayChoice.Never -> "Never"
+                            },
                             onClick = { autoplayVisible = true },
                         )
                     }
-                }
-            }
-            item(key = "tracking") {
-                GroupedSection(
-                    footer = if (trackingProtected) {
-                        "Trackers are blocked on $name."
-                    } else {
-                        "Trackers can follow you on $name. Turn protection back on unless the site breaks without them."
-                    },
-                ) {
                     row {
-                        ToggleRow(
-                            title = "Tracking Protection",
+                        SwitchRow(
+                            title = "Tracking protection",
                             checked = trackingProtected,
                             onCheckedChange = { on ->
                                 val value = if (on) ContentPermission.VALUE_DENY else ContentPermission.VALUE_ALLOW
                                 assign(TRACKING_KEY, PermissionDelegate.PERMISSION_TRACKING, value)
                             },
-                            leading = { IconTile(PaneIcons.ShieldCheck, TileColors.Green) },
                         )
                     }
                 }
             }
             item(key = "data") {
-                GroupedSection(footer = "Clearing site data signs you out of $host and removes what it saved on this device.") {
-                    row { ActionRow("Clear Site Data", onClick = { confirmClear = true }, destructive = true) }
-                    row { ActionRow("Reset Permissions", onClick = { confirmReset = true }, destructive = true) }
+                GroupedSection(modifier = Modifier.arrive(1), footer = "Signs you out of $host.") {
+                    row { ActionButtonRow("Clear site data", onClick = { confirmClear = true }, destructive = true) }
+                }
+            }
+            item(key = "advanced") {
+                AdvancedSection(modifier = Modifier.arrive(2)) {
+                    GroupedSection {
+                        SitePermission.entries.filterNot { it.common }.forEach { kind ->
+                            row {
+                                NavRow(
+                                    title = kind.title,
+                                    value = valueLabel(current(kind.key, kind.type)),
+                                    onClick = {
+                                        pickerKind = kind
+                                        pickerVisible = true
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    GroupedSection {
+                        row { ActionButtonRow("Reset permissions", onClick = { confirmReset = true }, destructive = true) }
+                    }
                 }
             }
         }
@@ -441,7 +402,7 @@ fun SitePermissionsScreen(origin: String) {
         ChoiceSheet(
             visible = pickerVisible,
             title = kind?.title.orEmpty(),
-            message = kind?.description,
+            message = null,
             options = PermissionValues.map(::valueLabel),
             selectedIndex = if (kind == null) 0 else PermissionValues.indexOf(current(kind.key, kind.type)),
             onSelect = { i ->
@@ -453,8 +414,8 @@ fun SitePermissionsScreen(origin: String) {
 
         ChoiceSheet(
             visible = autoplayVisible,
-            title = "Auto-Play",
-            message = "Whether videos on $name can start playing on their own. Default follows your setting for all sites.",
+            title = "Auto-play",
+            message = null,
             options = AutoplayChoice.entries.map { it.label },
             selectedIndex = autoplay.ordinal,
             onSelect = { i ->
@@ -468,8 +429,8 @@ fun SitePermissionsScreen(origin: String) {
 
         PaneAlert(
             visible = confirmClear,
-            title = "Clear Data for $host?",
-            message = "Cookies, storage and cached files for this site will be removed. You'll be signed out.",
+            title = "Clear data for $host?",
+            message = "You'll be signed out.",
             actions = listOf(
                 AlertAction("Cancel", AlertStyle.Cancel) { confirmClear = false },
                 AlertAction("Clear", AlertStyle.Destructive) {
@@ -499,8 +460,8 @@ fun SitePermissionsScreen(origin: String) {
 
         PaneAlert(
             visible = confirmReset,
-            title = "Reset Permissions?",
-            message = "$name will have to ask again before using anything, and tracking protection is turned back on.",
+            title = "Reset permissions?",
+            message = "$name will have to ask again.",
             actions = listOf(
                 AlertAction("Cancel", AlertStyle.Cancel) { confirmReset = false },
                 AlertAction("Reset", AlertStyle.Destructive) {

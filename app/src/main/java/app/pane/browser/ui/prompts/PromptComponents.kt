@@ -7,11 +7,16 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.text.BasicTextField
@@ -26,22 +31,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.pane.browser.ui.components.TextButton
+import app.pane.browser.ui.components.ButtonStyle
+import app.pane.browser.ui.components.PrimaryButton
+import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.autofill
 import app.pane.browser.ui.components.excludeFromAutofill
 import app.pane.browser.ui.icons.PaneIcons
@@ -49,9 +59,14 @@ import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.ProgressiveEdge
+import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.rememberHaptics
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 
-/** The text field inside an iOS alert: 36pt, hairline border, no floating label. */
+/** The text field inside an alert: a soft pill of fill on the glass, no border, no floating label. */
 @Composable
 internal fun AlertTextField(
     value: String,
@@ -66,25 +81,23 @@ internal fun AlertTextField(
     autofillType: ContentType? = null,
 ) {
     val colors = PaneTheme.colors
-    val shape = ContinuousRoundedShape(8.dp)
     Box(
         modifier
             .fillMaxWidth()
-            .height(36.dp)
-            .clip(shape)
-            .background(if (colors.isDark) colors.fill else colors.surface)
-            .border(0.5.dp, colors.separator, shape)
-            .padding(horizontal = 8.dp),
+            .height(46.dp)
+            .clip(PaneShapes.medium)
+            .background(colors.fill)
+            .padding(horizontal = 14.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         if (value.isEmpty()) {
-            Text(placeholder, style = PaneTheme.type.subheadline, color = colors.tertiaryLabel, maxLines = 1)
+            Text(placeholder, style = PaneTheme.type.body, color = colors.tertiaryLabel, maxLines = 1)
         }
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = true,
-            textStyle = PaneTheme.type.subheadline.copy(color = colors.label),
+            textStyle = PaneTheme.type.body.copy(color = colors.label),
             cursorBrush = SolidColor(colors.accent),
             visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(
@@ -105,7 +118,7 @@ internal fun AlertTextField(
     }
 }
 
-/** A round checkbox, as in iOS edit mode: an empty ring, or a filled accent disc with a tick. */
+/** A round checkbox: an empty ring, or a solid ink disc with a tick. */
 @Composable
 internal fun CheckCircle(checked: Boolean, modifier: Modifier = Modifier, size: Dp = 22.dp) {
     val colors = PaneTheme.colors
@@ -114,7 +127,7 @@ internal fun CheckCircle(checked: Boolean, modifier: Modifier = Modifier, size: 
         modifier
             .size(size)
             .clip(CircleShape)
-            .background(fill)
+            .drawBehind { drawRect(fill) }
             .then(if (checked) Modifier else Modifier.border(1.5.dp, colors.tertiaryLabel, CircleShape)),
         contentAlignment = Alignment.Center,
     ) {
@@ -122,92 +135,179 @@ internal fun CheckCircle(checked: Boolean, modifier: Modifier = Modifier, size: 
     }
 }
 
-/** "Don't allow more dialogs from this page", shown inside alerts from a page that keeps opening them. */
+/** "Block more dialogs", shown inside alerts from a page that keeps opening them. */
 @Composable
 internal fun OptOutRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     val haptics = rememberHaptics()
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(ContinuousRoundedShape(8.dp))
+            .clip(PaneShapes.small)
             .clickable(remember { MutableInteractionSource() }, indication = null) {
                 haptics.toggle(!checked)
                 onCheckedChange(!checked)
             }
-            .padding(vertical = 4.dp),
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         CheckCircle(checked, size = 20.dp)
         Text(
-            "Don’t allow more dialogs from this page",
+            "Block more dialogs",
             style = PaneTheme.type.footnote,
-            color = PaneTheme.colors.label,
+            color = PaneTheme.colors.secondaryLabel,
         )
     }
 }
 
-/** A larger version of the settings icon tile, used as the hero of permission sheets. */
+/** A big plain title for the top of a sheet, with an optional line of body text under it. */
 @Composable
-internal fun HeroTile(icon: ImageVector, background: Color, modifier: Modifier = Modifier, size: Dp = 60.dp) {
-    Box(
-        modifier
-            .size(size)
-            .clip(ContinuousRoundedShape(size * 0.24f))
-            .background(background),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(size * 0.55f))
+internal fun SheetTitle(title: String, modifier: Modifier = Modifier, subtitle: String? = null) {
+    val colors = PaneTheme.colors
+    Column(modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 14.dp)) {
+        Text(title, style = PaneTheme.type.title2, color = colors.label, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        if (subtitle != null) {
+            Text(
+                subtitle,
+                style = PaneTheme.type.subheadline,
+                color = colors.secondaryLabel,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
     }
 }
 
-/** Sheet title bar with optional leading and trailing text buttons ("Clear" … "Done"). */
+/**
+ * The action buttons that close a sheet: a solid-ink pill for the primary action and, optionally, a
+ * tinted pill for the other one, stacked or side by side.
+ */
 @Composable
-internal fun SheetBar(
-    title: String,
-    leading: String? = null,
-    onLeading: (() -> Unit)? = null,
-    trailing: String? = null,
-    onTrailing: (() -> Unit)? = null,
+internal fun SheetButtons(
+    primary: String,
+    onPrimary: () -> Unit,
+    modifier: Modifier = Modifier,
+    secondary: String? = null,
+    onSecondary: (() -> Unit)? = null,
+    sideBySide: Boolean = false,
 ) {
-    Box(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 8.dp)) {
-        Text(
-            title,
-            style = PaneTheme.type.headline,
-            color = PaneTheme.colors.label,
-            maxLines = 1,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.align(Alignment.Center).padding(horizontal = 72.dp),
-        )
-        if (leading != null && onLeading != null) {
-            TextButton(leading, onClick = onLeading, modifier = Modifier.align(Alignment.CenterStart))
+    val padding = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 14.dp)
+    if (sideBySide && secondary != null && onSecondary != null) {
+        Row(modifier.then(padding), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PrimaryButton(secondary, onSecondary, Modifier.weight(1f), style = ButtonStyle.Tinted)
+            PrimaryButton(primary, onPrimary, Modifier.weight(1f))
         }
-        if (trailing != null && onTrailing != null) {
-            TextButton(trailing, onClick = onTrailing, bold = true, modifier = Modifier.align(Alignment.CenterEnd))
+    } else {
+        Column(modifier.then(padding), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            PrimaryButton(primary, onPrimary)
+            if (secondary != null && onSecondary != null) {
+                PrimaryButton(secondary, onSecondary, style = ButtonStyle.Tinted)
+            }
         }
     }
 }
 
-/** Shape of one row in an inset-grouped list, so separate lazy items read as one card. */
+/** Collects the rows of a [GlassSection] so hairlines can be drawn between them. */
+internal class GlassRows {
+    val rows = mutableListOf<@Composable () -> Unit>()
+
+    fun row(content: @Composable () -> Unit) {
+        rows += content
+    }
+}
+
+/**
+ * A group of rows on a translucent fill, so the glass of the sheet shows through (unlike
+ * GroupedSection, whose rows sit on an opaque surface). Hairlines are inset 16dp. When
+ * [entranceIndex] is 0 or more, each row arrives with a staggered entrance starting at that beat.
+ */
+@Composable
+internal fun GlassSection(
+    modifier: Modifier = Modifier,
+    header: String? = null,
+    footer: String? = null,
+    entranceIndex: Int = -1,
+    rows: GlassRows.() -> Unit,
+) {
+    val colors = PaneTheme.colors
+    val built = GlassRows().apply(rows).rows
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        if (header != null) {
+            Text(
+                header,
+                style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.secondaryLabel,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+            )
+        }
+        if (built.isNotEmpty()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(PaneShapes.large)
+                    .background(colors.secondaryFill),
+            ) {
+                built.forEachIndexed { index, row ->
+                    Box(if (entranceIndex >= 0) Modifier.entrance(entranceIndex + index) else Modifier) { row() }
+                    if (index < built.lastIndex) Separator(Modifier.padding(start = 16.dp))
+                }
+            }
+        }
+        if (footer != null) {
+            Text(
+                footer,
+                style = PaneTheme.type.footnote,
+                color = colors.secondaryLabel,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+            )
+        }
+    }
+}
+
+private val EdgeFade = 28.dp
+
+/**
+ * The top and bottom edges of scrolling content in a sheet: a progressive blur that dissolves
+ * whatever slides under it instead of cutting it off. Each edge fades in as the content moves
+ * under it ([top] and [bottom] return how many [EdgeFade]s of content are hidden there, read while
+ * drawing so nothing recomposes as it scrolls) and is invisible when there is nothing more to see.
+ * The scrolling content must be `hazeSource(haze)`.
+ */
+@Composable
+internal fun BoxScope.ScrollEdges(haze: HazeState, top: () -> Float, bottom: () -> Float) {
+    ProgressiveEdge(
+        haze,
+        top = true,
+        height = EdgeFade,
+        modifier = Modifier.align(Alignment.TopCenter).graphicsLayer { alpha = top().coerceIn(0f, 1f) },
+    )
+    ProgressiveEdge(
+        haze,
+        top = false,
+        height = EdgeFade,
+        modifier = Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = bottom().coerceIn(0f, 1f) },
+    )
+}
+
+/** A vertically scrolling column for sheets whose top and bottom edges dissolve into a progressive blur. */
+@Composable
+internal fun FadingColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val haze = rememberHazeState()
+    val scroll = rememberScrollState()
+    val fadePx = with(LocalDensity.current) { EdgeFade.toPx() }
+    Box(modifier) {
+        Column(Modifier.fillMaxWidth().hazeSource(haze).verticalScroll(scroll), content = content)
+        ScrollEdges(haze, top = { scroll.value / fadePx }, bottom = { (scroll.maxValue - scroll.value) / fadePx })
+    }
+}
+
+/** Shape of one row in a list of separate lazy items, so they read as one rounded card. */
 internal fun groupedRowShape(first: Boolean, last: Boolean): Shape {
-    val r = CornerSize(12.dp)
+    val r = CornerSize(20.dp)
     val none = CornerSize(0.dp)
     return when {
-        first && last -> PaneShapes.medium
+        first && last -> PaneShapes.large
         first -> ContinuousRoundedShape(r, r, none, none)
         last -> ContinuousRoundedShape(none, none, r, r)
         else -> RectangleShape
     }
-}
-
-/** iOS system colours for permission tiles. */
-internal object TileColors {
-    val blue = Color(0xFF0A84FF)
-    val red = Color(0xFFFF3B30)
-    val orange = Color(0xFFFF9500)
-    val green = Color(0xFF34C759)
-    val indigo = Color(0xFF5856D6)
-    val purple = Color(0xFFAF52DE)
-    val teal = Color(0xFF30B0C7)
-    val gray = Color(0xFF8E8E93)
 }

@@ -10,10 +10,12 @@ sealed interface Route {
     data object Settings : Route
     data object SearchSettings : Route
     data object PrivacySettings : Route
+    data object Connections : Route
     data object PasswordSettings : Route
     data object SiteSettings : Route
     data class SitePermissions(val origin: String) : Route
     data object AppearanceSettings : Route
+    data object TabsSettings : Route
     data object ClearData : Route
     data object About : Route
 

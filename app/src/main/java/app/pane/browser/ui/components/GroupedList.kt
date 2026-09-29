@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -55,21 +56,24 @@ fun GroupedSection(
     val built = SectionBuilder().apply(rows).rows
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         if (header != null) {
+            // Quiet: small, semibold, sentence case, sitting close to the card it names.
             Text(
-                header.uppercase(),
-                style = PaneTheme.type.footnote,
+                header,
+                style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
                 color = colors.secondaryLabel,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 22.dp, bottom = 7.dp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
             )
         } else {
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(SectionGap))
         }
         if (built.isNotEmpty()) {
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clip(PaneShapes.medium)
-                    .background(if (colors.isDark) colors.surface else colors.surface),
+                    .clip(PaneShapes.large)
+                    .background(colors.surface),
             ) {
                 built.forEachIndexed { index, row ->
                     row()
@@ -82,11 +86,14 @@ fun GroupedSection(
                 footer,
                 style = PaneTheme.type.footnote,
                 color = colors.secondaryLabel,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 7.dp),
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
             )
         }
     }
 }
+
+/** The gap above a section that has no header, so cards without titles still keep one rhythm. */
+private val SectionGap = 24.dp
 
 @Composable
 fun Separator(modifier: Modifier = Modifier) {
@@ -98,19 +105,13 @@ fun Separator(modifier: Modifier = Modifier) {
     )
 }
 
-/** The rounded, coloured glyph tile used at the start of settings rows. */
+/**
+ * Rows used to lead with a coloured glyph tile. Pane's rows are plain type, so this draws nothing;
+ * call sites keep compiling and an icon can be put back by returning to the old body.
+ */
+@Suppress("UNUSED_PARAMETER")
 @Composable
-fun IconTile(icon: ImageVector, background: Color, modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .size(29.dp)
-            .clip(ContinuousRoundedShape(7.dp))
-            .background(background),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, null, tint = Color.White, modifier = Modifier.size(18.dp))
-    }
-}
+fun IconTile(icon: ImageVector, background: Color, modifier: Modifier = Modifier) = Unit
 
 /**
  * The basic row. [trailing] sits at the end; when [onClick] is set and [showChevron] is true a
@@ -145,20 +146,26 @@ fun ListRow(
                 Text(subtitle, style = PaneTheme.type.footnote, color = colors.secondaryLabel, maxLines = 3, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (value != null) {
-            // Capped so a long value (an app name, say) truncates instead of squeezing the title.
-            Text(
-                value,
-                style = PaneTheme.type.body,
-                color = colors.secondaryLabel,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 140.dp),
-            )
-        }
-        trailing?.invoke(this)
-        if (onClick != null && showChevron) {
-            Icon(PaneIcons.ChevronRight, null, tint = colors.tertiaryLabel, modifier = Modifier.size(16.dp))
+        val chevron = onClick != null && showChevron
+        if (value != null || trailing != null || chevron) {
+            // The value, any control and the chevron travel together, closer than the title is to them.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (value != null) {
+                    // Capped so a very long value truncates instead of squeezing the title out.
+                    Text(
+                        value,
+                        style = PaneTheme.type.body,
+                        color = colors.secondaryLabel,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.widthIn(max = 210.dp),
+                    )
+                }
+                trailing?.invoke(this)
+                if (chevron) {
+                    Icon(PaneIcons.ChevronRight, null, tint = colors.tertiaryLabel, modifier = Modifier.size(15.dp))
+                }
+            }
         }
     }
 }
@@ -197,7 +204,7 @@ fun CheckRow(
 ) {
     ListRow(title = title, subtitle = subtitle, leading = leading, modifier = modifier, onClick = onClick, showChevron = false) {
         Box(Modifier.width(22.dp), contentAlignment = Alignment.Center) {
-            if (selected) Icon(PaneIcons.Check, null, tint = PaneTheme.colors.accent, modifier = Modifier.size(20.dp))
+            if (selected) Icon(PaneIcons.Check, null, tint = PaneTheme.colors.label, modifier = Modifier.size(19.dp))
         }
     }
 }
@@ -208,7 +215,7 @@ fun ActionRow(title: String, onClick: () -> Unit, modifier: Modifier = Modifier,
     ListRow(
         title = title,
         modifier = modifier,
-        titleColor = if (destructive) PaneTheme.colors.destructive else PaneTheme.colors.accent,
+        titleColor = if (destructive) PaneTheme.colors.destructive else PaneTheme.colors.label,
         onClick = onClick,
         showChevron = false,
     )

@@ -1,11 +1,16 @@
 package app.pane.browser.ui.prompts
 
 import android.annotation.SuppressLint
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -13,9 +18,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.AppContainer
@@ -24,16 +29,14 @@ import app.pane.browser.engine.prompts.SitePermissions
 import app.pane.browser.ui.components.ActionRow
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
-import app.pane.browser.ui.components.GroupedSection
-import app.pane.browser.ui.components.IconTile
 import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneAlert
 import app.pane.browser.ui.components.PaneSheet
-import app.pane.browser.ui.components.SheetHeader
-import app.pane.browser.ui.components.ToggleRow
+import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.entrance
 import app.pane.core.prompts.PermissionText
 import app.pane.core.prompts.SitePermission
 import app.pane.core.tabs.SecurityState
@@ -43,14 +46,18 @@ import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
 import org.mozilla.geckoview.StorageController
 import kotlin.coroutines.resume
 
-private class Connection(val title: String, val detail: String, val icon: ImageVector, val tint: Color)
+/** How the connection reads: a plain line and its detail. [tone] is only coloured where it carries meaning. */
+private class Connection(val title: String, val detail: String?, val tone: Tone, val locked: Boolean)
+
+private enum class Tone { Normal, Caution, Danger }
 
 /** A stored site permission and the value the user may just have changed it to. */
 private class SiteGrant(val permission: ContentPermission, val kind: SitePermission, val value: Int)
 
 /**
- * The sheet behind the lock icon: how the connection is protected, what was blocked, the site's
- * remembered permissions (switchable in place) and a way to wipe its cookies and storage.
+ * The sheet behind the lock mark: the host as a plain title, one line on the connection, trackers
+ * blocked, the site's remembered permissions (tap one to switch it in place) and a way to wipe its
+ * cookies and storage.
  */
 @Composable
 fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
@@ -70,42 +77,64 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
     }
 
     PaneSheet(visible = visible, onDismiss = onDismiss) {
-        SheetHeader(host, onDone = onDismiss)
-        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
-            val connection = connectionFor(tab?.security ?: SecurityState.Unknown, url, colors.positive, colors.destructive, colors.warning)
-            GroupedSection(separatorInset = 57.dp) {
-                row {
-                    ListRow(
-                        title = connection.title,
-                        subtitle = connection.detail,
-                        leading = { IconTile(connection.icon, connection.tint) },
-                    )
+        val connection = connectionFor(tab?.security ?: SecurityState.Unknown, url)
+        val connectionColor = when (connection.tone) {
+            Tone.Normal -> colors.secondaryLabel
+            Tone.Caution -> colors.warning
+            Tone.Danger -> colors.destructive
+        }
+        FadingColumn(Modifier.weight(1f, fill = false)) {
+            Row(
+                Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 2.dp).entrance(1),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(Modifier.weight(1f).padding(top = 4.dp)) {
+                    Text(host, style = PaneTheme.type.title2, color = colors.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Row(
+                        Modifier.padding(top = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (connection.locked) Icon(PaneIcons.LockFill, null, tint = colors.tertiaryLabel, modifier = Modifier.size(12.dp))
+                        Text(connection.title, style = PaneTheme.type.subheadline, color = connectionColor)
+                    }
                 }
-                if (isWeb) {
+                TextButton("Done", onClick = onDismiss, bold = true)
+            }
+            if (connection.detail != null) {
+                Text(
+                    connection.detail,
+                    style = PaneTheme.type.footnote,
+                    color = colors.secondaryLabel,
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp).entrance(2),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+
+            if (isWeb) {
+                GlassSection(entranceIndex = 3) {
                     row {
                         ListRow(
                             title = "Trackers Blocked",
-                            subtitle = "Trackers follow you from site to site. Pane stops the known ones.",
                             value = (tab?.trackersBlocked ?: 0).toString(),
-                            leading = { IconTile(PaneIcons.ShieldCheck, TileColors.teal) },
                         )
                     }
                 }
-            }
 
-            if (isWeb) {
-                GroupedSection(
+                GlassSection(
                     header = "Permissions",
-                    footer = if (grants.isEmpty()) "Permissions you allow or deny for $host appear here." else null,
-                    separatorInset = 57.dp,
+                    footer = if (grants.isEmpty()) "None saved yet." else "Tap to change.",
+                    entranceIndex = 4,
                 ) {
                     grants.forEach { grant ->
                         row {
-                            val (icon, tint) = permissionIcon(grant.kind)
-                            ToggleRow(
+                            val allowed = grant.value == ContentPermission.VALUE_ALLOW
+                            ListRow(
                                 title = PermissionText.settingLabel(grant.kind, grant.permission.thirdPartyOrigin),
-                                checked = grant.value == ContentPermission.VALUE_ALLOW,
-                                onCheckedChange = { allow ->
+                                value = if (allowed) "Allowed" else "Blocked",
+                                showChevron = false,
+                                onClick = {
+                                    val allow = !allowed
                                     setGrant(container, grant.permission, allow)
                                     grants = grants.map {
                                         if (it === grant) {
@@ -115,7 +144,6 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                                         }
                                     }
                                 },
-                                leading = { IconTile(icon, tint) },
                             )
                         }
                     }
@@ -124,24 +152,24 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                             ActionRow("Reset Permissions", onClick = {
                                 grants.forEach { resetGrant(container, it.permission) }
                                 grants = emptyList()
-                                toasts.show("Permissions reset for $host", PaneIcons.Check)
+                                toasts.show("Permissions reset for $host")
                             })
                         }
                     }
                 }
 
-                GroupedSection(footer = "Signs you out of $host and removes what it stored on this device.") {
-                    row { ActionRow("Clear Cookies and Site Data", onClick = { confirmClear = true }, destructive = true) }
+                GlassSection(entranceIndex = 5 + grants.size.coerceAtMost(3)) {
+                    row { ActionRow("Clear Site Data", onClick = { confirmClear = true }, destructive = true) }
                 }
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(20.dp))
         }
     }
 
     PaneAlert(
         visible = confirmClear,
-        title = "Clear Cookies and Site Data?",
-        message = "You’ll be signed out of $host, and it will forget your preferences.",
+        title = "Clear Site Data?",
+        message = "You’ll be signed out of $host.",
         actions = listOf(
             AlertAction("Cancel", AlertStyle.Cancel) { confirmClear = false },
             AlertAction("Clear", AlertStyle.Destructive) {
@@ -151,7 +179,7 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                     clearSiteData(container, siteHost)
                     val id = tabId
                     val reload: (() -> Unit)? = if (id != null) ({ container.sessions.reload(id) }) else null
-                    toasts.show("Cleared data for $host", PaneIcons.Trash, if (reload != null) "Reload" else null, reload)
+                    toasts.show("Cleared data for $host", null, if (reload != null) "Reload" else null, reload)
                 }
             },
         ),
@@ -159,16 +187,16 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
     )
 }
 
-private fun connectionFor(security: SecurityState, url: String, secure: Color, insecure: Color, mixed: Color): Connection = when {
+private fun connectionFor(security: SecurityState, url: String): Connection = when {
     url.isEmpty() || url.startsWith("about:") || url.startsWith("moz-extension:") ->
-        Connection("Pane Page", "This page is part of Pane and never leaves your device.", PaneIcons.Info, TileColors.gray)
+        Connection("Pane page", null, Tone.Normal, locked = false)
     security == SecurityState.Secure ->
-        Connection("Connection Is Secure", "Passwords and card numbers you send to this site are encrypted.", PaneIcons.LockFill, secure)
+        Connection("Connection secure", null, Tone.Normal, locked = true)
     security == SecurityState.Broken ->
-        Connection("Partly Secure", "Some parts of this page, like images or scripts, load without encryption.", PaneIcons.Warning, mixed)
+        Connection("Partly secure", "Some content loads unencrypted.", Tone.Caution, locked = false)
     security == SecurityState.Insecure || url.startsWith("http://", ignoreCase = true) ->
-        Connection("Not Secure", "Don’t enter passwords or card numbers here. Others on the network could see them.", PaneIcons.Warning, insecure)
-    else -> Connection("Checking Connection…", "The page is still loading.", PaneIcons.Lock, TileColors.gray)
+        Connection("Connection not secure", "Don’t enter passwords or card numbers.", Tone.Danger, locked = false)
+    else -> Connection("Checking…", null, Tone.Normal, locked = false)
 }
 
 /** The site's remembered permissions, most useful first; muted autoplay is always on, so it's left out. */

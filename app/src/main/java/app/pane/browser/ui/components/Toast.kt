@@ -92,18 +92,17 @@ fun ToastHost(state: ToastState, modifier: Modifier = Modifier) {
                         .heightIn(min = 44.dp)
                         .shadow(18.dp, PaneShapes.pill, ambientColor = colors.shadow, spotColor = colors.shadow)
                         .clip(PaneShapes.pill)
-                        .background(if (colors.isDark) colors.elevatedSurface else colors.surface)
+                        .background(colors.accent)
                         .padding(horizontal = 18.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    if (t.icon != null) Icon(t.icon, null, tint = colors.accent, modifier = Modifier.size(18.dp))
-                    Text(t.message, style = PaneTheme.type.subheadline, color = colors.label, maxLines = 2)
+                    Text(t.message, style = PaneTheme.type.subheadline, color = colors.onAccent, maxLines = 2)
                     if (t.actionLabel != null && t.action != null) {
                         Text(
                             t.actionLabel,
                             style = PaneTheme.type.headline,
-                            color = colors.accent,
+                            color = colors.onAccent.copy(alpha = 0.72f),
                             modifier = Modifier.pressDim {
                                 t.action.invoke()
                                 state.dismiss()

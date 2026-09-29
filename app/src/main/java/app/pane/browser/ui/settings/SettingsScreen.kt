@@ -13,51 +13,63 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.pane.browser.BuildConfig
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.components.GroupedSection
-import app.pane.browser.ui.components.IconTile
 import app.pane.browser.ui.components.LargeTitleScaffold
-import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PrimaryButton
-import app.pane.browser.ui.components.ToggleRow
+import app.pane.browser.ui.components.SearchField
+import app.pane.browser.ui.components.Separator
+import app.pane.browser.ui.components.pressScale
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.library.TileColors
+import app.pane.browser.ui.library.EmptyState
+import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.core.library.ProtectionSummary
 import app.pane.core.search.SearchEngines
 import app.pane.core.settings.ThemeMode
+import app.pane.core.settings.TrackingProtection
+import java.text.NumberFormat
 
-/** The settings root, laid out like iOS Settings: coloured glyph tiles, one row per area. */
+/**
+ * The settings root: what Pane has blocked this week, a search over every setting, then one card
+ * per area under a quiet header. Nothing here is a control; each row opens the screen that holds
+ * its settings, led by the same neutral glyph tile.
+ */
 @Composable
 fun SettingsScreen() {
     val container = LocalAppContainer.current
@@ -65,107 +77,160 @@ fun SettingsScreen() {
     val settings by rememberSettingsState()
     val backLabel = rememberBackLabel(Route.Settings)
     val engine = SearchEngines.byId(settings.searchEngineId)
-    val protection = remember(settings) { ProtectionSummary.of(settings) }
+    val installed by container.extensions.installed.collectAsStateWithLifecycle()
+    val blocked by container.privacyStats.weekTotal.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var autofill by remember { mutableStateOf(AutofillStatus.read(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { autofill = AutofillStatus.read(context) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val results = remember(query) { searchSettings(query) }
+    val protection = if (settings.trackingProtection == TrackingProtection.Strict) "Strict" else "Standard"
 
-    LargeTitleScaffold(title = "Settings", onBack = navigator::pop, backLabel = backLabel) {
-        item(key = "default") { DefaultBrowserCard() }
-        item(key = "general") {
-            GroupedSection(header = "General") {
-                row {
-                    ListRow(
-                        title = "Search Engine",
-                        leading = { IconTile(PaneIcons.Search, TileColors.Blue) },
-                        value = engine.name,
-                        onClick = { navigator.push(Route.SearchSettings) },
-                    )
-                }
-            }
-        }
-        item(key = "passwords") {
-            GroupedSection(header = "Passwords") {
-                row {
-                    ListRow(
-                        title = "Passwords & Autofill",
-                        leading = { IconTile(PaneIcons.Key, TileColors.Gray) },
-                        // Short names only ("Bitwarden"); "Google Play services" would crowd the title.
-                        value = autofill.serviceLabel?.takeIf { it.length <= 12 } ?: if (autofill.enabled) "On" else "Off",
-                        onClick = { navigator.push(Route.PasswordSettings) },
-                    )
-                }
-            }
-        }
-        item(key = "privacy") {
-            GroupedSection(header = "Privacy") {
-                row {
-                    ListRow(
-                        title = "Privacy & Security",
-                        leading = { IconTile(PaneIcons.ShieldCheck, TileColors.Green) },
-                        value = protection.level.name,
+    LargeTitleScaffold(
+        title = "Settings",
+        onBack = navigator::pop,
+        backLabel = backLabel,
+        header = {
+            Column(Modifier.arrive(0)) {
+                // Gives way to the results while searching, so they start right under the field.
+                AnimatedVisibility(
+                    visible = query.isBlank(),
+                    enter = expandVertically(Motion.sizeSpring) + fadeIn(Motion.fade()),
+                    exit = shrinkVertically(Motion.sizeSpring) + fadeOut(Motion.fade()),
+                ) {
+                    ProtectionSummary(
+                        blocked = blocked,
+                        level = protection,
                         onClick = { navigator.push(Route.PrivacySettings) },
                     )
                 }
-                row {
-                    ListRow(
-                        title = "Site Settings",
-                        leading = { IconTile(PaneIcons.Globe, TileColors.Indigo) },
-                        onClick = { navigator.push(Route.SiteSettings) },
-                    )
-                }
-                row {
-                    ListRow(
-                        title = "Clear Browsing Data",
-                        leading = { IconTile(PaneIcons.Trash, TileColors.Red) },
-                        onClick = { navigator.push(Route.ClearData) },
-                    )
+                SearchField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = "Search settings",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        },
+    ) {
+        if (query.isNotBlank()) {
+            if (results.isEmpty()) {
+                item(key = "none") { EmptyState(title = "No matches", message = "Try another word.") }
+            } else {
+                item(key = "results") {
+                    GroupedSection(modifier = Modifier.arrive(0), separatorInset = IconSeparatorInset) {
+                        results.forEach { entry ->
+                            row {
+                                NavRow(
+                                    entry.title,
+                                    icon = settingsIconFor(entry.route),
+                                    value = entry.screen,
+                                    onClick = { navigator.push(entry.route) },
+                                )
+                            }
+                        }
+                    }
                 }
             }
-        }
-        item(key = "appearance") {
-            GroupedSection(header = "Appearance") {
-                row {
-                    ListRow(
-                        title = "Appearance",
-                        leading = { IconTile(PaneIcons.Palette, TileColors.Orange) },
-                        value = when (settings.theme) {
-                            ThemeMode.System -> "Automatic"
-                            ThemeMode.Light -> "Light"
-                            ThemeMode.Dark -> "Dark"
-                        },
-                        onClick = { navigator.push(Route.AppearanceSettings) },
-                    )
+        } else {
+            item(key = "default") { DefaultBrowserButton(Modifier.arrive(1)) }
+            item(key = "browsing") {
+                GroupedSection(modifier = Modifier.arrive(2), header = "Browsing", separatorInset = IconSeparatorInset) {
+                    row {
+                        NavRow(
+                            "Search",
+                            large = true,
+                            icon = PaneIcons.Magnifier,
+                            value = engine.name,
+                            onClick = { navigator.push(Route.SearchSettings) },
+                        )
+                    }
+                    row {
+                        NavRow(
+                            "Passwords",
+                            large = true,
+                            icon = PaneIcons.KeyRound,
+                            // Whatever the phone has set up. Short names only: a long label would crowd the title.
+                            value = autofill.serviceLabel?.takeIf { it.length <= 12 } ?: if (autofill.enabled) "On" else "Not set",
+                            onClick = { navigator.push(Route.PasswordSettings) },
+                        )
+                    }
+                    row {
+                        NavRow(
+                            "Site permissions",
+                            large = true,
+                            icon = PaneIcons.Globe,
+                            onClick = { navigator.push(Route.SiteSettings) },
+                        )
+                    }
+                    row {
+                        NavRow(
+                            "Extensions",
+                            large = true,
+                            icon = PaneIcons.Puzzle,
+                            value = installed.size.takeIf { it > 0 }?.toString(),
+                            onClick = { navigator.push(Route.Extensions) },
+                        )
+                    }
                 }
             }
-        }
-        item(key = "tabs") {
-            GroupedSection(header = "Tabs", footer = "Reopen your tabs where you left off. Private tabs are never restored.") {
-                row {
-                    ToggleRow(
-                        title = "Restore Tabs on Launch",
-                        checked = settings.restoreTabs,
-                        onCheckedChange = { on -> container.settings.update { it.copy(restoreTabs = on) } },
-                        leading = { IconTile(PaneIcons.Tabs, TileColors.Teal) },
-                    )
+            item(key = "look") {
+                GroupedSection(modifier = Modifier.arrive(3), header = "Look & feel", separatorInset = IconSeparatorInset) {
+                    row {
+                        NavRow(
+                            "Appearance",
+                            large = true,
+                            icon = PaneIcons.Palette,
+                            value = when (settings.theme) {
+                                ThemeMode.System -> "Automatic"
+                                ThemeMode.Light -> "Light"
+                                ThemeMode.Dark -> "Dark"
+                            },
+                            onClick = { navigator.push(Route.AppearanceSettings) },
+                        )
+                    }
+                    row {
+                        NavRow(
+                            "Tabs & toolbar",
+                            large = true,
+                            icon = PaneIcons.Tabs,
+                            onClick = { navigator.push(Route.TabsSettings) },
+                        )
+                    }
                 }
             }
-        }
-        item(key = "more") {
-            GroupedSection {
-                row {
-                    ListRow(
-                        title = "Extensions",
-                        leading = { IconTile(PaneIcons.Puzzle, TileColors.Purple) },
-                        onClick = { navigator.push(Route.Extensions) },
-                    )
+            item(key = "privacy") {
+                GroupedSection(modifier = Modifier.arrive(4), header = "Privacy & data", separatorInset = IconSeparatorInset) {
+                    row {
+                        NavRow(
+                            "Privacy",
+                            large = true,
+                            icon = PaneIcons.Shield,
+                            value = protection,
+                            onClick = { navigator.push(Route.PrivacySettings) },
+                        )
+                    }
+                    row {
+                        NavRow(
+                            "Clear data",
+                            large = true,
+                            icon = PaneIcons.Trash,
+                            onClick = { navigator.push(Route.ClearData) },
+                        )
+                    }
                 }
-                row {
-                    ListRow(
-                        title = "About Pane",
-                        leading = { IconTile(PaneIcons.Info, TileColors.Gray) },
-                        onClick = { navigator.push(Route.About) },
-                    )
+            }
+            item(key = "about") {
+                GroupedSection(modifier = Modifier.arrive(5), separatorInset = IconSeparatorInset) {
+                    row {
+                        NavRow(
+                            "About",
+                            large = true,
+                            icon = PaneIcons.Info,
+                            value = BuildConfig.VERSION_NAME,
+                            onClick = { navigator.push(Route.About) },
+                        )
+                    }
                 }
             }
         }
@@ -173,14 +238,52 @@ fun SettingsScreen() {
 }
 
 /**
- * Invites the user to make Pane the default browser, and disappears once it is. Uses the
- * browser role dialog where available, the system default-apps screen otherwise.
+ * What Pane did for you this week, big enough to read at a glance, and how hard it is trying.
+ * Tapping anywhere on it opens Privacy. Ink on the grouped surface: no colour, no icon.
  */
 @Composable
-private fun DefaultBrowserCard() {
+private fun ProtectionSummary(blocked: Int, level: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = PaneTheme.colors
+    Column(
+        modifier
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .pressScale(pressedScale = 0.98f, onClick = onClick)
+            .clip(PaneShapes.large)
+            .background(colors.surface),
+    ) {
+        // Same 16dp edge as the rows below, so the number lines up with their glyph tiles.
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 14.dp)) {
+            Text(
+                NumberFormat.getIntegerInstance().format(blocked),
+                style = PaneTheme.type.largeTitle.copy(fontSize = 44.sp, lineHeight = 50.sp),
+                color = colors.label,
+                maxLines = 1,
+            )
+            Text(
+                if (blocked == 1) "tracker blocked this week" else "trackers blocked this week",
+                style = PaneTheme.type.subheadline,
+                color = colors.secondaryLabel,
+            )
+        }
+        Separator()
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("$level protection", style = PaneTheme.type.body, color = colors.label, modifier = Modifier.weight(1f))
+            Icon(PaneIcons.ChevronRight, contentDescription = null, tint = colors.tertiaryLabel, modifier = Modifier.size(15.dp))
+        }
+    }
+}
+
+/**
+ * Offers to make Pane the default browser, and disappears once it is. Uses the browser role
+ * dialog where available, the system default-apps screen otherwise.
+ */
+@Composable
+private fun DefaultBrowserButton(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val toasts = LocalToasts.current
-    val colors = PaneTheme.colors
     var isDefault by remember { mutableStateOf(DefaultBrowser.isDefault(context)) }
     var launchedAt by remember { mutableLongStateOf(0L) }
     var usedRoleDialog by remember { mutableStateOf(false) }
@@ -198,42 +301,21 @@ private fun DefaultBrowserCard() {
         }
     }
 
-    AnimatedVisibility(visible = !isDefault, exit = shrinkVertically(Motion.sizeSpring) + fadeOut()) {
-        Column(
-            Modifier
-                .padding(start = 16.dp, end = 16.dp, top = 16.dp)
-                .fillMaxWidth()
-                .clip(PaneShapes.large)
-                .background(colors.surface)
-                .padding(16.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                AppIcon(size = 52.dp)
-                Column(Modifier.weight(1f)) {
-                    Text("Make Pane Your Default Browser", style = PaneTheme.type.headline, color = colors.label)
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        "Open links from other apps with trackers blocked and HTTPS-Only on.",
-                        style = PaneTheme.type.subheadline,
-                        color = colors.secondaryLabel,
-                    )
+    AnimatedVisibility(visible = !isDefault, modifier = modifier, exit = shrinkVertically(Motion.sizeSpring) + fadeOut(Motion.fade())) {
+        PrimaryButton(
+            text = "Make Pane your default browser",
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+            onClick = {
+                val roleIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) DefaultBrowser.roleIntent(context) else null
+                launchedAt = SystemClock.elapsedRealtime()
+                usedRoleDialog = roleIntent != null
+                try {
+                    if (roleIntent != null) roleLauncher.launch(roleIntent) else settingsLauncher.launch(DefaultBrowser.settingsIntent())
+                } catch (_: ActivityNotFoundException) {
+                    toasts.show("Choose Pane in Settings › Apps › Default apps", PaneIcons.Info)
                 }
-            }
-            Spacer(Modifier.height(14.dp))
-            PrimaryButton(
-                text = "Set as Default Browser",
-                onClick = {
-                    val roleIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) DefaultBrowser.roleIntent(context) else null
-                    launchedAt = SystemClock.elapsedRealtime()
-                    usedRoleDialog = roleIntent != null
-                    try {
-                        if (roleIntent != null) roleLauncher.launch(roleIntent) else settingsLauncher.launch(DefaultBrowser.settingsIntent())
-                    } catch (_: ActivityNotFoundException) {
-                        toasts.show("Choose Pane in Settings › Apps › Default apps", PaneIcons.Info)
-                    }
-                },
-            )
-        }
+            },
+        )
     }
 }
 

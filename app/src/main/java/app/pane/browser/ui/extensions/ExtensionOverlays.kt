@@ -11,10 +11,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -136,7 +135,7 @@ private fun ColumnScope.InstallContent(prompt: InstallPrompt) {
         }
         if (prompt.permissions.isEmpty()) {
             Text(
-                "It doesn’t need any special permissions.",
+                "It needs no special permissions.",
                 style = PaneTheme.type.subheadline,
                 color = colors.secondaryLabel,
                 textAlign = TextAlign.Center,
@@ -145,17 +144,9 @@ private fun ColumnScope.InstallContent(prompt: InstallPrompt) {
                     .padding(horizontal = 24.dp, vertical = 16.dp),
             )
         } else {
-            GroupedSection(header = "It will be able to", separatorInset = 46.dp) {
+            GroupedSection(header = "It will be able to") {
                 prompt.permissions.forEach { sentence ->
-                    row {
-                        ListRow(
-                            title = sentence,
-                            leading = {
-                                Icon(PaneIcons.Check, contentDescription = null, tint = colors.accent, modifier = Modifier.size(18.dp))
-                            },
-                            showChevron = false,
-                        )
-                    }
+                    row { ListRow(title = sentence, modifier = Modifier.heightIn(min = 56.dp), showChevron = false) }
                 }
             }
         }
@@ -164,20 +155,22 @@ private fun ColumnScope.InstallContent(prompt: InstallPrompt) {
                 if (prompt.canRunInPrivate) {
                     row {
                         ToggleRow(
-                            title = "Allow in Private Tabs",
-                            subtitle = "It could see what you do in private tabs.",
+                            title = "Allow in private tabs",
+                            subtitle = "It could see what you do there.",
                             checked = allowPrivate,
                             onCheckedChange = { allowPrivate = it },
+                            modifier = Modifier.heightIn(min = 56.dp),
                         )
                     }
                 }
                 if (prompt.offersTechnicalData) {
                     row {
                         ToggleRow(
-                            title = "Share Technical Data",
-                            subtitle = "Send technical and interaction data to the developer.",
+                            title = "Share technical data",
+                            subtitle = "Sent to the developer.",
                             checked = shareTechnical,
                             onCheckedChange = { shareTechnical = it },
+                            modifier = Modifier.heightIn(min = 56.dp),
                         )
                     }
                 }

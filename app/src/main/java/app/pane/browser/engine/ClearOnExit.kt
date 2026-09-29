@@ -28,6 +28,7 @@ object ClearOnExit {
         container.sessions.deletePersistedSession()
         container.history.clear()
         container.thumbnails.clearAll()
+        container.favicons.clear()
         container.snapshots.clear()
         suspendCancellableCoroutine { cont ->
             container.runtime.storageController.clearData(StorageController.ClearFlags.ALL)

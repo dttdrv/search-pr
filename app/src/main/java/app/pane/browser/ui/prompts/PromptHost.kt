@@ -52,7 +52,6 @@ import app.pane.browser.ui.components.AlertStyle
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneAlert
 import app.pane.browser.ui.components.ToastState
-import app.pane.browser.ui.icons.PaneIcons
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -122,7 +121,7 @@ fun PromptHost() {
             queue.remove(request)
             // Only point to Settings when Android no longer shows its own dialog.
             val blocked = activity != null && request.permissions.none { ActivityCompat.shouldShowRequestPermissionRationale(activity, it) }
-            if (!granted && blocked) toasts.show(deniedMessage(request.permissions), PaneIcons.Warning, "Settings") { openAppSettings(context) }
+            if (!granted && blocked) toasts.show(deniedMessage(request.permissions), null, "Settings") { openAppSettings(context) }
         }
     }
 
@@ -162,7 +161,7 @@ fun PromptHost() {
                     pendingFileId = null
                     request.dismiss()
                     onDone()
-                    toasts.show("No app can choose files", PaneIcons.Warning)
+                    toasts.show("No app can choose files")
                 }
             }
             is AndroidPermissionRequest -> LaunchedEffect(Unit) {
@@ -235,7 +234,7 @@ private fun ExternalAppDialog(request: ExternalAppRequest, visible: Boolean, onD
     val toasts = LocalToasts.current
     val message = buildString {
         append(request.target)
-        if (request.isPrivate) append("\n\nThe other app won’t know you’re browsing privately.")
+        if (request.isPrivate) append("\n\nPrivate browsing won’t carry over.")
     }
     PaneAlert(
         visible = visible,
@@ -256,7 +255,7 @@ private fun onEngineEvent(container: AppContainer, context: Context, toasts: Toa
     when (event) {
         // Links that fire without a tap are how redirect spam launches apps; drop them silently.
         is EngineEvent.ExternalLink -> if (event.userGesture) openExternally(container, context, toasts, event)
-        is EngineEvent.OpenedInBackground -> toasts.show("Opened in new tab", PaneIcons.Tabs, "Show") { container.browser.select(event.tabId) }
+        is EngineEvent.OpenedInBackground -> toasts.show("Tab opened", null, "Show") { container.browser.select(event.tabId) }
         else -> Unit
     }
 }
@@ -297,7 +296,7 @@ private fun fallBack(container: AppContainer, toasts: ToastState, tabId: String?
     if (tabId != null && fallbackUrl != null) {
         container.sessions.load(tabId, fallbackUrl)
     } else {
-        toasts.show("No app can open this link", PaneIcons.OpenExternal)
+        toasts.show("No app can open this link")
     }
 }
 
@@ -326,12 +325,12 @@ private fun deniedMessage(permissions: List<String>): String {
     val camera = permissions.any { it.endsWith(".CAMERA") }
     val microphone = permissions.any { it.endsWith(".RECORD_AUDIO") }
     return when {
-        camera && microphone -> "Allow camera and microphone for Pane in Settings"
-        camera -> "Allow camera access for Pane in Settings"
-        microphone -> "Allow microphone access for Pane in Settings"
-        permissions.any { it.contains("LOCATION") } -> "Allow location access for Pane in Settings"
-        permissions.any { it.endsWith(".POST_NOTIFICATIONS") } -> "Allow notifications for Pane in Settings"
-        else -> "Pane needs a permission; allow it in Settings"
+        camera && microphone -> "Allow camera and mic in Settings"
+        camera -> "Allow camera in Settings"
+        microphone -> "Allow microphone in Settings"
+        permissions.any { it.contains("LOCATION") } -> "Allow location in Settings"
+        permissions.any { it.endsWith(".POST_NOTIFICATIONS") } -> "Allow notifications in Settings"
+        else -> "Allow this in Settings"
     }
 }
 

@@ -44,7 +44,7 @@ scroll_up
 shot 04b-menu-scrolled 1
 back
 
-if ui desc-contains " tabs"; then shot 05-tabs 4; ui text "Done"; sleep 3; fi
+if ui desc-contains " tabs"; then shot 05-tabs 4; ui desc "Done"; sleep 3; fi
 
 if ui desc-contains "Address"; then
   sleep 2
@@ -102,11 +102,11 @@ if menu "New Private Tab"; then
   sleep 2
   ui text "Cancel" || back
   shot 09-private 3
-  if ui desc-contains " tabs"; then shot 10-private-tabs 4; ui text "Done"; sleep 2; fi
+  if ui desc-contains " tabs"; then shot 10-private-tabs 4; ui desc "Done"; sleep 2; fi
 fi
 
 # Autofill: switch on the debug probe (a stand-in password manager) and open a real login form.
-# It must receive the page's fields with the site's domain, exactly what Bitwarden matches on.
+# It must receive the page's fields with the site's domain, exactly what a password manager matches on.
 adb shell settings put secure autofill_service app.pane.browser/app.pane.browser.debug.ProbeAutofillService
 echo "autofill service: $(adb shell settings get secure autofill_service)"
 adb shell am start -W -a android.intent.action.VIEW -d "https://github.com/login" app.pane.browser

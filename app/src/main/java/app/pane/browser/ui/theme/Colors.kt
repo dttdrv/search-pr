@@ -5,8 +5,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 
 /**
- * Semantic colours modelled on iOS system colours. Components use roles ("label",
- * "groupedBackground") rather than raw values so light, dark and private themes stay consistent.
+ * Semantic colours. Pane is monochrome: ink on paper, paper on ink. The accent is the label colour
+ * itself, so primary buttons are solid black (or white in dark) and nothing on screen is tinted
+ * except the page. Components use roles ("label", "surface") rather than raw values so light, dark
+ * and private themes stay consistent.
  */
 @Immutable
 data class PaneColors(
@@ -26,68 +28,70 @@ data class PaneColors(
     val destructive: Color,
     val positive: Color,
     val warning: Color,
-    /** Toolbar/chrome material: slightly translucent so the page glows through at the edges. */
+    /** The tint laid over blurred content on glass bars and sheets. */
     val chrome: Color,
+    /** Hairline that catches the light around glass. */
     val chromeBorder: Color,
     val scrim: Color,
     val shadow: Color,
 )
 
+private val Ink = Color(0xFF0D0D0D)
+private val Paper = Color(0xFFFFFFFF)
+
 val LightColors = PaneColors(
     isDark = false,
-    background = Color(0xFFFFFFFF),
-    groupedBackground = Color(0xFFF2F2F7),
-    surface = Color(0xFFFFFFFF),
-    elevatedSurface = Color(0xFFFFFFFF),
-    fill = Color(0x1F787880),
-    secondaryFill = Color(0x14787880),
-    label = Color(0xFF000000),
-    secondaryLabel = Color(0x993C3C43),
-    tertiaryLabel = Color(0x4D3C3C43),
-    separator = Color(0x4A3C3C43),
-    accent = Color(0xFF0A7AFF),
-    onAccent = Color.White,
-    destructive = Color(0xFFFF3B30),
-    positive = Color(0xFF34C759),
-    warning = Color(0xFFFF9500),
-    chrome = Color(0xF2F9F9FB),
-    chromeBorder = Color(0x1A000000),
-    scrim = Color(0x66000000),
-    shadow = Color(0x33000000),
+    background = Paper,
+    groupedBackground = Paper,
+    surface = Color(0xFFF4F4F4),
+    elevatedSurface = Paper,
+    fill = Ink.copy(alpha = 0.07f),
+    secondaryFill = Ink.copy(alpha = 0.04f),
+    label = Ink,
+    secondaryLabel = Ink.copy(alpha = 0.60f),
+    tertiaryLabel = Ink.copy(alpha = 0.38f),
+    separator = Ink.copy(alpha = 0.09f),
+    accent = Ink,
+    onAccent = Paper,
+    destructive = Color(0xFFF93A37),
+    positive = Color(0xFF10A37F),
+    warning = Color(0xFFD97706),
+    chrome = Paper.copy(alpha = 0.46f),
+    chromeBorder = Ink.copy(alpha = 0.08f),
+    scrim = Color.Black.copy(alpha = 0.38f),
+    shadow = Color.Black.copy(alpha = 0.22f),
 )
 
 val DarkColors = PaneColors(
     isDark = true,
-    background = Color(0xFF000000),
-    groupedBackground = Color(0xFF000000),
-    surface = Color(0xFF1C1C1E),
-    elevatedSurface = Color(0xFF2C2C2E),
-    fill = Color(0x5C787880),
-    secondaryFill = Color(0x52787880),
-    label = Color(0xFFFFFFFF),
-    secondaryLabel = Color(0x99EBEBF5),
-    tertiaryLabel = Color(0x4DEBEBF5),
-    separator = Color(0x99545458),
-    accent = Color(0xFF3395FF),
-    onAccent = Color.White,
-    destructive = Color(0xFFFF453A),
-    positive = Color(0xFF30D158),
-    warning = Color(0xFFFF9F0A),
-    chrome = Color(0xF01C1C1E),
-    chromeBorder = Color(0x1FFFFFFF),
-    scrim = Color(0x8C000000),
-    shadow = Color(0x66000000),
+    background = Ink,
+    groupedBackground = Ink,
+    surface = Color(0xFF1B1B1B),
+    elevatedSurface = Color(0xFF262626),
+    fill = Paper.copy(alpha = 0.12f),
+    secondaryFill = Paper.copy(alpha = 0.07f),
+    label = Color(0xFFF5F5F5),
+    secondaryLabel = Paper.copy(alpha = 0.62f),
+    tertiaryLabel = Paper.copy(alpha = 0.38f),
+    separator = Paper.copy(alpha = 0.11f),
+    accent = Color(0xFFF5F5F5),
+    onAccent = Ink,
+    destructive = Color(0xFFFF6459),
+    positive = Color(0xFF19C37D),
+    warning = Color(0xFFFFB020),
+    chrome = Color(0xFF161616).copy(alpha = 0.50f),
+    chromeBorder = Paper.copy(alpha = 0.14f),
+    scrim = Color.Black.copy(alpha = 0.62f),
+    shadow = Color.Black.copy(alpha = 0.55f),
 )
 
-/** Private browsing: always dark, with a violet accent so the mode is unmistakable. */
+/** Private browsing: the darkest ink, otherwise the same monochrome. The pill says "Private". */
 val PrivateColors = DarkColors.copy(
-    background = Color(0xFF0E0B16),
-    groupedBackground = Color(0xFF0E0B16),
-    surface = Color(0xFF1B1726),
-    elevatedSurface = Color(0xFF262136),
-    accent = Color(0xFFA78BFA),
-    chrome = Color(0xF01B1726),
-    chromeBorder = Color(0x26A78BFA),
+    background = Color.Black,
+    groupedBackground = Color.Black,
+    surface = Color(0xFF131313),
+    elevatedSurface = Color(0xFF1E1E1E),
+    chrome = Color(0xFF0B0B0B).copy(alpha = 0.60f),
 )
 
 val LocalPaneColors = staticCompositionLocalOf { LightColors }

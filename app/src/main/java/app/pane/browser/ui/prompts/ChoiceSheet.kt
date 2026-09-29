@@ -25,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -35,6 +37,8 @@ import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.ChoicePrompt.Choice
 
 /** Lists longer than this get a search field (country pickers, time zones…). */
@@ -51,8 +55,9 @@ private sealed interface ChoiceLine {
 }
 
 /**
- * `<select>` as an inset-grouped list: single choice picks and closes, multiple choice ticks
- * circles and confirms with Done, page menus act on tap. `<optgroup>`s become section headers.
+ * `<select>` as a list of plain rows on a translucent fill: single choice picks and closes,
+ * multiple choice ticks circles and confirms with Done, page menus act on tap. `<optgroup>`s
+ * become section headers.
  */
 @Composable
 internal fun ChoiceSheet(request: ChoiceRequest, visible: Boolean, onDone: () -> Unit) {
@@ -66,6 +71,8 @@ internal fun ChoiceSheet(request: ChoiceRequest, visible: Boolean, onDone: () ->
     val lines = remember(groups, query) { linesFor(groups, query) }
     val initialIndex = remember { lines.indexOfFirst { it is ChoiceLine.Option && it.choice.id in selected }.coerceAtLeast(0) }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (initialIndex - 3).coerceAtLeast(0))
+    val haze = rememberHazeState()
+    val fadePx = with(LocalDensity.current) { 28.dp.toPx() }
 
     val title = listOf(prompt.title, prompt.message).firstOrNull { !it.isNullOrBlank() }
         ?: when {
@@ -90,54 +97,70 @@ internal fun ChoiceSheet(request: ChoiceRequest, visible: Boolean, onDone: () ->
         request.dismiss()
         onDone()
     }) {
-        if (request.isMultiple) {
-            SheetBar(title, trailing = "Done", onTrailing = {
-                request.selectAll(selected.toList())
-                onDone()
-            })
-        } else {
-            SheetBar(title)
-        }
+        SheetTitle(title)
         if (optionCount > SEARCH_THRESHOLD) {
             SearchField(query, { query = it }, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         }
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.weight(1f, fill = false),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
-        ) {
-            items(lines, key = { it.key }) { line ->
-                when (line) {
-                    is ChoiceLine.Header -> Text(
-                        line.label.uppercase(),
-                        style = PaneTheme.type.footnote,
-                        color = colors.secondaryLabel,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(start = 32.dp, end = 32.dp, top = 18.dp, bottom = 7.dp),
-                    )
-                    is ChoiceLine.Option -> OptionRow(
-                        line = line,
-                        checked = line.choice.id in selected,
-                        indicator = when {
-                            request.isMenu -> Indicator.None
-                            request.isMultiple -> Indicator.Circle
-                            else -> Indicator.Check
-                        },
-                        onClick = { tap(line.choice) },
-                    )
+        Box(Modifier.weight(1f, fill = false)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().hazeSource(haze),
+                contentPadding = PaddingValues(top = 4.dp, bottom = if (request.isMultiple) 8.dp else 24.dp),
+            ) {
+                items(lines, key = { it.key }) { line ->
+                    when (line) {
+                        is ChoiceLine.Header -> Text(
+                            line.label,
+                            style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
+                            color = colors.secondaryLabel,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(start = 32.dp, end = 32.dp, top = 16.dp, bottom = 8.dp),
+                        )
+                        is ChoiceLine.Option -> OptionRow(
+                            line = line,
+                            checked = line.choice.id in selected,
+                            indicator = when {
+                                request.isMenu -> Indicator.None
+                                request.isMultiple -> Indicator.Circle
+                                else -> Indicator.Check
+                            },
+                            onClick = { tap(line.choice) },
+                        )
+                    }
+                }
+                if (lines.isEmpty()) {
+                    item(key = "empty") {
+                        Text(
+                            "No Results",
+                            style = PaneTheme.type.body,
+                            color = colors.secondaryLabel,
+                            modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        )
+                    }
                 }
             }
-            if (lines.isEmpty()) {
-                item(key = "empty") {
-                    Text(
-                        "No Results",
-                        style = PaneTheme.type.body,
-                        color = colors.secondaryLabel,
-                        modifier = Modifier.fillMaxWidth().padding(24.dp),
-                    )
-                }
-            }
+            ScrollEdges(
+                haze,
+                top = {
+                    if (listState.firstVisibleItemIndex > 0) 1f else listState.firstVisibleItemScrollOffset / fadePx
+                },
+                bottom = {
+                    val info = listState.layoutInfo
+                    val last = info.visibleItemsInfo.lastOrNull()
+                    when {
+                        last == null -> 0f
+                        last.index < info.totalItemsCount - 1 -> 1f
+                        else -> (last.offset + last.size - (info.viewportEndOffset - info.afterContentPadding)) / fadePx
+                    }
+                },
+            )
+        }
+        if (request.isMultiple) {
+            SheetButtons(primary = "Done", onPrimary = {
+                request.selectAll(selected.toList())
+                onDone()
+            })
         }
     }
 }
@@ -154,7 +177,7 @@ private fun OptionRow(line: ChoiceLine.Option, checked: Boolean, indicator: Indi
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
             .clip(groupedRowShape(line.first, line.last))
-            .background(colors.surface),
+            .background(colors.secondaryFill),
     ) {
         Row(
             Modifier

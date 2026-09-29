@@ -2,11 +2,12 @@ package app.pane.browser.ui.findinpage
 
 import android.annotation.SuppressLint
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,22 +34,27 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import app.pane.browser.LocalAppContainer
-import app.pane.browser.ui.components.ChromeButton
-import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.GlassStrength
+import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.Motion
+import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.glass
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.prompts.PromptText
 import kotlinx.coroutines.delay
@@ -66,9 +72,9 @@ private class Match(val found: Boolean, val current: Int, val total: Int)
 private const val DEBOUNCE_MS = 120L
 
 /**
- * Find-in-page docked above the keyboard, as in Safari: a search capsule with a live "3 of 12"
- * counter, previous/next chevrons and Done. Every match is highlighted; highlights are cleared
- * when the bar goes away.
+ * Find-in-page as a glass pill floating above the keyboard: the field, a live "3 of 12" counter,
+ * previous/next chevrons and Done. The pill rises into place when it appears (the caller shows and
+ * hides it). Every match is highlighted; highlights are cleared when the bar goes away.
  */
 @Composable
 fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modifier) {
@@ -80,6 +86,12 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
     val focus = remember { FocusRequester() }
     var query by rememberSaveable(tabId) { mutableStateOf("") }
     var match by remember(tabId) { mutableStateOf<Match?>(null) }
+    val reduceMotion = LocalReduceMotion.current
+    val risePx = with(LocalDensity.current) { 48.dp.toPx() }
+    val rise = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        if (reduceMotion) rise.animateTo(1f, Motion.fade(160)) else rise.animateTo(1f, Motion.bouncy())
+    }
 
     fun finder(): SessionFinder? = container.sessions.session(tabId)?.finder
 
@@ -118,70 +130,74 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
     }
 
     val hasMatches = (match?.found == true) && (match?.total ?: 0) != 0
-    Column(modifier.fillMaxWidth().background(colors.chrome)) {
-        Separator()
+    Box(
+        modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+            .graphicsLayer {
+                val p = rise.value
+                alpha = p.coerceIn(0f, 1f)
+                if (!reduceMotion) translationY = (1f - p) * risePx
+            }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                 .height(52.dp)
-                .padding(start = 12.dp, end = 4.dp),
+                .glass(PaneShapes.pill, GlassStrength.Regular)
+                .padding(start = 20.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                Modifier
-                    .weight(1f)
-                    .height(36.dp)
-                    .clip(ContinuousRoundedShape(10.dp))
-                    .background(colors.fill)
-                    .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+                if (query.isEmpty()) {
+                    Text("Find on page", style = PaneTheme.type.body, color = colors.secondaryLabel, maxLines = 1)
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = PaneTheme.type.body.copy(color = colors.label),
+                    cursorBrush = SolidColor(colors.accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { step(false) }),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus).excludeFromAutofill(),
+                )
+            }
+            val current = match
+            AnimatedVisibility(
+                visible = query.isNotEmpty() && current != null,
+                enter = fadeIn(Motion.fade(120)) + scaleIn(Motion.snappy(), initialScale = 0.8f),
+                exit = fadeOut(Motion.fade(100)) + scaleOut(Motion.snappy(), targetScale = 0.8f),
             ) {
-                Icon(PaneIcons.Search, null, tint = colors.secondaryLabel, modifier = Modifier.size(17.dp))
-                Box(Modifier.weight(1f).padding(horizontal = 6.dp), contentAlignment = Alignment.CenterStart) {
-                    if (query.isEmpty()) {
-                        Text("Find on Page", style = PaneTheme.type.body, color = colors.secondaryLabel, maxLines = 1)
-                    }
-                    BasicTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        textStyle = PaneTheme.type.body.copy(color = colors.label),
-                        cursorBrush = SolidColor(colors.accent),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { step(false) }),
-                        modifier = Modifier.fillMaxWidth().focusRequester(focus).excludeFromAutofill(),
-                    )
-                }
-                val current = match
-                AnimatedVisibility(
-                    visible = query.isNotEmpty() && current != null,
-                    enter = fadeIn(Motion.fade(120)),
-                    exit = fadeOut(Motion.fade(120)),
-                ) {
-                    if (current != null) {
-                        Text(
-                            PromptText.findCounter(current.found, current.current, current.total),
-                            style = PaneTheme.type.footnote,
-                            color = colors.secondaryLabel,
-                            maxLines = 1,
-                            modifier = Modifier.padding(end = 6.dp),
-                        )
-                    }
-                }
-                if (query.isNotEmpty()) {
-                    Icon(
-                        PaneIcons.CloseCircle,
-                        contentDescription = "Clear",
-                        tint = colors.secondaryLabel,
-                        modifier = Modifier.size(18.dp).pressDim { query = "" },
+                if (current != null) {
+                    Text(
+                        PromptText.findCounter(current.found, current.current, current.total),
+                        style = PaneTheme.type.footnote,
+                        color = colors.secondaryLabel,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 8.dp),
                     )
                 }
             }
-            ChromeButton(PaneIcons.ChevronUp, "Previous match", { step(true) }, enabled = hasMatches, size = 22.dp)
-            ChromeButton(PaneIcons.ChevronDown, "Next match", { step(false) }, enabled = hasMatches, size = 22.dp)
+            StepButton(PaneIcons.ChevronUp, "Previous match", enabled = hasMatches) { step(true) }
+            StepButton(PaneIcons.ChevronDown, "Next match", enabled = hasMatches) { step(false) }
             TextButton("Done", onClick = close, bold = true)
         }
+    }
+}
+
+/** A chevron button that dims when there is nothing to step to. */
+@Composable
+private fun StepButton(icon: ImageVector, description: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(38.dp)
+            .semantics { contentDescription = description }
+            .pressDim(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = PaneTheme.colors.label, modifier = Modifier.size(20.dp))
     }
 }
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Debug builds only: a stand-in password manager the emulator smoke test switches on to check
-     that web login forms reach Android autofill the way Bitwarden needs them. -->
+     that web login forms reach Android autofill the way a password manager needs them. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <service

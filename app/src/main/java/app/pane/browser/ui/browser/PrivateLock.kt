@@ -19,9 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,8 +31,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.components.PrimaryButton
-import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.entrance
 
 /**
  * Device-owner check before showing private tabs: the platform biometric prompt, with the screen
@@ -120,7 +118,7 @@ fun PrivateLockCover(onUnlock: () -> Unit, modifier: Modifier = Modifier) {
         Box(
             Modifier
                 .matchParentSize()
-                .background(colors.groupedBackground)
+                .background(colors.background)
                 .pointerInput(Unit) {
                     awaitPointerEventScope {
                         while (true) {
@@ -134,18 +132,23 @@ fun PrivateLockCover(onUnlock: () -> Unit, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(PaneIcons.Lock, null, tint = colors.accent, modifier = Modifier.size(48.dp))
-            Spacer(Modifier.height(16.dp))
-            Text("Private Tabs Locked", style = PaneTheme.type.title2, color = colors.label)
-            Spacer(Modifier.height(8.dp))
+            Text(
+                "Private Tabs Locked",
+                style = PaneTheme.type.title1,
+                color = colors.label,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.entrance(0),
+            )
+            Spacer(Modifier.height(10.dp))
             Text(
                 "Unlock with your fingerprint, face or screen lock.",
                 style = PaneTheme.type.subheadline,
                 color = colors.secondaryLabel,
                 textAlign = TextAlign.Center,
+                modifier = Modifier.entrance(1),
             )
-            Spacer(Modifier.height(24.dp))
-            PrimaryButton("Unlock", onClick = onUnlock, icon = PaneIcons.Fingerprint, modifier = Modifier.width(220.dp))
+            Spacer(Modifier.height(28.dp))
+            PrimaryButton("Unlock", onClick = onUnlock, modifier = Modifier.entrance(2).width(220.dp))
         }
     }
 }

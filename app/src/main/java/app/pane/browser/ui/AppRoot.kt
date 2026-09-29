@@ -12,8 +12,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
@@ -30,7 +32,10 @@ import app.pane.browser.ui.navigation.RouteHost
 import app.pane.browser.ui.prompts.PromptHost
 import app.pane.browser.ui.theme.PaneTheme
 
-/** Layering, bottom to top: browser, pushed screens, extension overlays, page prompts, toasts. */
+/**
+ * Layering, bottom to top: browser, pushed screens, extension overlays, page prompts, toasts.
+ * Pushed screens arrive on springs (`Motion.push()`); the browser beneath eases back as they do.
+ */
 @Composable
 fun AppRoot(container: AppContainer, navigator: Navigator) {
     val settings by container.settings.state.collectAsStateWithLifecycle()
@@ -41,7 +46,7 @@ fun AppRoot(container: AppContainer, navigator: Navigator) {
         LocalNavigator provides navigator,
         LocalToasts provides toasts,
     ) {
-        PaneTheme(mode = settings.theme, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion) {
+        PaneTheme(mode = settings.theme, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion, glassQuality = settings.glassQuality) {
             // Edge to edge: everything draws under the status and navigation bars, and each screen
             // pads itself vertically. Sideways, in landscape, a navigation bar or camera cutout would
             // cover controls, so the whole UI keeps clear of them and the strips show the background.
@@ -51,8 +56,20 @@ fun AppRoot(container: AppContainer, navigator: Navigator) {
                     .background(PaneTheme.colors.background)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
             ) {
-                BrowserScreen()
-                RouteHost(navigator) { RouteContent(it) }
+                // The browser steps back a little as a screen slides over it (see RouteHost).
+                val pushed = remember { mutableFloatStateOf(0f) }
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val s = 1f - 0.05f * pushed.floatValue
+                            scaleX = s
+                            scaleY = s
+                        },
+                ) {
+                    BrowserScreen()
+                }
+                RouteHost(navigator, underlay = pushed) { RouteContent(it) }
                 ExtensionOverlays()
                 PromptHost()
                 ToastHost(toasts)

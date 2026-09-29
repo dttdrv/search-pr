@@ -1,25 +1,30 @@
 # Pane
 
-A minimal, private Android browser with iOS-grade motion and real Firefox extensions.
+A minimal, private Android browser in monochrome and liquid glass, with real Firefox extensions.
 
 Pane is built on **GeckoView** (Mozilla's engine) and **Jetpack Compose**. The chrome is designed
-around one idea: the page is the interface. Everything else is a thumb's reach away at the bottom
-of the screen and gets out of the way when you scroll.
+around one idea: the page is the interface. The address bar, tabs and menu float over the page as
+frosted glass, and get out of the way when you scroll. See [DESIGN.md](DESIGN.md).
 
 ## Highlights
 
-**Motion**
-- Every transition runs on springs described like UIKit's (response + damping), so gestures hand
-  off to animations without a seam.
-- The address bar collapses into a slim host label as you scroll, and Gecko is told about the
-  dynamic toolbar so fixed page elements stay visible.
-- Swipe the address bar sideways to move between tabs (past the last one opens a new tab); swipe
+**Look and motion**
+- Ink on paper: black and white with no accent colour, in your phone's own system font.
+- Liquid glass bars, menus and sheets: the page behind them is bent along the rim, softly blurred
+  and frosted, with a specular highlight that wakes when you press. One setting (Appearance ›
+  Glass effects) chooses Full, Light or Off, and Pane drops to Light on its own in battery saver.
+- The page runs edge to edge. The status area takes the colour of the page's own top edge and
+  dissolves into it as you scroll; the glass tone follows the page behind the bar. Fixed footers
+  stay above the floating bar and drop to the screen edge when it melts away.
+- Everything moves on springs from one small set of tokens, so gestures hand off to animations
+  without a seam: the address pill *becomes* the search field, the menu grows out of its button,
+  a tab's page flies into its card.
+- Swipe the address pill sideways to move between tabs (past the last one opens a new tab); swipe
   up for the tab overview.
-- Opening the overview zooms the live page into its card; picking a card zooms it back.
 - The system back gesture slides the page away and reveals the previous one in parallax, and can
   be cancelled halfway through.
-- Continuous ("squircle") corners, an iOS-style switch, segmented control, grouped lists,
-  large-title screens, springy sheets that follow the finger, and restrained haptics.
+- Swipeable switches and segmented controls, Android's own overscroll stretch, and restrained
+  haptics.
 
 **Privacy & security** (all on by default)
 - Web content runs in Android *isolated processes*: no permissions and no access to app data,
@@ -38,16 +43,20 @@ of the screen and gets out of the way when you scroll.
   other apps; pages can't open other apps without asking you first.
 - Search suggestions and add-on store requests go through Gecko's own network stack
   (same DoH/TLS settings), anonymously.
+- Site icons are fetched only for pages you open in normal tabs (never private ones), cached on
+  the device, and cleared with browsing data.
 - Links you share or copy have tracking parameters removed.
 
 **Passwords & passkeys**
-- Pane keeps no passwords itself. Login forms go to Android's autofill service with the site's
-  address, so **Bitwarden** (or any password manager) matches logins by website, fills them, and
-  offers to save new ones after you sign in. Pane's own fields (address bar, find, search) are
-  kept out of autofill; the HTTP sign-in prompt is marked as username/password.
+- Pane keeps no passwords itself and names no password manager. Login forms go to whichever
+  Android autofill service the phone has set up, with the site's address, so it matches logins by
+  website, fills them, and offers to save new ones after you sign in. Pane's own fields (address
+  bar, find, search) are kept out of autofill; the HTTP sign-in prompt is marked as
+  username/password.
 - Passkeys on Android 14+ go through Credential Manager on the site's behalf, like other
-  browsers; Bitwarden asks once whether to trust Pane.
-- **Settings › Passwords & Autofill** shows which service is active and opens the system picker.
+  browsers, using whichever provider the phone has chosen.
+- **Settings › Passwords** shows which autofill service is active and opens the system pickers
+  for the autofill service and for passkeys.
 - CI checks this for real: the emulator test installs a stand-in autofill service (debug builds
   only), opens github.com/login, and fails unless the form reaches it with its domain and
   password field.
@@ -71,7 +80,10 @@ of the screen and gets out of the way when you scroll.
 - Session restore, recently closed tabs, per-site permissions, clear browsing data.
 - Launcher shortcuts for a new tab and a new private tab; "Search in Pane" in the text selection
   menu; hardware keyboard shortcuts (Ctrl+T/W/L/R/F, Ctrl+Tab, Alt+←/→).
-- Optionally closes tabs you haven't looked at for a while.
+- Optionally closes tabs you haven't looked at for a while (Settings › Tabs & toolbar).
+- Settings open on this week's blocked-tracker count and a search over every setting, then group
+  into Browsing, Look & feel and Privacy & data. Glass effects can be dialled to Full, Light or
+  Off, and everything can be put back to its defaults from About.
 
 ## Project layout
 

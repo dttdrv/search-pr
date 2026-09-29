@@ -137,7 +137,7 @@ jobs:
           {
             echo "## Pane $VERSION"
             echo
-            echo "A private, minimal browser built on Firefox's GeckoView engine, with iOS-style motion and full add-on support."
+            echo "A private, minimal browser built on Firefox's GeckoView engine, with liquid-glass chrome and full add-on support."
             echo
             echo "### Which APK?"
             echo "| Phone | File |"
@@ -148,10 +148,8 @@ jobs:
             echo
             echo "Requires Android 8.0 or newer."
             echo
-            echo "### Bitwarden and other password managers"
-            echo "1. In Pane, open **Settings › Passwords & Autofill** and tap **Use Bitwarden** (or pick it under Android's *Passwords & accounts*)."
-            echo "2. Tap any login field on a website: Bitwarden offers the matching logins for that site, and offers to save new ones after you sign in."
-            echo "3. Passkeys (Android 14+): set Bitwarden as your preferred service. The first time, Bitwarden asks whether to trust Pane as a browser; allow it."
+            echo "### Passwords and passkeys"
+            echo "Pane uses whatever password manager your phone is set up with: choose it under **Settings › Passwords** (or Android's *Passwords & accounts*). Pane never stores passwords itself."
             echo
             echo "### Verify"
             echo "Signing certificate SHA-256: \`$CERT_SHA256\`"

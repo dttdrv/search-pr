@@ -6,12 +6,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -22,31 +23,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.components.SiteIcon
 import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.components.pressScale
-import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.entrance
 import app.pane.core.library.LetterTiles
 import app.pane.core.url.UrlDisplay
 import app.pane.core.url.UrlInput
-import kotlin.math.abs
 
-/** A site shown as a tile on the start page and in the empty address editor. */
+/** A site shown as an icon on the start page and in the empty address editor. */
 data class FavoriteSite(val url: String, val title: String)
 
 /**
- * Favourites if the user has any, otherwise their most-visited sites. Nothing is fetched from
- * the network for tiles; they're monograms, so the start page leaks nothing.
+ * Favourites if the user has any, otherwise their most-visited sites. Only local data: icons come
+ * from Pane's own cache, so the start page itself asks the network for nothing.
  */
 @Composable
 fun rememberFavoriteSites(limit: Int = 8): List<FavoriteSite> {
@@ -59,87 +58,168 @@ fun rememberFavoriteSites(limit: Int = 8): List<FavoriteSite> {
     return if (favorites.isNotEmpty()) favorites.take(limit).map { FavoriteSite(it.url, it.title) } else top
 }
 
+/**
+ * Sites as a grid of icons with their names underneath, [columns] to a row. Icons arrive one after
+ * another; [indexOffset] says how many things above them on the page have already been given a
+ * place in that sequence (the cells are numbered row by row from there).
+ */
 @Composable
-fun FavoritesGrid(sites: List<FavoriteSite>, onOpen: (String) -> Unit, modifier: Modifier = Modifier, columns: Int = 4) {
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        sites.chunked(columns).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                row.forEach { site -> FavoriteTile(site, onClick = { onOpen(site.url) }) }
-                repeat(columns - row.size) { Spacer(Modifier.width(72.dp)) }
+fun FavoritesGrid(
+    sites: List<FavoriteSite>,
+    onOpen: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    columns: Int = 4,
+    indexOffset: Int = 0,
+    iconSize: Dp = 60.dp,
+    labelLines: Int = 2,
+) {
+    val perRow = columns.coerceAtLeast(1)
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        sites.chunked(perRow).forEachIndexed { row, chunk ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                chunk.forEachIndexed { col, site ->
+                    FavoriteTile(
+                        site = site,
+                        iconSize = iconSize,
+                        labelLines = labelLines,
+                        onClick = { onOpen(site.url) },
+                        modifier = Modifier.weight(1f).entrance(indexOffset + row * perRow + col, key = site.url),
+                    )
+                }
+                // A short last row keeps the same cell width as the rows above it.
+                repeat(perRow - chunk.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
 }
 
 @Composable
-fun FavoriteTile(site: FavoriteSite, onClick: () -> Unit) {
-    val colors = PaneTheme.colors
-    val host = UrlDisplay.toolbarText(site.url)
+private fun FavoriteTile(
+    site: FavoriteSite,
+    iconSize: Dp,
+    labelLines: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
-        Modifier.width(72.dp).pressScale(pressedScale = 0.92f, haptic = true, onClick = onClick),
+        modifier.pressScale(pressedScale = 0.92f, haptic = true, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Monogram(host, size = 60)
-        Spacer(Modifier.height(6.dp))
+        SiteIcon(site.url, iconSize)
+        Spacer(Modifier.height(8.dp))
         Text(
-            site.title.ifBlank { host }.let { cleanTitle(it) },
+            favoriteLabel(site),
             style = PaneTheme.type.caption,
-            color = colors.label,
-            maxLines = 2,
+            color = PaneTheme.colors.secondaryLabel,
+            maxLines = labelLines,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 2.dp),
         )
     }
+}
+
+/** The short name under an icon: the page's own name if it is brief, otherwise the site's. */
+private fun favoriteLabel(site: FavoriteSite): String {
+    val title = cleanTitle(site.title)
+    if (title.isNotBlank() && title.length <= 22) return title
+    val name = siteName(UrlDisplay.toolbarText(site.url)).replaceFirstChar { it.uppercase() }
+    return name.ifBlank { title.ifBlank { site.url } }
 }
 
 /** The part of a host people recognise: `en.m.wikipedia.org` → `wikipedia`. */
 fun siteName(host: String): String = LetterTiles.siteName(host)
 
-/** First letter of the site on a colour derived from its name, so each site keeps its colour. */
+private fun cleanTitle(title: String): String = title.split(" - ", " | ", " · ", " — ").first().trim()
+
+/**
+ * Shown in the address editor before typing, bottom-aligned so it sits in thumb reach above the
+ * field: favourites, then [recent] pages as rows, then "Paste and Go". If the keyboard leaves too
+ * little room it scrolls, staying anchored to the bottom.
+ */
 @Composable
-fun Monogram(host: String, size: Int, modifier: Modifier = Modifier) {
-    val name = siteName(host)
-    val letter = name.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "•"
-    val palette = listOf(
-        Color(0xFF5E5CE6), Color(0xFF0A84FF), Color(0xFF30B0C7), Color(0xFF34C759), Color(0xFFFF9F0A),
-        Color(0xFFFF375F), Color(0xFFBF5AF2), Color(0xFF64D2FF), Color(0xFFAC8E68), Color(0xFF8E8E93),
-    )
-    val color = palette[abs(name.hashCode()) % palette.size]
-    Box(
+fun FavoritesPanel(
+    onOpen: (String) -> Unit,
+    onPasteAndGo: () -> Unit,
+    modifier: Modifier = Modifier,
+    recent: List<FavoriteSite> = emptyList(),
+) {
+    val colors = PaneTheme.colors
+    val sites = rememberFavoriteSites(limit = 4)
+    Column(
         modifier
-            .size(size.dp)
-            .clip(ContinuousRoundedShape((size * 0.24f).dp))
-            .background(color),
-        contentAlignment = Alignment.Center,
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState(), reverseScrolling = true)
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.Bottom,
     ) {
-        Text(letter, color = Color.White, fontSize = (size * 0.42f).sp, fontWeight = FontWeight.SemiBold)
+        var next = 0
+        if (sites.isNotEmpty()) {
+            PanelLabel("Favorites", Modifier.entrance(next))
+            FavoritesGrid(sites, onOpen, indexOffset = next + 1, iconSize = 52.dp, labelLines = 1)
+            next += 1 + sites.size
+            Spacer(Modifier.height(20.dp))
+        }
+        if (recent.isNotEmpty()) {
+            PanelLabel("Recent", Modifier.entrance(next))
+            next += 1
+            recent.forEach { site ->
+                RecentRow(site, onClick = { onOpen(site.url) }, modifier = Modifier.entrance(next, key = site.url))
+                next += 1
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+        Box(
+            Modifier
+                .entrance(next)
+                .pressScale(pressedScale = 0.95f, haptic = true, onClick = onPasteAndGo)
+                .clip(PaneShapes.pill)
+                .background(colors.fill)
+                .padding(horizontal = 18.dp, vertical = 10.dp),
+        ) {
+            Text("Paste and Go", style = PaneTheme.type.subheadline, color = colors.label)
+        }
+        Spacer(Modifier.height(4.dp))
     }
 }
 
-private fun cleanTitle(title: String): String = title.split(" - ", " | ", " · ", " — ").first().trim()
-
-/** Shown in the address editor before typing: favourites and "Paste and Go". */
 @Composable
-fun FavoritesPanel(onOpen: (String) -> Unit, onPasteAndGo: () -> Unit, modifier: Modifier = Modifier) {
+private fun PanelLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = PaneTheme.type.footnote,
+        fontWeight = FontWeight.SemiBold,
+        color = PaneTheme.colors.secondaryLabel,
+        modifier = modifier.padding(start = 2.dp, bottom = 10.dp),
+    )
+}
+
+/** A page as a row: its icon, its title and the host beneath. */
+@Composable
+private fun RecentRow(site: FavoriteSite, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
-    val sites = rememberFavoriteSites()
-    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-        if (sites.isNotEmpty()) {
-            Text("Favorites", style = PaneTheme.type.title3, color = colors.label, modifier = Modifier.padding(start = 4.dp, bottom = 14.dp))
-            FavoritesGrid(sites, onOpen)
-            Spacer(Modifier.height(20.dp))
-        }
-        Row(
-            Modifier
-                .clip(PaneShapes.pill)
-                .background(colors.fill)
-                .pressDim(onClick = onPasteAndGo)
-                .padding(horizontal = 14.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(PaneIcons.Copy, null, tint = colors.label, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Paste and Go", style = PaneTheme.type.subheadline, color = colors.label)
+    val host = UrlDisplay.toolbarText(site.url)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 48.dp)
+            .pressDim(onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        SiteIcon(site.url, 32.dp)
+        Column(Modifier.weight(1f)) {
+            Text(
+                site.title.ifBlank { host },
+                style = PaneTheme.type.body,
+                color = colors.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (site.title.isNotBlank() && host != site.title) {
+                Text(host, style = PaneTheme.type.footnote, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }

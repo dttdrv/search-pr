@@ -1,6 +1,7 @@
 package app.pane.browser.ui.settings
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
@@ -10,22 +11,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.components.EngineIcon
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.LargeTitleScaffold
 import app.pane.browser.ui.components.ListRow
-import app.pane.browser.ui.components.ToggleRow
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.library.LetterTile
+import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.core.search.SearchEngine
 import app.pane.core.search.SearchEngines
 
 /**
- * Default engine, suggestions and `@keyword` shortcuts. Private engines are marked, since what an
- * engine does with queries matters more than anything else on this screen.
+ * The default engine and suggestions. Engines that don't build a profile of you say "Private" in
+ * plain text; the one to pick if unsure says "Recommended". Suggestions in private tabs and the
+ * `@keyword` shortcuts are under Advanced.
  */
 @Composable
 fun SearchSettingsScreen() {
@@ -38,20 +39,21 @@ fun SearchSettingsScreen() {
 
     LargeTitleScaffold(title = "Search", onBack = navigator::pop, backLabel = backLabel) {
         item(key = "engines") {
-            GroupedSection(
-                header = "Search Engine",
-                footer = "Engines marked Private don't keep a profile of you built from your searches.",
-                separatorInset = 57.dp,
-            ) {
+            GroupedSection(modifier = Modifier.arrive(0), header = "Search engine", separatorInset = IconSeparatorInset) {
                 SearchEngines.defaults.forEach { engine ->
                     row {
                         ListRow(
                             title = engine.name,
-                            leading = { EngineTile(engine) },
+                            modifier = Modifier.heightIn(min = 60.dp),
+                            leading = { EngineIcon(engine.id, 34.dp) },
+                            value = when {
+                                engine.id == SearchEngines.DuckDuckGo.id -> "Recommended"
+                                engine.privacyFocused -> "Private"
+                                else -> null
+                            },
                             showChevron = false,
                             onClick = { container.settings.update { it.copy(searchEngineId = engine.id) } },
                         ) {
-                            if (engine.privacyFocused) Tag("Private", colors.positive)
                             Box(Modifier.width(22.dp), contentAlignment = Alignment.Center) {
                                 if (engine.id == current.id) {
                                     Icon(PaneIcons.Check, contentDescription = "Selected", tint = colors.accent, modifier = Modifier.size(20.dp))
@@ -63,51 +65,41 @@ fun SearchSettingsScreen() {
             }
         }
         item(key = "suggestions") {
-            GroupedSection(
-                header = "Suggestions",
-                footer = "As you type, ${current.name} suggests searches. Requests carry no cookies. " +
-                    "In private tabs suggestions stay off unless you allow them.",
-            ) {
+            GroupedSection(modifier = Modifier.arrive(1)) {
                 row {
-                    ToggleRow(
-                        title = "Search Suggestions",
+                    SwitchRow(
+                        title = "Search suggestions",
                         checked = settings.searchSuggestions,
                         onCheckedChange = { on -> container.settings.update { it.copy(searchSuggestions = on) } },
                     )
                 }
-                row {
-                    ToggleRow(
-                        title = "Suggestions in Private Tabs",
-                        checked = settings.searchSuggestions && settings.searchSuggestionsInPrivate,
-                        enabled = settings.searchSuggestions,
-                        onCheckedChange = { on -> container.settings.update { it.copy(searchSuggestionsInPrivate = on) } },
-                    )
-                }
             }
         }
-        item(key = "shortcuts") {
-            GroupedSection(
-                header = "Search Shortcuts",
-                footer = "Start with @ and a keyword to search somewhere else once. " +
-                    "For example, “@w lighthouse” searches Wikipedia and “@yt lofi” searches YouTube.",
-                separatorInset = 57.dp,
-            ) {
-                SearchEngines.all.forEach { engine ->
+        item(key = "advanced") {
+            AdvancedSection(modifier = Modifier.arrive(2)) {
+                GroupedSection {
                     row {
-                        ListRow(
-                            title = engine.name,
-                            leading = { EngineTile(engine) },
-                            value = "@${engine.keyword}",
-                            showChevron = false,
+                        SwitchRow(
+                            title = "Suggestions in private tabs",
+                            checked = settings.searchSuggestions && settings.searchSuggestionsInPrivate,
+                            enabled = settings.searchSuggestions,
+                            onCheckedChange = { on -> container.settings.update { it.copy(searchSuggestionsInPrivate = on) } },
                         )
+                    }
+                }
+                GroupedSection(header = "Shortcuts", footer = "Type @ and a keyword, like @w, to search there once.") {
+                    SearchEngines.all.forEach { engine ->
+                        row {
+                            ListRow(
+                                title = engine.name,
+                                modifier = Modifier.heightIn(min = 56.dp),
+                                value = "@${engine.keyword}",
+                                showChevron = false,
+                            )
+                        }
                     }
                 }
             }
         }
     }
-}
-
-@Composable
-private fun EngineTile(engine: SearchEngine) {
-    LetterTile(letter = engine.name.take(1).uppercase(), colorKey = engine.id)
 }

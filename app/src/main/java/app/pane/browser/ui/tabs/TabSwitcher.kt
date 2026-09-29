@@ -6,12 +6,12 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -32,14 +33,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -61,29 +65,39 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.browser.BrowserChrome
-import app.pane.browser.ui.browser.Monogram
+import app.pane.browser.ui.browser.siteName
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
-import app.pane.browser.ui.components.ChromeButton
+import app.pane.browser.ui.components.GlassCircle
+import app.pane.browser.ui.components.SiteIcon
 import app.pane.browser.ui.components.PaneAlert
+import app.pane.browser.ui.components.PrimaryButton
 import app.pane.browser.ui.components.SegmentedControl
-import app.pane.browser.ui.components.TextButton
-import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.components.pressScale
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.GlassStrength
+import app.pane.browser.ui.theme.LocalHazeState
 import app.pane.browser.ui.theme.Motion
+import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.entrance
+import app.pane.browser.ui.theme.glass
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.tabs.TabState
 import app.pane.core.url.UrlDisplay
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -91,9 +105,18 @@ import kotlin.math.roundToInt
 /** A snapshot flying between the full page and a card during open/close. */
 private data class Flight(val tabId: String?, val bitmap: Bitmap?, val card: Rect, val page: Rect)
 
+/** Corner radius shared by the cards and the flying snapshot, so the hand-off has no seam. */
+private val CardRadius = 24.dp
+
+/** The floating control cluster: its height, the gap under it, and how far below the screen it waits. */
+private val ClusterHeight = 58.dp
+private val ClusterGap = 10.dp
+private val ClusterRest = 140.dp
+
 /**
  * The tab overview. Opening zooms the live page down into its card (the snapshot literally flies
- * there on a spring); choosing a card zooms it back up. Cards swipe sideways to close. While
+ * there on a spring); choosing a card zooms it back up. Cards swipe sideways to close. A floating
+ * glass cluster (New · Private/Tabs · Done) rises over the grid, which scrolls beneath it. While
  * [privateLocked], private tabs show only a lock and never fly in or out.
  */
 @Composable
@@ -112,11 +135,17 @@ fun TabSwitcher(
     val haptics = rememberHaptics()
 
     val progress = remember { Animatable(0f) }
+    /** 0 = the cluster waits below the screen, 1 = it floats in place. */
+    val cluster = remember { Animatable(0f) }
     var shown by remember { mutableStateOf(false) }
     var flight by remember { mutableStateOf<Flight?>(null) }
     var confirmCloseAll by remember { mutableStateOf(false) }
     val cardRects = remember { mutableStateMapOf<String, Rect>() }
-    val gridState = rememberLazyGridState()
+    val normalGrid = rememberLazyGridState()
+    val privateGrid = rememberLazyGridState()
+    // Cards already seen this time the overview is open, so scrolling never replays their entrance.
+    val enteredIds = remember { mutableSetOf<String>() }
+    val haze = rememberHazeState()
 
     // Which set is showing lives in the chrome, so the activity can block screenshots of private tabs.
     val showPrivate = chrome.showPrivateTabs
@@ -134,9 +163,10 @@ fun TabSwitcher(
         if (visible && !shown) {
             val selected = state.selectedTab
             chrome.showPrivateTabs = selected?.isPrivate ?: false
+            enteredIds.clear()
             shown = true
             val index = state.tabsIn(chrome.showPrivateTabs).indexOfFirst { it.id == selected?.id }
-            if (index >= 0) gridState.scrollToItem(index)
+            if (index >= 0) (if (chrome.showPrivateTabs) privateGrid else normalGrid).scrollToItem(index)
             val snapshot = if (selected != null && selected.url.isNotEmpty()) chrome.capture() else null
             if (selected != null && snapshot != null) {
                 scope.launch {
@@ -152,7 +182,9 @@ fun TabSwitcher(
                 null
             }
             progress.snapTo(0f)
-            progress.animateTo(1f, Motion.spring(0.44f, 0.9f))
+            cluster.snapTo(0f)
+            launch { cluster.animateTo(1f, Motion.bouncy()) }
+            progress.animateTo(1f, Motion.bouncy())
             flight = null
         }
     }
@@ -167,7 +199,8 @@ fun TabSwitcher(
                 null
             }
             flight?.bitmap?.let { chrome.overlay = app.pane.browser.ui.browser.PageOverlay(it, null, kind = app.pane.browser.ui.browser.PageOverlay.Kind.Cover) }
-            progress.animateTo(0f, Motion.spring(0.42f, 0.92f))
+            launch { cluster.animateTo(0f, Motion.snappy()) }
+            progress.animateTo(0f, Motion.push())
             flight = null
             shown = false
             onClosed()
@@ -179,166 +212,220 @@ fun TabSwitcher(
     }
 
     if (!shown) return
-    val p = progress.value
 
-    PaneTheme(mode = settings.theme, private = showPrivate, hapticsEnabled = settings.haptics) {
+    PaneTheme(mode = settings.theme, private = showPrivate, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion, glassQuality = settings.glassQuality) {
         val colors = PaneTheme.colors
-        Box(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().graphicsLayer { alpha = p }.background(colors.groupedBackground))
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        alpha = ((p - 0.15f) / 0.85f).coerceIn(0f, 1f)
-                        val s = 0.94f + 0.06f * p
-                        scaleX = s
-                        scaleY = s
-                    },
-            ) {
-                Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars))
-                AnimatedContent(
-                    targetState = showPrivate,
-                    transitionSpec = { fadeIn(Motion.fade(220)) togetherWith fadeOut(Motion.fade(160)) },
-                    modifier = Modifier.weight(1f),
-                    label = "mode",
-                ) { privateMode ->
-                    val modeTabs = state.tabsIn(privateMode)
-                    when {
-                        privateMode && privateLocked -> LockedPrivate(onRequestUnlock)
-                        modeTabs.isEmpty() -> EmptyTabs(privateMode)
-                        else -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                            val columns = if (maxWidth > 600.dp) 4 else if (maxWidth > 420.dp) 3 else 2
-                            val aspect = if (chrome.pageRect.width > 0f) (chrome.pageRect.height / chrome.pageRect.width).coerceIn(1f, 1.55f) else 1.4f
-                            LazyVerticalGrid(
-                                columns = GridCells.Fixed(columns),
-                                state = gridState,
-                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(18.dp),
-                                modifier = Modifier.fillMaxSize(),
-                            ) {
-                                items(modeTabs, key = { it.id }) { tab ->
-                                    TabCard(
-                                        tab = tab,
-                                        selected = tab.id == state.selectedTabId,
-                                        hidden = flight?.tabId == tab.id,
-                                        aspect = aspect,
-                                        onPositioned = { cardRects[tab.id] = it },
-                                        onClick = {
-                                            haptics.tap()
-                                            closeInto(tab)
-                                        },
-                                        onClose = {
-                                            haptics.confirm()
-                                            container.browser.close(tab.id)
-                                            container.thumbnails.remove(tab.id)
-                                            cardRects.remove(tab.id)
-                                        },
-                                        modifier = Modifier.animateItem(),
-                                    )
+        // The last row of cards must be able to scroll clear of the floating cluster.
+        val clusterSpace = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + ClusterHeight + ClusterGap + 18.dp
+
+        CompositionLocalProvider(LocalHazeState provides haze) {
+            Box(Modifier.fillMaxSize()) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = progress.value.coerceIn(0f, 1f) }
+                        .background(colors.background),
+                )
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val p = progress.value
+                            alpha = ((p - 0.15f) / 0.85f).coerceIn(0f, 1f)
+                            val s = 0.94f + 0.06f * p
+                            scaleX = s
+                            scaleY = s
+                        },
+                ) {
+                    Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars))
+                    AnimatedContent(
+                        targetState = showPrivate,
+                        transitionSpec = {
+                            // Private is the left segment, so it arrives from the left and normal from the right.
+                            val sign = if (targetState) -1 else 1
+                            (fadeIn(Motion.fade(220)) + slideInHorizontally(Motion.smooth()) { sign * it / 10 }) togetherWith
+                                (fadeOut(Motion.fade(160)) + slideOutHorizontally(Motion.smooth()) { -sign * it / 10 })
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .hazeSource(haze),
+                        label = "mode",
+                    ) { privateMode ->
+                        val modeTabs = state.tabsIn(privateMode)
+                        when {
+                            privateMode && privateLocked -> LockedPrivate(clusterSpace, onRequestUnlock)
+                            modeTabs.isEmpty() -> EmptyTabs(privateMode, clusterSpace)
+                            else -> BoxWithConstraints(Modifier.fillMaxSize()) {
+                                val columns = if (maxWidth > 600.dp) 4 else if (maxWidth > 420.dp) 3 else 2
+                                val aspect = if (chrome.pageRect.width > 0f) (chrome.pageRect.height / chrome.pageRect.width).coerceIn(1f, 1.55f) else 1.4f
+                                LazyVerticalGrid(
+                                    columns = GridCells.Fixed(columns),
+                                    state = if (privateMode) privateGrid else normalGrid,
+                                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = clusterSpace),
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(18.dp),
+                                    modifier = Modifier.fillMaxSize(),
+                                ) {
+                                    itemsIndexed(modeTabs, key = { _, tab -> tab.id }) { index, tab ->
+                                        // Cards arrive once, staggered. The selected card is the one the snapshot
+                                        // flies into, so it stays put and the flight lands exactly on it.
+                                        val arrive = remember { enteredIds.add(tab.id) && tab.id != state.selectedTabId }
+                                        TabCard(
+                                            tab = tab,
+                                            selected = tab.id == state.selectedTabId,
+                                            hidden = flight?.tabId == tab.id,
+                                            aspect = aspect,
+                                            onPositioned = { cardRects[tab.id] = it },
+                                            onClick = {
+                                                haptics.tap()
+                                                closeInto(tab)
+                                            },
+                                            onClose = {
+                                                haptics.confirm()
+                                                container.browser.close(tab.id)
+                                                container.thumbnails.remove(tab.id)
+                                                cardRects.remove(tab.id)
+                                            },
+                                            modifier = Modifier
+                                                .animateItem(
+                                                    fadeInSpec = Motion.fade<Float>(200),
+                                                    placementSpec = Motion.pushOffset,
+                                                    fadeOutSpec = Motion.fade<Float>(160),
+                                                )
+                                                .then(if (arrive) Modifier.entrance(index, tab.id) else Modifier),
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                // Bottom bar: new tab · mode · done.
+
+                // The flying snapshot. Every animated value is read inside the layout/graphicsLayer
+                // lambdas, so the flight never recomposes per frame.
+                flight?.let { f ->
+                    val density = LocalDensity.current
+                    val lift = with(density) { 12.dp.toPx() }
+                    Box(
+                        Modifier
+                            .layout { measurable, _ ->
+                                val rect = lerp(f.page, f.card, progress.value)
+                                val w = rect.width.roundToInt().coerceAtLeast(1)
+                                val h = rect.height.roundToInt().coerceAtLeast(1)
+                                val placeable = measurable.measure(Constraints.fixed(w, h))
+                                layout(w, h) { placeable.place(0, 0) }
+                            }
+                            .graphicsLayer {
+                                val p = progress.value
+                                val rect = lerp(f.page, f.card, p)
+                                translationX = rect.left
+                                translationY = rect.top
+                                shadowElevation = lift * (1f - abs(0.5f - p.coerceIn(0f, 1f)) * 2f)
+                                shape = ContinuousRoundedShape((CardRadius.value * p.coerceIn(0f, 1f)).dp)
+                                clip = true
+                            }
+                            .background(colors.surface),
+                    ) {
+                        f.bitmap?.let {
+                            Image(
+                                it.asImageBitmap(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                alignment = Alignment.TopCenter,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+
+                // The floating cluster, echoing the browser's own bar (circle · pill · circle): a plus for a
+                // new tab on the left, the Private / Tabs switch in the middle, and an ink check to go back
+                // to the page on the right. It rises from below on a bouncy spring and hovers clear of the
+                // screen edges; the grid scrolls (blurred) beneath it.
                 Row(
                     Modifier
-                        .fillMaxWidth()
-                        .background(colors.chrome)
+                        .align(Alignment.BottomCenter)
                         .windowInsetsPadding(WindowInsets.navigationBars)
-                        .height(56.dp)
-                        .padding(horizontal = 8.dp),
+                        .padding(start = 12.dp, end = 12.dp, bottom = ClusterGap)
+                        .widthIn(max = 520.dp)
+                        .fillMaxWidth()
+                        .graphicsLayer { translationY = (1f - cluster.value) * ClusterRest.toPx() },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    ChromeButton(PaneIcons.Plus, "New tab", onClick = {
-                        haptics.tap()
-                        onNewTab(showPrivate)
-                        shown = false
-                        scope.launch { progress.snapTo(0f) }
-                        onClosed()
-                    }, tint = colors.label)
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    GlassCircle(
+                        onClick = {
+                            onNewTab(showPrivate)
+                            shown = false
+                            scope.launch {
+                                progress.snapTo(0f)
+                                cluster.snapTo(0f)
+                            }
+                            onClosed()
+                        },
+                        size = ClusterHeight - 4.dp,
+                        contentDescription = "New tab",
+                    ) {
+                        Icon(PaneIcons.Plus, null, tint = PaneTheme.colors.label, modifier = Modifier.size(24.dp))
+                    }
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                            .height(ClusterHeight - 4.dp)
+                            .glass(PaneShapes.pill, GlassStrength.Regular)
+                            .padding(4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         val normalCount = state.normalTabs.size
                         SegmentedControl(
                             options = listOf("Private", if (normalCount == 1) "1 Tab" else "$normalCount Tabs"),
                             selectedIndex = if (showPrivate) 0 else 1,
                             onSelect = { chrome.showPrivateTabs = it == 0 },
-                            modifier = Modifier.width(220.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            height = ClusterHeight - 12.dp,
                         )
                     }
                     // Tap: back to the page. Long-press: close everything in this mode.
-                    Box(
-                        Modifier
-                            .height(44.dp)
-                            .combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onLongClick = {
-                                    if (tabs.isNotEmpty()) {
-                                        haptics.longPress()
-                                        confirmCloseAll = true
-                                    }
-                                },
-                                onClick = { closeInto(state.selectedTab?.takeIf { it.isPrivate == showPrivate } ?: tabs.lastOrNull()) },
-                            )
-                            .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("Done", style = PaneTheme.type.headline, color = colors.label)
-                    }
+                    DoneCircle(
+                        onClick = { closeInto(state.selectedTab?.takeIf { it.isPrivate == showPrivate } ?: tabs.lastOrNull()) },
+                        onLongClick = { if (tabs.isNotEmpty()) confirmCloseAll = true },
+                    )
                 }
-            }
 
-            // The flying snapshot.
-            flight?.let { f ->
-                val rect = lerp(f.page, f.card, p)
-                val density = LocalDensity.current
-                val radius = with(density) { (18.dp * p).toPx() }
-                Box(
-                    Modifier
-                        .layout { measurable, _ ->
-                            val w = rect.width.roundToInt().coerceAtLeast(1)
-                            val h = rect.height.roundToInt().coerceAtLeast(1)
-                            val placeable = measurable.measure(Constraints.fixed(w, h))
-                            layout(w, h) { placeable.place(0, 0) }
-                        }
-                        .graphicsLayer {
-                            translationX = rect.left
-                            translationY = rect.top
-                            shadowElevation = 12.dp.toPx() * (1f - abs(0.5f - p) * 2f)
-                            shape = ContinuousRoundedShape(with(density) { radius.toDp() })
-                            clip = true
-                        }
-                        .background(colors.surface),
-                ) {
-                    f.bitmap?.let {
-                        Image(
-                            it.asImageBitmap(),
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            alignment = Alignment.TopCenter,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                }
+                PaneAlert(
+                    visible = confirmCloseAll,
+                    title = "Close all ${tabs.size} tabs?",
+                    message = null,
+                    actions = listOf(
+                        AlertAction("Cancel", AlertStyle.Cancel) { confirmCloseAll = false },
+                        AlertAction("Close All", AlertStyle.Destructive) {
+                            confirmCloseAll = false
+                            container.browser.closeAll(showPrivate)
+                            if (showPrivate) container.thumbnails.clearPrivate()
+                        },
+                    ),
+                    onDismissRequest = { confirmCloseAll = false },
+                )
             }
-
-            PaneAlert(
-                visible = confirmCloseAll,
-                title = "Close all ${tabs.size} tabs?",
-                message = null,
-                actions = listOf(
-                    AlertAction("Cancel", AlertStyle.Cancel) { confirmCloseAll = false },
-                    AlertAction("Close All", AlertStyle.Destructive) {
-                        confirmCloseAll = false
-                        container.browser.closeAll(showPrivate)
-                        if (showPrivate) container.thumbnails.clearPrivate()
-                    },
-                ),
-                onDismissRequest = { confirmCloseAll = false },
-            )
         }
+    }
+}
+
+/** The ink check that returns to the page. Long-press (haptic included) asks to close every tab in this mode. */
+@Composable
+private fun DoneCircle(onClick: () -> Unit, onLongClick: () -> Unit) {
+    val colors = PaneTheme.colors
+    Box(
+        Modifier
+            .size(ClusterHeight - 4.dp)
+            .semantics { contentDescription = "Done" }
+            .pressScale(pressedScale = 0.9f, haptic = true, onLongClick = onLongClick, onClick = onClick)
+            .clip(CircleShape)
+            .background(colors.accent),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(PaneIcons.Check, null, tint = colors.onAccent, modifier = Modifier.size(24.dp))
     }
 }
 
@@ -356,8 +443,7 @@ private fun TabCard(
     val container = LocalAppContainer.current
     val colors = PaneTheme.colors
     val scope = rememberCoroutineScope()
-    val haptics = rememberHaptics()
-    val shape = ContinuousRoundedShape(18.dp)
+    val shape = remember { ContinuousRoundedShape(CardRadius) }
     val thumb by produceState<Bitmap?>(container.thumbnails.get(tab.id), tab.id, tab.thumbnailVersion) {
         value = container.thumbnails.load(tab.id)
     }
@@ -392,56 +478,60 @@ private fun TabCard(
                     .pressScale(pressedScale = 0.96f, onClick = onClick)
                     .graphicsLayer {
                         alpha = if (hidden) 0f else 1f
-                        shadowElevation = 6.dp.toPx()
+                        shadowElevation = 8.dp.toPx()
+                        ambientShadowColor = colors.shadow
+                        spotShadowColor = colors.shadow
                         this.shape = shape
                         clip = true
                     }
                     .background(colors.surface)
-                    .then(if (selected) Modifier.border(2.5.dp, colors.accent, shape) else Modifier),
+                    .then(if (selected) Modifier.border(2.dp, colors.label, shape) else Modifier),
             ) {
                 val bitmap = thumb
                 if (bitmap != null && tab.url.isNotEmpty()) {
+                    val image = remember(bitmap) { bitmap.asImageBitmap() }
                     Image(
-                        bitmap.asImageBitmap(),
+                        image,
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         alignment = Alignment.TopCenter,
                         modifier = Modifier.fillMaxSize(),
                     )
-                } else {
+                } else if (tab.url.isNotEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        if (tab.url.isEmpty()) {
-                            Icon(PaneIcons.Plus, null, tint = colors.tertiaryLabel, modifier = Modifier.size(28.dp))
-                        } else {
-                            Monogram(UrlDisplay.toolbarText(tab.url), size = 44)
-                        }
+                        Text(
+                                siteName(UrlDisplay.toolbarText(tab.url)),
+                                style = PaneTheme.type.title3,
+                                color = colors.tertiaryLabel,
+                                maxLines = 1,
+                            )
                     }
                 }
-                Box(
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .size(26.dp)
-                        .clip(ContinuousRoundedShape(13.dp))
-                        .background(colors.scrim.copy(alpha = 0.45f))
-                        .pressDim {
-                            haptics.confirm()
+                // A small frosted × in the corner. It sits inside the grid's blur source, so it
+                // takes the plain glass fallback rather than blurring the very layer it is drawn in.
+                CompositionLocalProvider(LocalHazeState provides null) {
+                    GlassCircle(
+                        onClick = {
                             scope.launch {
                                 swipe.animateTo(-width * 1.3f, Motion.snappy())
                                 onClose()
                             }
                         },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(PaneIcons.Close, "Close tab", tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(14.dp))
+                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                        size = 30.dp,
+                        contentDescription = "Close tab",
+                        strength = GlassStrength.Thin,
+                    ) {
+                        Icon(PaneIcons.Close, null, tint = colors.label, modifier = Modifier.size(13.dp))
+                    }
                 }
             }
             Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp, start = 2.dp, end = 2.dp),
+                Modifier.fillMaxWidth().padding(top = 8.dp, start = 4.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
-                if (tab.url.isNotEmpty()) Monogram(UrlDisplay.toolbarText(tab.url), size = 16)
+                if (tab.url.isNotEmpty()) SiteIcon(tab.url, 18.dp)
                 Text(
                     tab.title.ifBlank { if (tab.url.isEmpty()) "Start Page" else UrlDisplay.toolbarText(tab.url) },
                     style = PaneTheme.type.caption,
@@ -454,32 +544,58 @@ private fun TabCard(
     }
 }
 
+/** Nothing open: words only. */
 @Composable
-private fun EmptyTabs(private: Boolean) {
+private fun EmptyTabs(private: Boolean, bottomSpace: Dp) {
     val colors = PaneTheme.colors
-    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(if (private) PaneIcons.Private else PaneIcons.Tabs, null, tint = colors.tertiaryLabel, modifier = Modifier.size(44.dp))
-        Spacer(Modifier.height(14.dp))
-        Text(if (private) "Private Browsing" else "No Open Tabs", style = PaneTheme.type.title3, color = colors.label)
-        Spacer(Modifier.height(6.dp))
+    Column(
+        Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 32.dp, bottom = bottomSpace),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Text(
-            if (private) "Private tabs leave no history, cookies or site data behind." else "Tap + to start browsing.",
+            if (private) "Private Browsing" else "No Open Tabs",
+            style = PaneTheme.type.title3,
+            color = colors.label,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.entrance(0),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            if (private) "Private tabs leave no history, cookies or site data behind." else "Tap New to start browsing.",
             style = PaneTheme.type.subheadline,
             color = colors.secondaryLabel,
             textAlign = TextAlign.Center,
+            modifier = Modifier.entrance(1),
         )
     }
 }
 
+/** Private tabs are locked: a title, one line, and a solid Unlock. No icon. */
 @Composable
-private fun LockedPrivate(onUnlock: () -> Unit) {
+private fun LockedPrivate(bottomSpace: Dp, onUnlock: () -> Unit) {
     val colors = PaneTheme.colors
-    Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(PaneIcons.Lock, null, tint = colors.accent, modifier = Modifier.size(44.dp))
-        Spacer(Modifier.height(14.dp))
-        Text("Private Tabs Locked", style = PaneTheme.type.title3, color = colors.label)
-        Spacer(Modifier.height(18.dp))
-        TextButton("Unlock", onClick = onUnlock, bold = true)
+    Column(
+        Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 32.dp, bottom = bottomSpace),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            "Private Tabs Locked",
+            style = PaneTheme.type.title3,
+            color = colors.label,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.entrance(0),
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Unlock to see your private tabs.",
+            style = PaneTheme.type.subheadline,
+            color = colors.secondaryLabel,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.entrance(1),
+        )
+        Spacer(Modifier.height(22.dp))
+        PrimaryButton("Unlock", onClick = onUnlock, modifier = Modifier.width(200.dp).entrance(2))
     }
 }
-

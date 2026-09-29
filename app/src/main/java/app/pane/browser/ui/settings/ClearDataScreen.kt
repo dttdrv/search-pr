@@ -2,8 +2,7 @@ package app.pane.browser.ui.settings
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,19 +15,17 @@ import app.pane.browser.LocalAppContainer
 import app.pane.browser.downloads.await
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
-import app.pane.browser.ui.components.CheckRow
+import app.pane.browser.ui.components.ButtonStyle
 import app.pane.browser.ui.components.GroupedSection
-import app.pane.browser.ui.components.IconTile
 import app.pane.browser.ui.components.LargeTitleScaffold
-import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneAlert
+import app.pane.browser.ui.components.PrimaryButton
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.library.TileColors
+import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
-import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.library.TimeRange
 import kotlinx.coroutines.CancellationException
@@ -45,7 +42,6 @@ fun ClearDataScreen() {
     val navigator = LocalNavigator.current
     val toasts = LocalToasts.current
     val haptics = rememberHaptics()
-    val colors = PaneTheme.colors
     val backLabel = rememberBackLabel(Route.ClearData)
 
     var range by rememberSaveable { mutableStateOf(TimeRange.LastHour) }
@@ -82,6 +78,8 @@ fun ClearDataScreen() {
                 }
                 if (cache) flags = flags or StorageController.ClearFlags.ALL_CACHES
                 if (flags != 0L) container.runtime.storageController.clearData(flags).await()
+                // Cached site icons are a list of visited hosts: they go with the cache or an all-time history clear.
+                if (cache || (history && allTime)) container.favicons.clear()
                 if (tabs) {
                     container.browser.closeAll(false)
                     container.browser.closeAll(true)
@@ -95,7 +93,7 @@ fun ClearDataScreen() {
                     if (allTime) container.downloadsRepository.clearFinished() else container.downloadsRepository.clearFinishedSince(since)
                 }
                 haptics.confirm()
-                toasts.show("Browsing data cleared", PaneIcons.Check)
+                toasts.show("Data cleared", PaneIcons.Check)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -107,83 +105,54 @@ fun ClearDataScreen() {
     }
 
     Box(Modifier.fillMaxSize()) {
-        // "Clear Browsing Data" is too long for a large title on narrow phones.
-        LargeTitleScaffold(title = "Clear Data", onBack = navigator::pop, backLabel = backLabel) {
+        LargeTitleScaffold(title = "Clear data", onBack = navigator::pop, backLabel = backLabel) {
             item(key = "range") {
-                GroupedSection(header = "Time Range") {
+                GroupedSection(modifier = Modifier.arrive(0), header = "Time range") {
                     TimeRange.entries.forEach { option ->
-                        row { CheckRow(option.label, selected = range == option, onClick = { range = option }) }
+                        row { ChoiceRow(option.label, selected = range == option, onClick = { range = option }) }
                     }
                 }
             }
             item(key = "what") {
                 val engineDataAllTime = range != TimeRange.AllTime && (cookies || cache)
                 GroupedSection(
-                    header = "Data",
-                    footer = if (engineDataAllTime) "Cookies, site data and cached files are always cleared for all time." else null,
-                    separatorInset = 57.dp,
+                    modifier = Modifier.arrive(1),
+                    header = "Clear",
+                    footer = if (engineDataAllTime) "Cookies and cache are always cleared for all time." else null,
                 ) {
+                    row { ChoiceRow("Browsing history", selected = history, onClick = { history = !history }) }
                     row {
-                        CheckRow(
-                            title = "Browsing History",
-                            subtitle = "Pages you visited",
-                            selected = history,
-                            onClick = { history = !history },
-                            leading = { IconTile(PaneIcons.Clock, TileColors.Blue) },
-                        )
-                    }
-                    row {
-                        CheckRow(
-                            title = "Cookies & Site Data",
-                            subtitle = "Signs you out of most sites",
+                        ChoiceRow(
+                            "Cookies and site data",
                             selected = cookies,
                             onClick = { cookies = !cookies },
-                            leading = { IconTile(PaneIcons.Globe, TileColors.Indigo) },
+                            note = "Signs you out of most sites",
                         )
                     }
-                    row {
-                        CheckRow(
-                            title = "Cached Files",
-                            subtitle = "Frees space; some pages load slower at first",
-                            selected = cache,
-                            onClick = { cache = !cache },
-                            leading = { IconTile(PaneIcons.Download, TileColors.Gray) },
-                        )
-                    }
-                    row {
-                        CheckRow(
-                            title = "Open Tabs",
-                            subtitle = "Closes every tab, including private ones",
-                            selected = tabs,
-                            onClick = { tabs = !tabs },
-                            leading = { IconTile(PaneIcons.Tabs, TileColors.Teal) },
-                        )
-                    }
-                    row {
-                        CheckRow(
-                            title = "Download List",
-                            subtitle = "Downloaded files stay on your device",
-                            selected = downloadList,
-                            onClick = { downloadList = !downloadList },
-                            leading = { IconTile(PaneIcons.Download, TileColors.Green) },
-                        )
-                    }
+                    row { ChoiceRow("Cached files", selected = cache, onClick = { cache = !cache }) }
                 }
             }
             item(key = "action") {
-                val enabled = chosen.isNotEmpty() && !working
-                GroupedSection {
-                    row {
-                        ListRow(
-                            title = "Clear Browsing Data",
-                            titleColor = if (enabled) colors.destructive else colors.tertiaryLabel,
-                            showChevron = false,
-                            onClick = if (enabled) ({ confirming = true }) else null,
-                        ) {
-                            if (working) {
-                                CircularProgressIndicator(modifier = Modifier.size(18.dp), color = colors.secondaryLabel, strokeWidth = 2.dp)
-                            }
+                PrimaryButton(
+                    text = if (working) "Clearing…" else "Clear",
+                    style = ButtonStyle.Destructive,
+                    enabled = chosen.isNotEmpty() && !working,
+                    onClick = { confirming = true },
+                    modifier = Modifier.arrive(2).padding(horizontal = 16.dp, vertical = 20.dp),
+                )
+            }
+            item(key = "advanced") {
+                AdvancedSection(modifier = Modifier.arrive(3)) {
+                    GroupedSection {
+                        row {
+                            ChoiceRow(
+                                "Open tabs",
+                                selected = tabs,
+                                onClick = { tabs = !tabs },
+                                note = "Closes every tab, including private",
+                            )
                         }
+                        row { ChoiceRow("Download list", selected = downloadList, onClick = { downloadList = !downloadList }) }
                     }
                 }
             }
@@ -191,7 +160,7 @@ fun ClearDataScreen() {
 
         PaneAlert(
             visible = confirming,
-            title = "Clear Browsing Data?",
+            title = "Clear data?",
             message = "This removes ${joinNaturally(chosen)} from ${rangePhrase(range)}. It can't be undone.",
             actions = listOf(
                 AlertAction("Cancel", AlertStyle.Cancel) { confirming = false },

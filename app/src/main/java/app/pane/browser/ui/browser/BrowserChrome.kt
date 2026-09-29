@@ -26,7 +26,7 @@ import kotlin.coroutines.resume
 @Stable
 class BrowserChrome(private val scope: CoroutineScope) {
     /** 0 = toolbar fully expanded, 1 = collapsed to the slim host label. */
-    val collapse = Animatable(0f)
+    val collapse = Collapse()
 
     var editing by mutableStateOf(false)
     var showTabs by mutableStateOf(false)
@@ -37,6 +37,12 @@ class BrowserChrome(private val scope: CoroutineScope) {
     /** Which tabs the tab overview lists: the private ones, or the normal ones. */
     var showPrivateTabs by mutableStateOf(false)
 
+    /** Where the menu button sits; the menu grows out of it. */
+    var menuRect by mutableStateOf(Rect.Zero)
+
+    /** Where the address pill sits, in root coordinates; the address editor's field grows out of it. */
+    var pillRect by mutableStateOf(Rect.Zero)
+
     /** Where the web content is drawn, in root coordinates; the anchor for zoom transitions. */
     var pageRect by mutableStateOf(Rect.Zero)
 
@@ -44,6 +50,35 @@ class BrowserChrome(private val scope: CoroutineScope) {
     var overlay by mutableStateOf<PageOverlay?>(null)
 
     var geckoView: GeckoView? = null
+
+    /** Whether the page has scrolled away from its top; the status area then dissolves into it. */
+    var scrolled by mutableStateOf(false)
+
+    /** The colours along the page's edges for the tab on screen; null until the page has painted. */
+    var edges by mutableStateOf<PageEdges?>(null)
+        private set
+    private val edgeCache = HashMap<String, PageEdges>()
+
+    /** Switching tabs shows that tab's last known colours straight away instead of the old page's. */
+    fun restoreEdges(tabId: String?) {
+        edges = tabId?.let(edgeCache::get)
+    }
+
+    fun forgetEdges(tabId: String) {
+        edgeCache.remove(tabId)
+    }
+
+    /** Reads the page's edge colours from what Gecko has drawn. */
+    suspend fun sampleEdges(tabId: String, bottomBandPx: Int, isCurrent: () -> Boolean) {
+        val bitmap = capture(220) ?: return
+        if (isCurrent()) applyEdges(tabId, bitmap, bottomBandPx)
+    }
+
+    fun applyEdges(tabId: String, bitmap: Bitmap, bottomBandPx: Int) {
+        val sampled = PageColors.sample(bitmap, bottomBandPx) ?: return
+        edgeCache[tabId] = sampled
+        edges = sampled
+    }
 
     /** Horizontal tab-swipe progress from the address bar, -1…1 (negative = towards the next tab). */
     var tabSwipe by mutableFloatStateOf(0f)
@@ -58,18 +93,26 @@ class BrowserChrome(private val scope: CoroutineScope) {
 
     fun expand() {
         settleJob?.cancel()
-        scope.launch { collapse.animateTo(0f, Motion.snappy()) }
+        settleJob = scope.launch { collapse.animateTo(0f, Motion.snappy()) }
     }
 
-    /** Follows page scrolling like Safari: hide as content moves up, return when it moves down. */
+    /**
+     * Follows page scrolling: the bar melts away as content moves up and returns as it moves down.
+     * Called for every scroll event, so it only writes a float; nothing is launched here.
+     */
     fun onScroll(deltaY: Int, range: Float) {
         if (anyOverlay) return
         settleJob?.cancel()
-        scope.launch { collapse.snapTo((collapse.value + deltaY / range).coerceIn(0f, 1f)) }
-        settleJob = scope.launch {
-            delay(140)
-            collapse.animateTo(if (collapse.value > 0.45f) 1f else 0f, Motion.snappy())
-        }
+        collapse.snap(collapse.value + deltaY / range)
+    }
+
+    /** Scrolling has paused: finish whichever way the bar was heading. */
+    fun settle() {
+        if (anyOverlay) return
+        val target = if (collapse.value > 0.45f) 1f else 0f
+        if (collapse.value == target) return
+        settleJob?.cancel()
+        settleJob = scope.launch { collapse.animateTo(target, Motion.snappy()) }
     }
 
     /** Grabs the visible page. Returns null if Gecko has nothing drawn or takes too long. */
@@ -96,6 +139,24 @@ class BrowserChrome(private val scope: CoroutineScope) {
 
         /** Whether the page on screen is a locked private tab; its prompts wait until it's unlocked. */
         val pageLocked = MutableStateFlow(false)
+    }
+}
+
+/**
+ * How melted the bar is. A plain float in snapshot state (not an Animatable) so scroll events can
+ * write it directly, without a coroutine per event; [animateTo] springs it home when scrolling stops.
+ */
+@Stable
+class Collapse {
+    var value by mutableFloatStateOf(0f)
+        private set
+
+    fun snap(v: Float) {
+        value = v.coerceIn(0f, 1f)
+    }
+
+    suspend fun animateTo(target: Float, spec: androidx.compose.animation.core.AnimationSpec<Float>) {
+        androidx.compose.animation.core.animate(value, target, animationSpec = spec) { v, _ -> value = v }
     }
 }
 

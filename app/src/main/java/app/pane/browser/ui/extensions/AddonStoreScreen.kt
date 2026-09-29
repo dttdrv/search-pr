@@ -48,6 +48,7 @@ import app.pane.browser.ui.components.PrimaryButton
 import app.pane.browser.ui.components.SearchField
 import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.icons.PaneIcons
+import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.extensions.AddonMatching
@@ -134,14 +135,14 @@ fun AddonStoreScreen() {
                 else -> {
                     item(key = "section") {
                         Text(
-                            (if (store.resultsQuery.isBlank()) "Recommended for Android" else "Results").uppercase(),
-                            style = PaneTheme.type.footnote,
+                            if (store.resultsQuery.isBlank()) "Recommended" else "Results",
+                            style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
                             color = PaneTheme.colors.secondaryLabel,
-                            modifier = Modifier.padding(start = 32.dp, end = 32.dp, top = 16.dp, bottom = 7.dp),
+                            modifier = Modifier.padding(start = 32.dp, end = 32.dp, top = 16.dp, bottom = 8.dp),
                         )
                     }
                     itemsIndexed(results, key = { _, addon -> "addon:${addon.guid}" }) { index, addon ->
-                        GroupedItem(index = index, count = results.size, separatorInset = ROW_INSET) {
+                        GroupedItem(index = index, count = results.size, separatorInset = ROW_INSET, modifier = Modifier.arrive(index)) {
                             AddonRow(
                                 addon = addon,
                                 state = stateOf(addon),
@@ -256,15 +257,12 @@ private fun AddonRow(addon: AmoAddon, state: GetState, onGet: () -> Unit, onClic
             if (line.isNotBlank()) {
                 Text(line, style = PaneTheme.type.footnote, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Row(
-                Modifier.padding(top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                if (addon.ratingCount > 0) StarRating(addon.rating)
-                Text(ExtensionFormat.users(addon.users), style = PaneTheme.type.caption, color = colors.secondaryLabel, maxLines = 1)
-                if (addon.recommended) RecommendedBadge()
-            }
+            val facts = listOfNotNull(
+                ExtensionFormat.rating(addon.rating).takeIf { addon.ratingCount > 0 },
+                ExtensionFormat.users(addon.users),
+                "Recommended".takeIf { addon.recommended },
+            ).joinToString(" · ")
+            Text(facts, style = PaneTheme.type.caption, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
         }
         GetButton(state, onClick = onGet)
     }
@@ -329,14 +327,12 @@ private fun ColumnScope.AddonDetailContent(addon: AmoAddon, onDismiss: () -> Uni
                 top = if (addon.ratingCount > 0) ExtensionFormat.rating(addon.rating) else "—",
                 bottom = if (addon.ratingCount > 0) "${ExtensionFormat.compactCount(addon.ratingCount)} ratings" else "No ratings",
                 modifier = Modifier.weight(1f),
-            ) {
-                if (addon.ratingCount > 0) StarRating(addon.rating, starSize = 10.dp)
-            }
+            )
             StatDivider()
             Stat(top = ExtensionFormat.compactCount(addon.users), bottom = if (addon.users == 1L) "User" else "Users", modifier = Modifier.weight(1f))
             if (addon.recommended) {
                 StatDivider()
-                Stat(top = "", bottom = "By Mozilla", modifier = Modifier.weight(1f)) { RecommendedBadge() }
+                Stat(top = "Mozilla", bottom = "Recommended", modifier = Modifier.weight(1f))
             }
         }
         if (addon.summary.isNotBlank()) {
@@ -380,7 +376,7 @@ private fun Stat(top: String, bottom: String, modifier: Modifier = Modifier, ext
     val colors = PaneTheme.colors
     Column(modifier.padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (top.isNotEmpty()) {
-            Text(top, style = PaneTheme.type.title3, color = colors.secondaryLabel, maxLines = 1)
+            Text(top, style = PaneTheme.type.title3, color = colors.label, maxLines = 1)
         }
         if (extra != null) Box(Modifier.padding(vertical = 3.dp)) { extra() }
         Text(bottom, style = PaneTheme.type.caption, color = colors.secondaryLabel, maxLines = 1)

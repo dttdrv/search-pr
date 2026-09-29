@@ -13,18 +13,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -47,17 +40,17 @@ import androidx.core.content.getSystemService
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.engine.prompts.ContextMenuRequest
-import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneSheet
 import app.pane.browser.ui.components.ToastState
-import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.privacy.TrackingParams
+import app.pane.core.prompts.PermissionText
 import app.pane.core.prompts.PromptText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -69,11 +62,11 @@ import org.mozilla.geckoview.WebResponse
 import java.io.ByteArrayOutputStream
 import kotlin.coroutines.resume
 
-private class MenuItem(val label: String, val icon: ImageVector, val action: () -> Unit)
+private class MenuItem(val label: String, val destructive: Boolean = false, val action: () -> Unit)
 
 /**
- * The long-press menu for links and media: a header naming what was pressed (with a preview for
- * images), then the actions, each with its glyph on the trailing edge as in iOS menus.
+ * The long-press menu for links and media, a floating glass list: the host of what was pressed
+ * (with a preview for images) and then plain text rows that arrive one after another.
  */
 @Composable
 internal fun ContextMenuSheet(request: ContextMenuRequest, visible: Boolean, onDone: () -> Unit) {
@@ -102,37 +95,38 @@ internal fun ContextMenuSheet(request: ContextMenuRequest, visible: Boolean, onD
     val linkItems = buildList<MenuItem> {
         if (link == null) return@buildList
         if (request.linkIsWeb) {
-            add(MenuItem("Open in New Tab", PaneIcons.Plus) { actions.openInBackground(link, request.isPrivate) })
-            if (!request.isPrivate) add(MenuItem("Open in Private Tab", PaneIcons.Private) { actions.openInBackground(link, private = true) })
+            add(MenuItem("New Tab") { actions.openInBackground(link, request.isPrivate) })
+            if (!request.isPrivate) add(MenuItem("New Private Tab") { actions.openInBackground(link, private = true) })
         }
-        add(MenuItem("Copy Link", PaneIcons.Copy) { actions.copy(link) })
+        add(MenuItem("Copy Link") { actions.copy(link) })
         val clean = TrackingParams.strip(link)
-        if (clean != link) add(MenuItem("Copy Clean Link", PaneIcons.Link) { actions.copy(clean) })
-        add(MenuItem("Share Link", PaneIcons.Share) { actions.share(link) })
-        if (request.linkIsWeb) add(MenuItem("Download Link", PaneIcons.Download) { actions.download(link) })
+        if (clean != link) add(MenuItem("Copy Clean Link") { actions.copy(clean) })
+        add(MenuItem("Share Link") { actions.share(link) })
+        if (request.linkIsWeb) add(MenuItem("Download Link") { actions.download(link) })
     }
     val mediaItems = buildList<MenuItem> {
         if (src == null || noun == null) return@buildList
         if (request.srcIsWeb) {
-            add(MenuItem("Open $noun in New Tab", PaneIcons.Tabs) { actions.openInBackground(src, request.isPrivate) })
-            add(MenuItem("Save $noun", PaneIcons.Download) { actions.download(src) })
+            add(MenuItem("Open $noun") { actions.openInBackground(src, request.isPrivate) })
+            add(MenuItem("Save $noun") { actions.download(src) })
         }
         // Inline data: URIs can be megabytes; too big for the clipboard or a share intent.
         if (request.srcIsWeb || src.length <= MAX_INLINE_URI) {
-            add(MenuItem("Copy $noun Address", PaneIcons.Copy) { actions.copy(src) })
-            add(MenuItem("Share $noun", PaneIcons.Share) { actions.share(src) })
+            add(MenuItem("Copy $noun Address") { actions.copy(src) })
+            add(MenuItem("Share $noun") { actions.share(src) })
         }
     }
+    val groups = listOf(linkItems, mediaItems).filter { it.isNotEmpty() }
 
     PaneSheet(visible = visible, onDismiss = onDone) {
-        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
+        FadingColumn(Modifier.weight(1f, fill = false)) {
             AnimatedVisibility(
                 visible = preview != null,
-                enter = expandVertically(Motion.spring(0.4f, 0.9f)) + fadeIn(Motion.fade(220)),
+                enter = expandVertically(Motion.smooth()) + fadeIn(Motion.fade(220)),
             ) {
                 val image = preview
                 if (image != null) {
-                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
                         Image(
                             bitmap = image,
                             contentDescription = request.altText,
@@ -142,67 +136,54 @@ internal fun ContextMenuSheet(request: ContextMenuRequest, visible: Boolean, onD
                     }
                 }
             }
-            MenuHeader(request)
-            listOf(linkItems, mediaItems).filter { it.isNotEmpty() }.forEach { items ->
-                GroupedSection {
+            MenuHeader(request, Modifier.entrance(1))
+            groups.forEachIndexed { g, items ->
+                GlassSection(entranceIndex = 2 + groups.take(g).sumOf { it.size }) {
                     items.forEach { item ->
                         row {
                             ListRow(
                                 title = item.label,
+                                titleColor = if (item.destructive) colors.destructive else colors.label,
                                 showChevron = false,
                                 onClick = {
                                     item.action()
                                     onDone()
                                 },
-                            ) {
-                                Icon(item.icon, null, tint = colors.label, modifier = Modifier.size(20.dp))
-                            }
+                            )
                         }
                     }
                 }
             }
+            Box(Modifier.height(10.dp))
         }
     }
 }
 
+/** What was pressed: its link text or alt text (if any) and, in secondary type, the host it points at. */
 @Composable
-private fun MenuHeader(request: ContextMenuRequest) {
+private fun MenuHeader(request: ContextMenuRequest, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
     val target = request.linkUri ?: request.srcUri.orEmpty()
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            Modifier.size(40.dp).clip(PaneShapes.small).background(colors.fill),
-            contentAlignment = Alignment.Center,
-        ) {
-            val icon = when {
-                request.linkUri != null -> PaneIcons.Link
-                request.media == ContextMenuRequest.Media.Audio -> PaneIcons.Mic
-                request.media == ContextMenuRequest.Media.Video -> PaneIcons.Camera
-                else -> PaneIcons.Globe
-            }
-            Icon(icon, null, tint = colors.secondaryLabel, modifier = Modifier.size(20.dp))
+    Column(modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 8.dp)) {
+        request.label?.let {
+            Text(it, style = PaneTheme.type.headline, color = colors.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        Column(Modifier.weight(1f)) {
-            request.label?.let {
-                Text(it, style = PaneTheme.type.headline, color = colors.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            Text(
-                displayTarget(target),
-                style = PaneTheme.type.footnote,
-                color = colors.secondaryLabel,
-                maxLines = if (request.label == null) 3 else 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        Text(
+            displayTarget(target),
+            style = PaneTheme.type.subheadline,
+            color = colors.secondaryLabel,
+            maxLines = if (request.label == null) 3 else 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
-private fun displayTarget(url: String): String =
-    if (url.startsWith("data:", ignoreCase = true)) url.substringBefore(',').take(60) else PromptText.shorten(url, max = 200)
+/** The host for web addresses (that is what tells a link's destination), the scheme for inline data, else the address itself. */
+private fun displayTarget(url: String): String = when {
+    url.startsWith("data:", ignoreCase = true) -> url.substringBefore(',').take(60)
+    url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true) -> PermissionText.displayHost(url)
+    else -> PromptText.shorten(url, max = 200)
+}
 
 /** What the menu's rows do. Opening in the background confirms with a toast that can switch to the tab. */
 private class MenuActions(
@@ -217,8 +198,8 @@ private class MenuActions(
         val opened = container.store.state.value.tabs.firstOrNull { it.id !in before }?.id
         val show: (() -> Unit)? = if (opened != null) ({ container.browser.select(opened) }) else null
         toasts.show(
-            if (private && !request.isPrivate) "Opened in private tab" else "Opened in new tab",
-            PaneIcons.Tabs,
+            if (private && !request.isPrivate) "Opened privately" else "Tab opened",
+            null,
             if (show != null) "Show" else null,
             show,
         )
@@ -228,7 +209,7 @@ private class MenuActions(
         val clipboard = context.getSystemService<ClipboardManager>() ?: return
         clipboard.setPrimaryClip(ClipData.newPlainText("URL", text))
         // Android 13 and later confirm copies themselves.
-        if (Build.VERSION.SDK_INT < 33) toasts.show("Copied", PaneIcons.Copy)
+        if (Build.VERSION.SDK_INT < 33) toasts.show("Copied")
     }
 
     fun share(text: String) {

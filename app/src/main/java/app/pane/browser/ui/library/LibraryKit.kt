@@ -24,20 +24,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,18 +48,16 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.PaneSheet
 import app.pane.browser.ui.components.Separator
@@ -68,11 +66,11 @@ import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
-import app.pane.core.library.LetterTiles
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.min
@@ -81,70 +79,22 @@ import app.pane.browser.ui.components.excludeFromAutofill
 
 // Shared building blocks for the library and settings screens.
 
-/** iOS system colours for glyph tiles, so each settings row is recognisable at a glance. */
-internal object TileColors {
-    val Blue = Color(0xFF0A84FF)
-    val Green = Color(0xFF34C759)
-    val Indigo = Color(0xFF5856D6)
-    val Orange = Color(0xFFFF9500)
-    val Red = Color(0xFFFF3B30)
-    val Purple = Color(0xFFAF52DE)
-    val Teal = Color(0xFF30B0C7)
-    val Gray = Color(0xFF8E8E93)
-    val Pink = Color(0xFFFF2D55)
-    val Yellow = Color(0xFFFFB800)
-    val Mint = Color(0xFF00B8A9)
-    val Brown = Color(0xFFA2845E)
-}
-
-/** Deep enough for white letters to stay legible in both themes. */
-private val SitePalette = listOf(
-    Color(0xFF5E5CE6),
-    Color(0xFF0A7AFF),
-    Color(0xFF1F9BB5),
-    Color(0xFF2EA852),
-    Color(0xFFE67E00),
-    Color(0xFFE8335A),
-    Color(0xFF9F55D9),
-    Color(0xFF9A7B55),
-    Color(0xFFD9443A),
-    Color(0xFF3867C9),
-)
-
-/** Letter tile standing in for a favicon; colour and letter are stable per site. */
+/**
+ * Entrance for the first rows of a list. Plays once per row: rows that scroll back into view, or
+ * shift up the list when another row is deleted, don't replay it.
+ */
 @Composable
-internal fun SiteTile(url: String, title: String?, modifier: Modifier = Modifier, size: Dp = 29.dp) {
-    val letter = remember(url, title) { LetterTiles.letter(url, title) }
-    val key = remember(url) { LetterTiles.siteName(LetterTiles.hostKey(url)) }
-    LetterTile(letter, key, modifier, size)
+internal fun Modifier.arrive(index: Int): Modifier {
+    var played by rememberSaveable { mutableStateOf(false) }
+    val play = remember { !played && index < ARRIVE_LIMIT }
+    LaunchedEffect(Unit) { played = true }
+    return if (play) this.entrance(index) else this
 }
 
-/** A letter on a colour picked from [colorKey]; a globe when there is no letter. */
-@Composable
-internal fun LetterTile(letter: String?, colorKey: String, modifier: Modifier = Modifier, size: Dp = 29.dp) {
-    val color = remember(colorKey) { SitePalette[LetterTiles.colorIndex(colorKey, SitePalette.size)] }
-    Box(
-        modifier
-            .size(size)
-            .clip(ContinuousRoundedShape(size * 0.24f))
-            .background(color),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (letter != null) {
-            Text(
-                letter,
-                style = PaneTheme.type.headline.copy(fontSize = (size.value * 0.52f).sp, lineHeight = (size.value * 0.6f).sp),
-                color = Color.White,
-                maxLines = 1,
-            )
-        } else {
-            Icon(PaneIcons.Globe, null, tint = Color.White, modifier = Modifier.size(size * 0.6f))
-        }
-    }
-}
+private const val ARRIVE_LIMIT = 9
 
-private val TopRounded = ContinuousRoundedShape(CornerSize(12.dp), CornerSize(12.dp), CornerSize(0.dp), CornerSize(0.dp))
-private val BottomRounded = ContinuousRoundedShape(CornerSize(0.dp), CornerSize(0.dp), CornerSize(12.dp), CornerSize(12.dp))
+private val TopRounded = ContinuousRoundedShape(CornerSize(20.dp), CornerSize(20.dp), CornerSize(0.dp), CornerSize(0.dp))
+private val BottomRounded = ContinuousRoundedShape(CornerSize(0.dp), CornerSize(0.dp), CornerSize(20.dp), CornerSize(20.dp))
 
 /**
  * One row of an inset-grouped card built from separate lazy items, so rows can animate in and out
@@ -152,7 +102,7 @@ private val BottomRounded = ContinuousRoundedShape(CornerSize(0.dp), CornerSize(
  */
 internal fun Modifier.groupedItem(first: Boolean, last: Boolean, background: Color): Modifier {
     val shape: Shape = when {
-        first && last -> PaneShapes.medium
+        first && last -> PaneShapes.large
         first -> TopRounded
         last -> BottomRounded
         else -> RectangleShape
@@ -160,14 +110,14 @@ internal fun Modifier.groupedItem(first: Boolean, last: Boolean, background: Col
     return this.padding(horizontal = 16.dp).clip(shape).background(background)
 }
 
-/** Caps section title matching [GroupedSection]'s header, for sections built from lazy items. */
+/** Section title matching [GroupedSection]'s header, for sections built from lazy items. */
 @Composable
 internal fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
-        text.uppercase(),
-        style = PaneTheme.type.footnote,
+        text,
+        style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
         color = PaneTheme.colors.secondaryLabel,
-        modifier = modifier.padding(start = 32.dp, end = 32.dp, top = 22.dp, bottom = 7.dp),
+        modifier = modifier.padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 8.dp),
     )
 }
 
@@ -183,7 +133,7 @@ internal fun SectionFooter(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * A list row with a leading tile, a one-line title and subtitle, press and long-press. Unlike
+ * A list row with a one-line title and subtitle, press and long-press. Unlike
  * [app.pane.browser.ui.components.ListRow] it supports long-press menus and extra content
  * beneath the text (a progress bar).
  */
@@ -191,9 +141,9 @@ internal fun SectionFooter(text: String, modifier: Modifier = Modifier) {
 internal fun LibraryRow(
     title: String,
     subtitle: String?,
-    leading: @Composable () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    leading: (@Composable () -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
     subtitleColor: Color = PaneTheme.colors.secondaryLabel,
     below: (@Composable () -> Unit)? = null,
@@ -203,13 +153,13 @@ internal fun LibraryRow(
     Row(
         modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 56.dp)
+            .defaultMinSize(minHeight = 60.dp)
             .combinedClickable(onLongClick = onLongClick, onClick = onClick)
             .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        leading()
+        leading?.invoke()
         Column(Modifier.weight(1f)) {
             Text(title, style = PaneTheme.type.body, color = colors.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (subtitle != null) {
@@ -221,10 +171,10 @@ internal fun LibraryRow(
     }
 }
 
-/** Separator inset past a row's 29dp tile, as in iOS lists with images. */
+/** Hairline between rows of a lazily built card. */
 @Composable
 internal fun RowSeparator() {
-    Separator(Modifier.padding(start = 57.dp))
+    Separator(Modifier.padding(start = 16.dp))
 }
 
 /**
@@ -334,17 +284,16 @@ internal fun SwipeToDelete(
 
 private const val FULL_SWIPE = 0.62f
 
-/** An action in an [ActionSheet]. */
+/** An action in an [ActionSheet]: words only, red when it destroys something. */
 internal data class SheetAction(
     val label: String,
-    val icon: ImageVector,
     val destructive: Boolean = false,
     val onClick: () -> Unit,
 )
 
 /**
- * Long-press menu presented as a sheet: a header naming the item, then its actions with trailing
- * glyphs, like an iOS context menu.
+ * Long-press menu presented as a sheet: a header naming the item, then its actions as plain text
+ * rows.
  */
 @Composable
 internal fun ActionSheet(
@@ -377,7 +326,7 @@ internal fun ActionSheet(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .defaultMinSize(minHeight = 48.dp)
+                            .defaultMinSize(minHeight = 56.dp)
                             .clickable {
                                 onDismiss()
                                 action.onClick()
@@ -386,7 +335,6 @@ internal fun ActionSheet(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(action.label, style = PaneTheme.type.body, color = tint, modifier = Modifier.weight(1f))
-                        Icon(action.icon, null, tint = tint, modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -395,16 +343,14 @@ internal fun ActionSheet(
     }
 }
 
-/** Centred placeholder for empty lists: glyph, title and a sentence of guidance. */
+/** Centred placeholder for empty lists: a title and a sentence of guidance, no artwork. */
 @Composable
-internal fun EmptyState(icon: ImageVector, title: String, message: String, modifier: Modifier = Modifier) {
+internal fun EmptyState(title: String, message: String, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
     Column(
-        modifier.fillMaxWidth().padding(start = 40.dp, end = 40.dp, top = 96.dp, bottom = 24.dp),
+        modifier.fillMaxWidth().arrive(0).padding(start = 40.dp, end = 40.dp, top = 96.dp, bottom = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(icon, null, tint = colors.tertiaryLabel, modifier = Modifier.size(52.dp))
-        Spacer(Modifier.height(14.dp))
         Text(title, style = PaneTheme.type.title3, color = colors.label, textAlign = TextAlign.Center)
         Spacer(Modifier.height(6.dp))
         Text(message, style = PaneTheme.type.subheadline, color = colors.secondaryLabel, textAlign = TextAlign.Center)
@@ -461,10 +407,11 @@ private fun backTitle(route: Route): String? = when (route) {
     Route.Settings -> "Settings"
     Route.SearchSettings -> "Search"
     Route.PrivacySettings -> "Privacy"
+    Route.Connections -> "Connections"
     Route.PasswordSettings -> "Passwords"
-    Route.SiteSettings -> "Sites"
+    Route.SiteSettings -> "Site permissions"
     Route.AppearanceSettings -> "Appearance"
-    Route.ClearData -> "Clear Data"
+    Route.ClearData -> "Clear data"
     Route.About -> "About"
     Route.Bookmarks -> "Bookmarks"
     Route.History -> "History"

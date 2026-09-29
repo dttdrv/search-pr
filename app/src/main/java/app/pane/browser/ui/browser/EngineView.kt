@@ -28,6 +28,9 @@ fun EngineView(
         modifier = modifier,
         factory = { context ->
             GeckoView(context).also {
+                // A TextureView (not the default SurfaceView) draws with the rest of the window, which
+                // is what lets the glass bar blur the live page behind it.
+                it.setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW)
                 it.setAutofillEnabled(true)
                 onViewCreated(it)
             }

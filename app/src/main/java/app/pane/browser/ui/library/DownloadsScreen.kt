@@ -11,19 +11,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,13 +29,11 @@ import app.pane.browser.data.DownloadRecord
 import app.pane.browser.data.DownloadStatus
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
-import app.pane.browser.ui.components.IconTile
 import app.pane.browser.ui.components.LargeTitleScaffold
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneAlert
 import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.components.ToastState
-import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
@@ -110,6 +105,8 @@ fun DownloadsScreen() {
                 TextButton(
                     "Clear",
                     enabled = hasFinished,
+                    color = colors.destructive,
+                    modifier = Modifier.heightIn(min = 48.dp),
                     onClick = {
                         container.scope.launch {
                             container.downloadsRepository.clearFinished()
@@ -124,14 +121,16 @@ fun DownloadsScreen() {
                 loaded == null -> Unit
                 loaded.isEmpty() -> item(key = "empty") {
                     EmptyState(
-                        icon = PaneIcons.Download,
-                        title = "No Downloads",
-                        message = "Files you download appear here, and stay on your device if you clear the list.",
+                        title = "No downloads",
+                        message = "Files you download appear here.",
                         modifier = Modifier.animateItem(),
                     )
                 }
                 else -> {
+                    var arrivals = 0
                     groups.forEach { group ->
+                        val base = arrivals
+                        arrivals += group.items.size
                         item(key = "section:${group.section.daysAgo}") {
                             SectionTitle(group.section.title(), Modifier.animateItem())
                         }
@@ -140,7 +139,10 @@ fun DownloadsScreen() {
                             SwipeToDelete(
                                 onDelete = { downloads.remove(record, deleteFile = false) },
                                 label = "Remove",
-                                modifier = Modifier.animateItem().groupedItem(first, index == group.items.lastIndex, colors.surface),
+                                modifier = Modifier
+                                    .animateItem()
+                                    .arrive(base + index)
+                                    .groupedItem(first, index == group.items.lastIndex, colors.surface),
                             ) {
                                 Column {
                                     if (!first) RowSeparator()
@@ -158,9 +160,9 @@ fun DownloadsScreen() {
                     item(key = "footer") {
                         SectionFooter(
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                                "Files are saved to the Downloads folder on this device. Clearing the list keeps them."
+                                "Clearing the list keeps your files."
                             } else {
-                                "Files are saved in Pane's folder on this device and are removed if you uninstall Pane."
+                                "Files are removed if you uninstall Pane."
                             },
                             Modifier.animateItem(),
                         )
@@ -174,14 +176,6 @@ fun DownloadsScreen() {
             visible = menuVisible,
             title = target?.fileName.orEmpty(),
             subtitle = target?.let { statusText(it) },
-            leading = if (target != null) {
-                {
-                    val kind = FileKind.of(target.fileName, target.mime)
-                    IconTile(kind.icon, kind.color)
-                }
-            } else {
-                null
-            },
             onDismiss = { menuVisible = false },
             actions = if (target == null) {
                 emptyList()
@@ -239,16 +233,16 @@ private fun menuActions(
     val actions = mutableListOf<SheetAction>()
     when {
         record.status == DownloadStatus.Completed -> {
-            actions += SheetAction("Open", PaneIcons.OpenExternal, onClick = onOpen)
-            actions += SheetAction("Share…", PaneIcons.Share, onClick = onShare)
+            actions += SheetAction("Open", onClick = onOpen)
+            actions += SheetAction("Share…", onClick = onShare)
         }
-        record.isActive -> actions += SheetAction("Cancel Download", PaneIcons.Stop, destructive = true, onClick = onCancel)
-        record.url.isNotEmpty() -> actions += SheetAction("Try Again", PaneIcons.Reload, onClick = onRetry)
+        record.isActive -> actions += SheetAction("Cancel download", destructive = true, onClick = onCancel)
+        record.url.isNotEmpty() -> actions += SheetAction("Try again", onClick = onRetry)
     }
-    if (record.url.isNotEmpty()) actions += SheetAction("Copy Download Link", PaneIcons.Link, onClick = onCopyLink)
-    if (!record.isActive) actions += SheetAction("Remove from List", PaneIcons.Close) { onRemove(false) }
+    if (record.url.isNotEmpty()) actions += SheetAction("Copy download link", onClick = onCopyLink)
+    if (!record.isActive) actions += SheetAction("Remove from list") { onRemove(false) }
     if (record.status == DownloadStatus.Completed) {
-        actions += SheetAction("Delete File", PaneIcons.Trash, destructive = true) { onRemove(true) }
+        actions += SheetAction("Delete file", destructive = true) { onRemove(true) }
     }
     return actions
 }
@@ -262,7 +256,6 @@ private fun DownloadRow(
     onRetry: () -> Unit,
 ) {
     val colors = PaneTheme.colors
-    val kind = remember(record.fileName, record.mime) { FileKind.of(record.fileName, record.mime) }
     val dangerous = remember(record.fileName) { FileNames.isPotentiallyDangerous(record.fileName) }
     LibraryRow(
         title = record.fileName,
@@ -272,7 +265,6 @@ private fun DownloadRow(
             dangerous -> colors.warning
             else -> colors.secondaryLabel
         },
-        leading = { IconTile(kind.icon, kind.color) },
         onClick = onClick,
         onLongClick = onLongClick,
         below = if (record.isActive) {
@@ -282,25 +274,18 @@ private fun DownloadRow(
         },
         trailing = {
             when {
-                record.isActive -> RowButton(PaneIcons.CloseCircle, "Cancel download", onCancel)
+                record.isActive -> RowButton("Cancel", onCancel)
                 record.isFinished && record.status != DownloadStatus.Completed && record.url.isNotEmpty() ->
-                    RowButton(PaneIcons.Reload, "Try again", onRetry)
-                dangerous -> Icon(
-                    PaneIcons.Warning,
-                    contentDescription = "Potentially harmful file",
-                    tint = colors.warning,
-                    modifier = Modifier.padding(end = 8.dp).size(20.dp),
-                )
+                    RowButton("Retry", onRetry)
             }
         },
     )
 }
 
+/** A words-only action at the end of a row ("Cancel", "Retry"). */
 @Composable
-private fun RowButton(icon: ImageVector, description: String, onClick: () -> Unit) {
-    Box(Modifier.size(40.dp).pressDim(onClick = onClick), contentAlignment = Alignment.Center) {
-        Icon(icon, contentDescription = description, tint = PaneTheme.colors.secondaryLabel, modifier = Modifier.size(22.dp))
-    }
+private fun RowButton(label: String, onClick: () -> Unit) {
+    TextButton(label, onClick = onClick, modifier = Modifier.heightIn(min = 48.dp), color = PaneTheme.colors.secondaryLabel)
 }
 
 @Composable

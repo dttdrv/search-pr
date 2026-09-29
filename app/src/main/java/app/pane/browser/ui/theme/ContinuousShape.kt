@@ -117,10 +117,13 @@ class ContinuousRoundedShape(
 }
 
 object PaneShapes {
-    val small = ContinuousRoundedShape(8.dp)
-    val medium = ContinuousRoundedShape(12.dp)
-    val large = ContinuousRoundedShape(16.dp)
-    val card = ContinuousRoundedShape(22.dp)
-    val sheet = ContinuousRoundedShape(CornerSize(28.dp), CornerSize(28.dp), CornerSize(0.dp), CornerSize(0.dp))
+    val small = ContinuousRoundedShape(10.dp)
+    val medium = ContinuousRoundedShape(16.dp)
+    val large = ContinuousRoundedShape(20.dp)
+    val card = ContinuousRoundedShape(26.dp)
+    val sheet = ContinuousRoundedShape(CornerSize(34.dp), CornerSize(34.dp), CornerSize(0.dp), CornerSize(0.dp))
+
+    /** A card that floats clear of the screen edges, as glass menus and sheets do. */
+    val floating = ContinuousRoundedShape(32.dp)
     val pill = ContinuousRoundedShape(100.dp, smoothing = 0f)
 }

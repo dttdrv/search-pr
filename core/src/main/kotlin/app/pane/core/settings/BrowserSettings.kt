@@ -51,6 +51,14 @@ enum class ThemeMode { System, Light, Dark }
 enum class ToolbarPosition { Bottom, Top }
 
 /**
+ * How much of the liquid glass is drawn. Full bends the page along each rim like real glass, Light
+ * only blurs and tints it (much cheaper on the GPU), Off is a plain translucent surface. Pane
+ * steps Full down to Light by itself while the phone is in battery saver.
+ */
+@Serializable
+enum class GlassQuality { Full, Light, Off }
+
+/**
  * User preferences. Defaults are the most private options that don't break the web.
  */
 @Serializable
@@ -84,6 +92,7 @@ data class BrowserSettings(
     val showHomeFavorites: Boolean = true,
     val haptics: Boolean = true,
     val reduceMotion: Boolean = false,
+    val glassQuality: GlassQuality = GlassQuality.Full,
     val restoreTabs: Boolean = true,
     val closeTabsAfterDays: Int = 0,
     val onboardingDone: Boolean = false,

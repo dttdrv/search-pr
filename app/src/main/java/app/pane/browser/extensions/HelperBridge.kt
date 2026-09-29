@@ -2,8 +2,10 @@ package app.pane.browser.extensions
 
 import android.content.SharedPreferences
 import android.util.Log
+import app.pane.browser.engine.IconCandidate
 import app.pane.browser.engine.SessionManager
 import app.pane.core.tabs.BrowserStore
+import org.json.JSONArray
 import org.json.JSONObject
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
@@ -11,8 +13,8 @@ import org.mozilla.geckoview.WebExtension
 
 /**
  * Native end of Pane's built-in helper extension, whose content script runs in the top frame of
- * every page. It reports the page's `theme-color` and whether Reader View can show it, and renders
- * Reader View in place when asked.
+ * every page. It reports the page's `theme-color`, the icons it declares and whether Reader View
+ * can show it, and renders Reader View in place when asked.
  *
  * Each document opens its own port (`runtime.connectNative`), so a tab's port is replaced on every
  * navigation and dropped when the page unloads or goes into the back-forward cache. Leaving reader
@@ -150,6 +152,19 @@ internal class HelperBridge(
             // No theme-color keeps what the web app manifest provided, if anything.
             it.copy(themeColor = color ?: it.themeColor, readerable = readerable, inReaderMode = inReader)
         }
+        // Reader View's document has no icons of its own, so the script leaves them out there.
+        val declared = msg.optJSONArray("icons")
+        if (declared != null && !inReader) onIcons?.invoke(url ?: tab.url, parseIcons(declared), tab.isPrivate)
+    }
+
+    private fun parseIcons(array: JSONArray): List<IconCandidate> {
+        val icons = ArrayList<IconCandidate>()
+        for (i in 0 until minOf(array.length(), MAX_ICONS)) {
+            val icon = array.optJSONObject(i) ?: continue
+            val href = icon.stringOrNull("href") ?: continue
+            icons += IconCandidate(href, icon.stringOrNull("sizes"), icon.stringOrNull("type"), icon.stringOrNull("rel"))
+        }
+        return icons
     }
 
     private fun onReaderState(tabId: String, msg: JSONObject) {
@@ -173,6 +188,15 @@ internal class HelperBridge(
 
         /** The name content scripts pass to `browser.runtime.connectNative`. */
         const val NATIVE_APP = "pane"
+
+        /**
+         * Told (on the main thread) which icons a page declared: the page's URL, the icons, and
+         * whether the tab is private. Set once by the app container to feed the favicon cache.
+         */
+        @Volatile
+        var onIcons: ((pageUrl: String, icons: List<IconCandidate>, isPrivate: Boolean) -> Unit)? = null
+
+        private const val MAX_ICONS = 8
 
         private const val KEY_THEME = "reader_theme"
         private const val KEY_SCALE = "reader_font_scale"

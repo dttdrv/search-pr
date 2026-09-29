@@ -38,12 +38,11 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import app.pane.browser.engine.prompts.DateTimeRequest
 import app.pane.browser.ui.components.PaneSheet
-import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.prompts.DateTimeKind
@@ -72,7 +71,6 @@ private const val VISIBLE_ROWS = 5
 @Composable
 internal fun DateTimeSheet(request: DateTimeRequest, visible: Boolean, onDone: () -> Unit) {
     val kind = request.kind
-    val colors = PaneTheme.colors
     val locale = remember { Locale.getDefault() }
     val min = remember { DateTimeValues.parse(kind, request.minValue) }
     val max = remember { DateTimeValues.parse(kind, request.maxValue) }
@@ -92,27 +90,7 @@ internal fun DateTimeSheet(request: DateTimeRequest, visible: Boolean, onDone: (
         request.dismiss()
         onDone()
     }) {
-        SheetBar(
-            title = titleFor(kind),
-            leading = "Clear",
-            onLeading = {
-                request.clear()
-                onDone()
-            },
-            trailing = "Done",
-            onTrailing = {
-                request.pick(DateTimeValues.format(kind, value))
-                onDone()
-            },
-        )
-        Text(
-            summary(kind, value, locale),
-            style = PaneTheme.type.subheadline,
-            color = colors.secondaryLabel,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        )
+        SheetTitle(titleFor(kind), subtitle = summary(kind, value, locale))
         val date = value.toLocalDate()
         val time = value.toLocalTime()
         when (kind) {
@@ -126,7 +104,19 @@ internal fun DateTimeSheet(request: DateTimeRequest, visible: Boolean, onDone: (
                 WheelGroup { TimeWheels(time) { update(date.atTime(it)) } }
             }
         }
-        Spacer(Modifier.height(20.dp))
+        SheetButtons(
+            primary = "Done",
+            onPrimary = {
+                request.pick(DateTimeValues.format(kind, value))
+                onDone()
+            },
+            secondary = "Clear",
+            onSecondary = {
+                request.clear()
+                onDone()
+            },
+            sideBySide = true,
+        )
     }
 }
 
@@ -152,7 +142,7 @@ private fun WheelGroup(content: @Composable () -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .height(RowHeight)
-                .clip(ContinuousRoundedShape(8.dp))
+                .clip(PaneShapes.pill)
                 .background(PaneTheme.colors.fill),
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { content() }
