@@ -4,6 +4,9 @@ set -euo pipefail
 mkdir -p shots
 diagnostics() {
   local result=$?
+  free -m > shots/host-memory.txt
+  sudo dmesg --ctime > shots/host-kernel.txt 2>&1 || true
+  cp /tmp/android-runner/emu-crash* shots/ > /dev/null 2>&1 || true
   timeout 30 adb logcat -d > shots/logcat.txt || true
   timeout 30 adb pull /sdcard/Android/data/app.pane.browser/files/smoke/. shots/ > /dev/null 2>&1 || true
   if [ "$result" != 0 ]; then

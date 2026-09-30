@@ -76,6 +76,7 @@ class BrowserSmokeTest {
             assertTrue("External link retained the old editor", device.wait(Until.gone(By.text("Cancel")), 5_000))
             tap(By.descContains("Address:"))
             node(By.clazz("android.widget.EditText").pkg(context.packageName)).text = "privacy"
+            node(By.text("privacy").clazz("android.widget.EditText").pkg(context.packageName))
             shot("06-search")
             tap(By.text("Cancel"))
 
@@ -91,7 +92,8 @@ class BrowserSmokeTest {
             scrollTo(By.text("Appearance")).click()
             for (theme in listOf("Dark", "Automatic", "Light", "Automatic")) {
                 tap(By.text(theme))
-                node(By.text(theme).selected(true))
+                // Compose exports selection on the focusable tab that owns the text label.
+                node(By.selected(true).hasDescendant(By.text(theme)))
             }
             shot("09-appearance")
             device.pressBack()
