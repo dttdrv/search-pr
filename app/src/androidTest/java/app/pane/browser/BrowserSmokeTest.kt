@@ -2,6 +2,7 @@ package app.pane.browser
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.os.SystemClock
 import android.view.WindowManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -36,8 +37,15 @@ class BrowserSmokeTest {
         val oldIdleTimeout = config.waitForIdleTimeout
         config.waitForIdleTimeout = 0
         try {
+            InstrumentationRegistry.getArguments().getString("startupGlass")?.let { mode ->
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    app.pane.browser.ui.theme.GlassDebug.mode = mode
+                }
+                progress("startup glass=$mode")
+            }
             launch()
             node(By.text("Start Browsing"))
+            progress("onboarding ready")
             shot("01-onboarding")
             scrollTo(By.text("Block ads with uBlock Origin")).click()
             tap(By.text("Start Browsing"))
@@ -46,14 +54,17 @@ class BrowserSmokeTest {
 
             openPage()
             node(By.text("Example Domain"), 60_000)
+            progress("page ready")
             shot("03-page")
             // Compare the live TextureView with/without glass and both screenshot paths.
             // Accessibility text alone cannot prove that Gecko has actually painted the page.
             for (quality in listOf("off", "full")) {
+                progress("switch glass=$quality")
                 context.startActivity(Intent(context, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("glass", quality))
                 SystemClock.sleep(1_000)
                 shot("03-page-$quality")
+                progress("painted glass=$quality")
             }
             device.executeShellCommand("screencap -p ${File(shots, "03-page-shell.png").absolutePath}")
             tap(By.desc("Menu"))
@@ -196,6 +207,12 @@ class BrowserSmokeTest {
     private fun shot(name: String) {
         shots.mkdirs()
         device.takeScreenshot(File(shots, "$name.png"))
+    }
+
+    private fun progress(message: String) {
+        InstrumentationRegistry.getInstrumentation().sendStatus(0, Bundle().apply {
+            putString("stream", "\nPANE_PROBE $message\n")
+        })
     }
 
     private fun assertSecureWindow(expected: Boolean) {

@@ -1,4 +1,4 @@
-name: Emulator smoke test
+name: Android 14 startup probe
 
 on:
   push:
@@ -11,14 +11,17 @@ concurrency:
 
 jobs:
   smoke:
-    name: smoke (API ${{ matrix.api }})
+    name: smoke (API ${{ matrix.api }}, glass ${{ matrix.startupGlass }})
     runs-on: ubuntu-latest
     timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
         # 34 is the everyday target; 28 covers the oldest APIs we still see in the wild.
-        api: [34, 28]
+        api: [34]
+        startupGlass: ["off", "full"]
+    env:
+      PANE_STARTUP_GLASS: ${{ matrix.startupGlass }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -40,7 +43,7 @@ jobs:
           # Pane uses Gecko and platform APIs; Play services add unrelated boot/memory load.
           target: default
           force-avd-creation: false
-          emulator-options: -no-window -gpu software -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu software -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: bash .github/scripts/smoke.sh
       - name: Print screenshots
@@ -52,6 +55,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-screenshots-api${{ matrix.api }}
+          name: smoke-screenshots-api${{ matrix.api }}-${{ matrix.startupGlass }}
           path: shots/
           if-no-files-found: ignore

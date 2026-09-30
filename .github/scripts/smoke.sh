@@ -23,7 +23,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
 adb shell pm clear app.pane.browser > /dev/null
 adb logcat -c
-timeout 900 adb shell am instrument -w -e class app.pane.browser.BrowserSmokeTest \
+timeout 900 adb shell am instrument -w -e startupGlass "${PANE_STARTUP_GLASS:-full}" -e class app.pane.browser.BrowserSmokeTest \
   app.pane.browser.test/androidx.test.runner.AndroidJUnitRunner | tee shots/instrumentation.txt
 grep -q 'OK (1 test)' shots/instrumentation.txt
 adb logcat -d > shots/logcat.txt
