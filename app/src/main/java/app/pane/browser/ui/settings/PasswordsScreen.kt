@@ -72,7 +72,7 @@ fun PasswordsScreen() {
                         onClick = { launchFirst(*AutofillStatus.pickerIntents(context)) },
                     )
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                     row {
                         NavRow(
                             title = "Passkeys",
@@ -120,20 +120,24 @@ internal data class AutofillStatus(
         /**
          * The screens where the user picks a password manager, best first: the system's autofill
          * picker (which lists every service even though the request names Pane), then, on Android
-         * 14+, the page for passwords, passkeys and autofill, then the top of Settings.
+         * 15+, the page for passwords, passkeys and autofill, then the top of Settings.
          */
         fun pickerIntents(context: Context): Array<Intent> {
             val autofillPicker = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE, Uri.parse("package:${context.packageName}"))
             val fallback = Intent(Settings.ACTION_SETTINGS)
-            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
                 arrayOf(autofillPicker, Intent(Settings.ACTION_CREDENTIAL_PROVIDER), fallback)
             } else {
                 arrayOf(autofillPicker, fallback)
             }
         }
 
-        /** Android 14+'s page for choosing where passkeys live, or the top of Settings. */
+        /** Android 15+'s page for choosing where passkeys live, or the top of Settings. */
         fun passkeyIntents(): Array<Intent> =
-            arrayOf(Intent(Settings.ACTION_CREDENTIAL_PROVIDER), Intent(Settings.ACTION_SETTINGS))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                arrayOf(Intent(Settings.ACTION_CREDENTIAL_PROVIDER), Intent(Settings.ACTION_SETTINGS))
+            } else {
+                arrayOf(Intent(Settings.ACTION_SETTINGS))
+            }
     }
 }

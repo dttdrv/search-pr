@@ -111,6 +111,19 @@ fun BrowserScreen() {
     val unlockPrivate = rememberPrivateUnlock { privateUnlocked = true }
     var editText by remember { mutableStateOf("") }
 
+    // A link from another app (or the library) must reveal its page, not leave an old
+    // address editor, menu, or tab overview covering the new navigation.
+    LaunchedEffect(navigator.closeAllVersion) {
+        editText = ""
+        chrome.editing = false
+        chrome.showMenu = false
+        chrome.showTabs = false
+        chrome.showPrivateTabs = false
+        chrome.findInPage = false
+        chrome.siteInfo = false
+        chrome.overlay = null
+    }
+
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
         privateUnlocked = false
         // The editor may hold a private page's address, which mustn't be waiting once the tabs relock.
@@ -122,6 +135,7 @@ fun BrowserScreen() {
     LaunchedEffect(locked) {
         BrowserChrome.pageLocked.value = locked
         if (locked) {
+            editText = ""
             chrome.editing = false
             chrome.overlay = null
             chrome.findInPage = false
@@ -472,9 +486,9 @@ fun BrowserScreen() {
             }
 
             AddressEditor(
-                visible = chrome.editing,
+                visible = chrome.editing && !locked,
                 origin = chrome.pillRect,
-                initialText = editText,
+                initialText = if (locked) "" else editText,
                 private = private,
                 showOpenTabs = !locked,
                 onSubmit = { text ->

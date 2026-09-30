@@ -24,8 +24,9 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '21' }
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build x86_64 debug APK
-        run: ./gradlew :app:assembleDebug -Ppane.abis=x86_64
+      - name: Build x86_64 debug and UI test APKs
+        # Release compiler memory before booting the emulator on the same runner.
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest -Ppane.abis=x86_64 --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g -Pkotlin.compiler.execution.strategy=in-process
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

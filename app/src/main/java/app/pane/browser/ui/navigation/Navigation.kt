@@ -1,7 +1,10 @@
 package app.pane.browser.ui.navigation
 
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 
 /** Screens pushed over the browser. The browser itself is the implicit root. */
@@ -34,6 +37,8 @@ sealed interface Route {
 @Stable
 class Navigator {
     val stack = mutableStateListOf<Route>()
+    var closeAllVersion by mutableIntStateOf(0)
+        private set
 
     val isEmpty: Boolean get() = stack.isEmpty()
     val top: Route? get() = stack.lastOrNull()
@@ -46,9 +51,10 @@ class Navigator {
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
     }
 
-    /** Dismisses every screen, returning to the browser. */
+    /** Dismisses every screen and browser overlay, even when no screen is pushed. */
     fun closeAll() {
         stack.clear()
+        closeAllVersion++
     }
 }
 
