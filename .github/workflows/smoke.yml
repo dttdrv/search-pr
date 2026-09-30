@@ -40,7 +40,7 @@ jobs:
           # Pane uses Gecko and platform APIs; Play services add unrelated boot/memory load.
           target: default
           force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu software -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: bash .github/scripts/smoke.sh
       - name: Print screenshots

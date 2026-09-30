@@ -113,7 +113,7 @@ class BrowserSmokeTest {
             shot("11-history")
             device.pressBack()
             menu("Extensions")
-            node(By.text("Browse Add-ons"))
+            node(By.text("Browse add-ons"))
             shot("12-extensions")
             device.pressBack()
 
@@ -124,7 +124,10 @@ class BrowserSmokeTest {
             device.setOrientationNatural()
             node(By.desc("Menu"))
             menu("New Private Tab")
-            if (device.wait(Until.hasObject(By.text("Cancel")), 2_000)) tap(By.text("Cancel"))
+            if (device.wait(Until.hasObject(By.text("Cancel")), 2_000)) {
+                assertTrue("Private editor exposed normal browsing history", device.wait(Until.gone(By.text("Recent")), 5_000))
+                tap(By.text("Cancel"))
+            }
             tap(By.descContains(" tabs"))
             node(By.desc("Done"))
             assertSecureWindow(true)
