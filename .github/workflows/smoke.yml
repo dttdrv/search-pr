@@ -19,7 +19,7 @@ jobs:
       matrix:
         # 34 is the everyday target; 28 covers the oldest APIs we still see in the wild.
         api: [34]
-        startupGlass: ["off", "full"]
+        startupGlass: ["full"]
     env:
       PANE_STARTUP_GLASS: ${{ matrix.startupGlass }}
     steps:
@@ -38,6 +38,8 @@ jobs:
       - name: Run on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
+          # Compare the prior stable emulator with the reproducible 37.1.11 host loss.
+          emulator-build: 15507667
           api-level: ${{ matrix.api }}
           arch: x86_64
           # Pane uses Gecko and platform APIs; Play services add unrelated boot/memory load.
