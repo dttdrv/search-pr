@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
@@ -33,6 +34,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +45,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -52,6 +55,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.GlassStrength
 import app.pane.browser.ui.theme.Motion
+import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.glass
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
@@ -76,6 +80,8 @@ fun PaneSheet(
     val colors = PaneTheme.colors
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
+    val dismissNow by rememberUpdatedState(onDismiss)
+    val reduceMotion = LocalReduceMotion.current
     var sheetHeight by remember { mutableFloatStateOf(0f) }
     // Starts far off-screen so nothing flashes before the first measurement.
     val offset = remember { Animatable(OFFSCREEN) }
@@ -86,9 +92,9 @@ fun PaneSheet(
         if (visible) {
             shown = true
             if (!measuredOnce) return@LaunchedEffect
-            offset.animateTo(0f, Motion.bouncy())
+            offset.animateTo(0f, if (reduceMotion) Motion.fade(0) else Motion.bouncy())
         } else if (shown) {
-            offset.animateTo(sheetHeight.coerceAtLeast(1f) + with(density) { 160.dp.toPx() }, Motion.smooth())
+            offset.animateTo(sheetHeight.coerceAtLeast(1f) + with(density) { 160.dp.toPx() }, if (reduceMotion) Motion.fade(0) else Motion.smooth())
             shown = false
             measuredOnce = false
         }
@@ -99,7 +105,7 @@ fun PaneSheet(
     fun settle(velocity: Float) {
         scope.launch {
             if (offset.value > sheetHeight * 0.3f || velocity > 1400f) {
-                onDismiss()
+                dismissNow()
             } else {
                 offset.animateTo(0f, Motion.bouncy(), initialVelocity = velocity)
             }
@@ -138,7 +144,7 @@ fun PaneSheet(
     PredictiveBackHandler(enabled = visible) { progress: Flow<BackEventCompat> ->
         try {
             progress.collect { event -> offset.snapTo(event.progress * sheetHeight * 0.25f) }
-            onDismiss()
+            dismissNow()
         } catch (e: CancellationException) {
             scope.launch { offset.animateTo(0f, Motion.bouncy()) }
             throw e
@@ -204,6 +210,7 @@ fun PaneSheet(
                     }
                 }
                 .glass(PaneShapes.floating, GlassStrength.Thick)
+                .pointerInput(Unit) { detectTapGestures { } }
                 .nestedScroll(nested),
         ) {
             // Grabber; also the drag handle for sheets whose content doesn't scroll.

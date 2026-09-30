@@ -37,6 +37,7 @@ fun EngineView(
         },
         update = { view ->
             @Suppress("UNUSED_EXPRESSION") version
+            view.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
             // A locked private page is covered on screen; screen readers mustn't walk into it either.
             view.importantForAccessibility =
                 if (hidden) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO

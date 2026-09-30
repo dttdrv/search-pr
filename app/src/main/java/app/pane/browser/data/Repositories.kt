@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 
 data class HistoryItem(val url: String, val title: String, val visitCount: Int, val lastVisited: Long)
@@ -36,7 +37,7 @@ abstract class Repository(protected val database: PaneDatabase) {
     private val version = MutableStateFlow(0)
 
     protected fun changed() {
-        version.value++
+        version.update { it + 1 }
     }
 
     protected fun <T> observe(query: (SQLiteDatabase) -> T): Flow<T> =
@@ -136,9 +137,11 @@ class HistoryRepository(database: PaneDatabase, private val clock: () -> Long = 
     }
 
     /** Most "frecent" pages, for the start page when there are no favourites yet. */
-    suspend fun topSites(limit: Int = 8): List<HistoryItem> = read { db ->
+    fun observeTopSites(limit: Int = 8): Flow<List<HistoryItem>> = observe { db -> topSitesQuery(db, limit) }
+
+    private fun topSitesQuery(db: SQLiteDatabase, limit: Int): List<HistoryItem> {
         val now = clock()
-        db.rawQuery("SELECT url, title, visit_count, last_visited FROM history ORDER BY visit_count DESC LIMIT 200", null)
+        return db.rawQuery("SELECT url, title, visit_count, last_visited FROM history ORDER BY visit_count DESC LIMIT 200", null)
             .mapAll(::item)
             .sortedByDescending { Frecency.score(it.visitCount, it.lastVisited, false, now) }
             .distinctBy { app.pane.core.url.UrlInput.hostOf(it.url) }
@@ -172,7 +175,8 @@ class BookmarksRepository(database: PaneDatabase, private val clock: () -> Long 
     suspend fun all(): List<Bookmark> = read { db -> db.rawQuery("SELECT $columns FROM bookmarks ORDER BY position ASC", null).mapAll(::item) }
 
     suspend fun candidates(query: String, limit: Int = 30): List<PlaceCandidate> = read { db ->
-        val like = "%${likeEscape(query.trim())}%"
+        val first = query.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
+        val like = "%${likeEscape(first)}%"
         db.rawQuery("SELECT $columns FROM bookmarks WHERE url LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' LIMIT ?", arrayOf(like, like, limit.toString()))
             .mapAll(::item)
             .map { PlaceCandidate(it.url, it.title, visitCount = 1, lastVisited = it.created, bookmarked = true) }

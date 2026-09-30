@@ -2,6 +2,7 @@ package app.pane.core.search
 
 import kotlinx.serialization.Serializable
 import java.net.URLEncoder
+import java.net.URI
 
 /**
  * A search provider. [searchTemplate] and [suggestTemplate] contain `{searchTerms}`.
@@ -23,12 +24,15 @@ data class SearchEngine(
 
     /** Recovers the query from one of this engine's result pages, so the bar can show it instead of the URL. */
     fun extractQuery(url: String): String? {
-        val prefix = searchTemplate.substringBefore(TERMS)
-        if (!url.startsWith(prefix)) return null
-        val param = prefix.substringAfterLast('?').substringAfterLast('&').removeSuffix("=")
-        if (param.isEmpty()) return null
-        val query = url.substringAfter('?', "").split('&')
-            .firstOrNull { it.startsWith("$param=") }
+        val template = runCatching { URI(searchTemplate.replace(TERMS, "pane_terms")) }.getOrNull() ?: return null
+        val page = runCatching { URI(url) }.getOrNull() ?: return null
+        if (!template.scheme.equals(page.scheme, true) || !template.host.equals(page.host, true) ||
+            template.port != page.port || template.path != page.path || page.rawUserInfo != null
+        ) return null
+        val param = template.rawQuery?.split('&')?.firstOrNull { it.substringAfter('=', "") == "pane_terms" }
+            ?.substringBefore('=') ?: return null
+        val query = page.rawQuery?.split('&')
+            ?.firstOrNull { it.startsWith("$param=") }
             ?.substringAfter('=') ?: return null
         return try {
             java.net.URLDecoder.decode(query, "UTF-8").takeIf { it.isNotBlank() }
@@ -101,9 +105,9 @@ object SearchEngines {
     fun parseKeyword(input: String, engines: List<SearchEngine> = all): Pair<SearchEngine, String>? {
         val trimmed = input.trimStart()
         if (!trimmed.startsWith("@")) return null
-        val keyword = trimmed.drop(1).substringBefore(' ').lowercase()
+        val keyword = trimmed.drop(1).takeWhile { !it.isWhitespace() }.lowercase()
         val engine = engines.firstOrNull { it.keyword == keyword || it.id == keyword } ?: return null
-        val query = trimmed.substringAfter(' ', "").trim()
+        val query = trimmed.drop(1 + keyword.length).trim()
         return engine to query
     }
 }

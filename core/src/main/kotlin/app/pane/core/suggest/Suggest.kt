@@ -50,8 +50,8 @@ object Autocomplete {
      */
     fun complete(typed: String, candidates: List<PlaceCandidate>, now: Long): String? {
         val t = typed.trim().lowercase()
-        if (t.isEmpty() || t.any { it.isWhitespace() || it == '/' }) return null
         val stripped = t.removePrefix("https://").removePrefix("http://")
+        if (stripped.isEmpty() || stripped.any { it.isWhitespace() || it in "/?#@:" }) return null
         return candidates
             .mapNotNull { c -> UrlInput.hostOf(c.url)?.let { host -> host to c } }
             .flatMap { (host, c) ->
@@ -91,10 +91,17 @@ object SuggestionRanker {
         val tabs = openTabs.filter { matches(it.url, it.title) }.take(2)
         val tabUrls = tabs.map { it.url }.toSet()
 
-        val rankedPlaces = places
+        val mergedPlaces = places.groupBy { it.url }.values.map { entries ->
+            val frequent = entries.maxBy { it.visitCount }
+            frequent.copy(
+                title = entries.firstOrNull { it.bookmarked && it.title.isNotBlank() }?.title ?: frequent.title,
+                lastVisited = entries.maxOf { it.lastVisited },
+                bookmarked = entries.any { it.bookmarked },
+            )
+        }
+        val rankedPlaces = mergedPlaces
             .asSequence()
             .filter { it.url !in tabUrls && matches(it.url, it.title) }
-            .distinctBy { it.url }
             .sortedByDescending { c ->
                 val host = UrlDisplay.toolbarText(c.url).lowercase()
                 val hostBoost = if (host.startsWith(tokens.first())) 3.0 else 0.0

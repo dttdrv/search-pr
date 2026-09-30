@@ -120,7 +120,9 @@ internal class HelperBridge(
     }
 
     private fun portDelegate(tabId: String) = object : WebExtension.PortDelegate {
-        override fun onPortMessage(message: Any, port: WebExtension.Port) = handle(tabId, message)
+        override fun onPortMessage(message: Any, port: WebExtension.Port) {
+            if (ports[tabId] === port) handle(tabId, message)
+        }
 
         override fun onDisconnect(port: WebExtension.Port) {
             if (ports[tabId] === port) ports.remove(tabId)

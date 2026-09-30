@@ -70,4 +70,17 @@ class UrlInputTest {
         assertEquals("example.com", UrlInput.hostOf("https://user:pw@Example.com:8080/x"))
         assertNull(UrlInput.hostOf("not a url"))
     }
+
+    @Test fun unicodeHostsAndCredentialsAreParsedWithoutFallbackGuessing() {
+        assertEquals("xn--mnchen-3ya.de", UrlInput.hostOf("https://user:pw@münchen.de:8443/a"))
+        assertEquals("[::1]", UrlInput.hostOf("http://[::1]:8080/"))
+        assertNull(UrlInput.hostOf("https://example.com/bad path"))
+    }
+
+    @Test fun invalidIpv6IsSearchedInsteadOfNavigated() {
+        search("[hello:world]")
+        search("[1:2:3]")
+        search("[::::]")
+        nav("[2001:db8::1]")
+    }
 }

@@ -47,7 +47,7 @@ object FileNames {
             val parts = value.split("'", limit = 3)
             if (parts.size == 3) {
                 val charset = runCatching { charset(parts[0].ifEmpty { "UTF-8" }) }.getOrDefault(Charsets.UTF_8)
-                runCatching { return URLDecoder.decode(parts[2], charset.name()) }
+                runCatching { return URLDecoder.decode(parts[2].replace("+", "%2B"), charset.name()) }
             }
         }
         Regex("filename\\s*=\\s*(\"((?:[^\"\\\\]|\\\\.)*)\"|[^;]+)", RegexOption.IGNORE_CASE).find(header)?.let { m ->
@@ -73,7 +73,7 @@ object FileNames {
     fun isPotentiallyDangerous(name: String): Boolean = name.substringAfterLast('.', "").lowercase() in dangerousExtensions
 
     private fun decode(s: String) = try {
-        URLDecoder.decode(s, "UTF-8")
+        URLDecoder.decode(s.replace("+", "%2B"), "UTF-8")
     } catch (_: IllegalArgumentException) {
         s
     }

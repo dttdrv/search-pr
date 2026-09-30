@@ -3,6 +3,7 @@ package app.pane.browser.ui.browser
 import android.app.Activity
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
@@ -120,15 +122,19 @@ fun BrowserScreen() {
     LaunchedEffect(locked) {
         BrowserChrome.pageLocked.value = locked
         if (locked) {
+            chrome.editing = false
+            chrome.overlay = null
             chrome.findInPage = false
             chrome.siteInfo = false
             chrome.geckoView?.clearFocus()
         }
     }
-
-    // The activity blocks screenshots while the tab overview lists private tabs.
-    LaunchedEffect(chrome) {
-        snapshotFlow { chrome.showTabs && chrome.showPrivateTabs }.collect { BrowserChrome.privateTabsShowing.value = it }
+    LaunchedEffect(private) { chrome.overlay = null }
+    DisposableEffect(chrome) {
+        onDispose {
+            BrowserChrome.privateTabsShowing.value = false
+            BrowserChrome.pageLocked.value = false
+        }
     }
 
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -139,7 +145,7 @@ fun BrowserScreen() {
     val fullscreen = tab?.fullscreen == true
 
     // Toolbar collapses with the page.
-    LaunchedEffect(tab?.id) {
+    LaunchedEffect(tab?.id, dynamicPx) {
         chrome.restoreEdges(tab?.id)
         chrome.scrolled = false
         chrome.expand()
@@ -158,7 +164,7 @@ fun BrowserScreen() {
     }
     // Once the page stops moving: finish the bar's motion, then read the colours the page is showing
     // so the chrome can follow them.
-    LaunchedEffect(tab?.id) {
+    LaunchedEffect(tab?.id, dynamicPx) {
         val id = tab?.id ?: return@LaunchedEffect
         container.sessions.scroll
             .filter { it.tabId == id }
@@ -172,11 +178,13 @@ fun BrowserScreen() {
             }
     }
     LaunchedEffect(tab?.loading, tab?.url) { if (tab?.loading == true) chrome.expand() }
+    LaunchedEffect(settings.hideToolbarOnScroll) { if (!settings.hideToolbarOnScroll) chrome.expand() }
 
     // Gecko needs to know how much of the page the toolbar can cover, and how much it covers now.
-    LaunchedEffect(chrome, fullscreen) {
+    LaunchedEffect(chrome.geckoView, fullscreen, dynamicPx) {
+        val view = chrome.geckoView ?: return@LaunchedEffect
+        view.setDynamicToolbarMaxHeight(dynamicPx.toInt())
         snapshotFlow { chrome.collapse.value }.collect { c ->
-            val view = chrome.geckoView ?: return@collect
             // Gecko keeps the page's viewport (fixed footers, 100vh) clear of the toolbar by its full
             // height, and the clipping says how much of that the toolbar has slid away: 0 with the
             // bar out, minus its whole height once it has melted, so the page then fills the screen.
@@ -185,7 +193,7 @@ fun BrowserScreen() {
     }
 
     // Snapshots for the tab overview and back gesture, and clearing covers on first paint.
-    LaunchedEffect(Unit) {
+    LaunchedEffect(dynamicPx) {
         container.sessions.events.collect { event ->
             when (event) {
                 is EngineEvent.PageSettled -> scope.launch {
@@ -205,7 +213,7 @@ fun BrowserScreen() {
                         chrome.sampleEdges(event.tabId, dynamicPx.toInt()) { container.store.state.value.selectedTabId == event.tabId }
                     }
                 }
-                is EngineEvent.ShowToolbar -> chrome.expand()
+                is EngineEvent.ShowToolbar -> if (event.tabId == container.store.state.value.selectedTabId) chrome.expand()
                 else -> Unit
             }
         }
@@ -230,12 +238,12 @@ fun BrowserScreen() {
                     editText = current?.url?.let { container.browser.searchTermsFor(it) ?: UrlDisplay.editableText(it) }.orEmpty()
                     chrome.editing = true
                 }
-                Shortcut.Reload -> container.browser.reload()
+                Shortcut.Reload -> if (!currentLocked) container.browser.reload()
                 Shortcut.Find -> if (!currentLocked && current?.url?.isNotEmpty() == true) chrome.findInPage = true
                 Shortcut.NextTab -> tabs.getOrNull((i + 1).mod(tabs.size.coerceAtLeast(1)))?.let { container.browser.select(it.id) }
                 Shortcut.PreviousTab -> tabs.getOrNull((i - 1).mod(tabs.size.coerceAtLeast(1)))?.let { container.browser.select(it.id) }
-                Shortcut.Back -> container.browser.goBack()
-                Shortcut.Forward -> container.browser.goForward()
+                Shortcut.Back -> if (!currentLocked) container.browser.goBack()
+                Shortcut.Forward -> if (!currentLocked) container.browser.goForward()
                 Shortcut.ShowTabs -> chrome.showTabs = true
             }
         }
@@ -251,7 +259,8 @@ fun BrowserScreen() {
     }
 
     // Back swipe: slide the page away like iOS, revealing where you're going.
-    val canGoBack = tab != null && (tab.canGoBack || tab.parentId != null) && !chrome.anyOverlay && navigator.isEmpty && !fullscreen
+    BackHandler(enabled = fullscreen && navigator.isEmpty) { tab?.id?.let { container.sessions.session(it)?.exitFullScreen() } }
+    val canGoBack = tab != null && (tab.canGoBack || tab.parentId != null) && !locked && !chrome.anyOverlay && navigator.isEmpty && !fullscreen
     PredictiveBackHandler(enabled = canGoBack) { events: Flow<BackEventCompat> ->
         val current = tab ?: return@PredictiveBackHandler
         val entry = container.sessions.backEntry(current.id)
@@ -523,6 +532,8 @@ fun BrowserScreen() {
 
 private suspend fun captureInto(container: app.pane.browser.AppContainer, chrome: BrowserChrome, tab: TabState, bandPx: Int) {
     val bitmap = chrome.capture() ?: return
+    val current = container.store.state.value.selectedTab
+    if (current?.id != tab.id || current.url != tab.url) return
     chrome.applyEdges(tab.id, bitmap, bandPx)
     container.snapshots.put(tab.id, tab.url, bitmap)
     container.thumbnails.put(tab.id, bitmap, tab.isPrivate)

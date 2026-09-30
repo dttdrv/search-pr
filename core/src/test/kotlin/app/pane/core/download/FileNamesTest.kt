@@ -36,4 +36,9 @@ class FileNamesTest {
     @Test fun flagsExecutables() {
         assertTrue(FileNames.isPotentiallyDangerous("thing.APK"))
     }
+
+    @Test fun percentDecodingPreservesLiteralPlusInPathsAndExtendedNames() {
+        assertEquals("a+b.txt", FileNames.choose(null, "https://example.com/a+b.txt", null))
+        assertEquals("a+b.txt", FileNames.fromContentDisposition("attachment; filename*=UTF-8''a+b.txt"))
+    }
 }

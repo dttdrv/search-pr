@@ -3,7 +3,9 @@ package app.pane.browser.ui.components
 import androidx.compose.animation.core.animate
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -22,6 +24,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,15 +33,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.Motion
+import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
@@ -60,11 +61,15 @@ fun SegmentedControl(
     modifier: Modifier = Modifier,
     height: Dp = 46.dp,
 ) {
+    if (options.isEmpty()) return
     val colors = PaneTheme.colors
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val reduceMotion = LocalReduceMotion.current
     val count = options.size.coerceAtLeast(1)
+    val selection = selectedIndex.coerceIn(0, count - 1)
+    val selectNow by rememberUpdatedState(onSelect)
     val inset = 3.dp
 
     BoxWithConstraints(
@@ -80,39 +85,31 @@ fun SegmentedControl(
 
         // The thumb's position in pixels. Plain snapshot state, written directly while dragging and
         // by a spring when it settles, so following a finger never launches anything.
-        var pos by remember { mutableFloatStateOf(selectedIndex * segmentPx) }
+        var pos by remember { mutableFloatStateOf(selection * segmentPx) }
         var dragging by remember { mutableStateOf(false) }
         var settle by remember { mutableStateOf<Job?>(null) }
-        val nearest by remember(segmentPx) { derivedStateOf { if (segmentPx <= 0f) 0 else (pos / segmentPx).roundToInt().coerceIn(0, count - 1) } }
+        val nearest by remember(segmentPx, count) { derivedStateOf { if (segmentPx <= 0f) 0 else (pos / segmentPx).roundToInt().coerceIn(0, count - 1) } }
 
         fun springTo(target: Float, velocity: Float = 0f) {
             settle?.cancel()
             settle = scope.launch {
-                animate(pos, target, initialVelocity = velocity, animationSpec = Motion.bouncy()) { v, _ -> pos = v }
+                animate(pos, target, initialVelocity = velocity, animationSpec = if (reduceMotion) Motion.fade(0) else Motion.bouncy()) { v, _ -> pos = v }
             }
         }
 
         // A change from outside (or a tap) moves the thumb; a drag in progress owns it.
-        LaunchedEffect(selectedIndex, segmentPx) {
-            if (!dragging) springTo(selectedIndex * segmentPx)
+        LaunchedEffect(selection, segmentPx) {
+            if (!dragging) springTo(selection * segmentPx)
         }
 
         Box(
             Modifier
                 .fillMaxWidth()
                 .fillMaxHeight()
-                .pointerInput(count, segmentPx) {
-                    detectTapGestures { offset ->
-                        val index = (offset.x / segmentPx).toInt().coerceIn(0, count - 1)
-                        if (index != selectedIndex) {
-                            haptics.tick()
-                            onSelect(index)
-                        }
-                        springTo(index * segmentPx)
-                    }
-                }
-                .pointerInput(count, segmentPx, selectedIndex) {
-                    var last = selectedIndex
+                .selectableGroup()
+                .pointerInput(count, segmentPx, selection) {
+                    if (segmentPx <= 0f) return@pointerInput
+                    var last = selection
                     var velocity = 0f
                     detectHorizontalDragGestures(
                         onDragStart = {
@@ -127,11 +124,11 @@ fun SegmentedControl(
                             val bias = (velocity / 4000f).coerceIn(-0.5f, 0.5f)
                             val target = ((pos / segmentPx) + bias).roundToInt().coerceIn(0, count - 1)
                             springTo(target * segmentPx, velocity)
-                            if (target != selectedIndex) onSelect(target)
+                            if (target != selection) selectNow(target)
                         },
                         onDragCancel = {
                             dragging = false
-                            springTo(selectedIndex * segmentPx)
+                            springTo(selection * segmentPx)
                         },
                         onHorizontalDrag = { change, delta ->
                             change.consume()
@@ -167,10 +164,19 @@ fun SegmentedControl(
                         Modifier
                             .width(segment)
                             .fillMaxHeight()
-                            .semantics {
-                                role = Role.Tab
-                                selected = index == selectedIndex
-                            },
+                            .selectable(
+                                selected = index == selection,
+                                role = Role.Tab,
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {
+                                    if (index != selection) {
+                                        haptics.tick()
+                                        selectNow(index)
+                                    }
+                                    springTo(index * segmentPx)
+                                },
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(

@@ -125,7 +125,10 @@ fun PromptHost() {
         }
     }
 
-    banner.shown?.let { request ->
+    fun canShow(request: PromptRequest) = request.tabId == null ||
+        (request.tabId == selectedTabId && !pageLocked) || request.tabId == ExtensionsManager.AUX_PROMPT_OWNER
+
+    banner.shown?.takeIf(::canShow)?.let { request ->
         key(request.id) {
             when (request) {
                 is PopupRequest -> PopupBanner(request, banner.visible) { queue.remove(request) }
@@ -135,7 +138,7 @@ fun PromptHost() {
         }
     }
 
-    val request = modal.shown ?: return
+    val request = modal.shown?.takeIf(::canShow) ?: return
     val visible = modal.visible
     val onDone: () -> Unit = { queue.remove(request) }
     key(request.id) {

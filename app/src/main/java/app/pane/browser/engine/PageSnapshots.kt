@@ -18,6 +18,10 @@ class PageSnapshots {
 
     fun get(tabId: String, url: String): Bitmap? = cache.get(key(tabId, url))
 
+    fun remove(tabId: String) {
+        cache.snapshot().keys.filter { it.startsWith("$tabId|") }.forEach { cache.remove(it) }
+    }
+
     fun clear() = cache.evictAll()
 
     private fun key(tabId: String, url: String) = "$tabId|${url.substringBefore('#')}"

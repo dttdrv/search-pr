@@ -49,7 +49,7 @@ class BrowserChrome(private val scope: CoroutineScope) {
     /** Snapshot drawn over the page while a gesture or transition is in flight. */
     var overlay by mutableStateOf<PageOverlay?>(null)
 
-    var geckoView: GeckoView? = null
+    var geckoView by mutableStateOf<GeckoView?>(null)
 
     /** Whether the page has scrolled away from its top; the status area then dissolves into it. */
     var scrolled by mutableStateOf(false)
@@ -103,7 +103,7 @@ class BrowserChrome(private val scope: CoroutineScope) {
     fun onScroll(deltaY: Int, range: Float) {
         if (anyOverlay) return
         settleJob?.cancel()
-        collapse.snap(collapse.value + deltaY / range)
+        if (range > 0f) collapse.snap(collapse.value + deltaY / range)
     }
 
     /** Scrolling has paused: finish whichever way the bar was heading. */

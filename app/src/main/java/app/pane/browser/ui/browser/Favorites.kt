@@ -15,11 +15,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,14 +45,13 @@ data class FavoriteSite(val url: String, val title: String)
  * from Pane's own cache, so the start page itself asks the network for nothing.
  */
 @Composable
-fun rememberFavoriteSites(limit: Int = 8): List<FavoriteSite> {
+fun rememberFavoriteSites(limit: Int = 8, includeHistory: Boolean = true): List<FavoriteSite> {
     val container = LocalAppContainer.current
     val favorites by remember { container.bookmarks.observeFavorites() }.collectAsStateWithLifecycle(emptyList())
-    var top by remember { mutableStateOf(emptyList<FavoriteSite>()) }
-    LaunchedEffect(favorites.isEmpty()) {
-        if (favorites.isEmpty()) top = container.history.topSites(limit).map { FavoriteSite(it.url, it.title) }
-    }
-    return if (favorites.isNotEmpty()) favorites.take(limit).map { FavoriteSite(it.url, it.title) } else top
+    val top by remember(limit) { container.history.observeTopSites(limit) }.collectAsStateWithLifecycle(emptyList())
+    val settings by container.settings.state.collectAsStateWithLifecycle()
+    return if (favorites.isNotEmpty()) favorites.take(limit).map { FavoriteSite(it.url, it.title) }
+        else if (includeHistory && settings.rememberHistory) top.map { FavoriteSite(it.url, it.title) } else emptyList()
 }
 
 /**
@@ -143,9 +139,10 @@ fun FavoritesPanel(
     onPasteAndGo: () -> Unit,
     modifier: Modifier = Modifier,
     recent: List<FavoriteSite> = emptyList(),
+    includeHistory: Boolean = true,
 ) {
     val colors = PaneTheme.colors
-    val sites = rememberFavoriteSites(limit = 4)
+    val sites = rememberFavoriteSites(limit = 4, includeHistory = includeHistory)
     Column(
         modifier
             .fillMaxSize()
