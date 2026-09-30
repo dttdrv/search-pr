@@ -39,7 +39,7 @@ jobs:
           arch: x86_64
           target: google_apis
           force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu swiftshader -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: bash .github/scripts/smoke.sh
       - name: Print screenshots

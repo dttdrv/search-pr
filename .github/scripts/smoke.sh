@@ -4,14 +4,14 @@ set -euo pipefail
 mkdir -p shots
 diagnostics() {
   local result=$?
-  adb logcat -d > shots/logcat.txt || true
-  adb pull /sdcard/Android/data/app.pane.browser/files/smoke/. shots/ > /dev/null 2>&1 || true
+  timeout 30 adb logcat -d > shots/logcat.txt || true
+  timeout 30 adb pull /sdcard/Android/data/app.pane.browser/files/smoke/. shots/ > /dev/null 2>&1 || true
   if [ "$result" != 0 ]; then
-    adb shell dumpsys activity lastanr > shots/last-anr.txt || true
-    adb shell dumpsys dropbox --print data_app_anr > shots/anr.txt || true
+    timeout 30 adb shell dumpsys activity lastanr > shots/last-anr.txt || true
+    timeout 30 adb shell dumpsys dropbox --print data_app_anr > shots/anr.txt || true
     timeout 20 adb root > /dev/null 2>&1 || true
     timeout 20 adb wait-for-device || true
-    adb pull /data/anr shots/anr-traces > /dev/null 2>&1 || true
+    timeout 30 adb pull /data/anr shots/anr-traces > /dev/null 2>&1 || true
   fi
 }
 trap diagnostics EXIT

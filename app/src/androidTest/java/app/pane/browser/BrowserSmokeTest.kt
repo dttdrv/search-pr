@@ -14,6 +14,7 @@ import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import androidx.test.uiautomator.waitForStable
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -46,6 +47,15 @@ class BrowserSmokeTest {
             openPage()
             node(By.text("Example Domain"), 60_000)
             shot("03-page")
+            // Compare the live TextureView with/without glass and both screenshot paths.
+            // Accessibility text alone cannot prove that Gecko has actually painted the page.
+            for (quality in listOf("off", "full")) {
+                context.startActivity(Intent(context, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("glass", quality))
+                SystemClock.sleep(1_000)
+                shot("03-page-$quality")
+            }
+            device.executeShellCommand("screencap -p ${File(shots, "03-page-shell.png").absolutePath}")
             tap(By.desc("Menu"))
             node(By.text("Find"))
             shot("04-menu")
@@ -78,7 +88,7 @@ class BrowserSmokeTest {
 
             menu("Settings")
             shot("08-settings")
-            tap(By.text("Appearance"))
+            scrollTo(By.text("Appearance")).click()
             for (theme in listOf("Dark", "Automatic", "Light", "Automatic")) {
                 tap(By.text(theme))
                 node(By.text(theme).selected(true))
@@ -156,14 +166,18 @@ class BrowserSmokeTest {
 
     private fun openPage(url: String = "https://example.com") = launch(url)
 
-    private fun node(selector: BySelector, timeout: Long = 15_000): UiObject2 =
-        device.wait(Until.findObject(selector), timeout) ?: throw AssertionError("Missing control: $selector")
+    private fun node(selector: BySelector, timeout: Long = 15_000): UiObject2 {
+        val control = device.wait(Until.findObject(selector), timeout) ?: throw AssertionError("Missing control: $selector")
+        // Let this control's entrance or layout settle without waiting for the live web page.
+        control.waitForStable(requireStableScreenshot = false)
+        return control
+    }
 
     private fun tap(selector: BySelector) = node(selector).click()
 
     private fun scrollTo(selector: BySelector): UiObject2 {
         repeat(5) {
-            device.wait(Until.findObject(selector), 1_000)?.let { return it }
+            if (device.wait(Until.hasObject(selector), 1_000)) return node(selector)
             device.swipe(device.displayWidth / 2, device.displayHeight * 3 / 4, device.displayWidth / 2, device.displayHeight / 3, 30)
         }
         return node(selector)

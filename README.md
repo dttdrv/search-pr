@@ -110,10 +110,10 @@ Requirements: JDK 17+ and an Android SDK with platform 37.1.
 ```
 
 CI (`.github/workflows/`) builds, lints and tests every push, builds a minified (R8) release,
-and runs an emulator smoke test on Android 14 and Android 9 that walks through onboarding
-(including a real uBlock Origin install), a live page, the menu, tabs, search suggestions,
-settings, the add-on store, history, private browsing, landscape and autofill, failing on any
-crash and uploading screenshots.
+and runs a native UI walkthrough on Android 14 and Android 9 covering onboarding, a live page,
+Find/Back, external links, the menu, tabs, search, repeated appearance changes, bookmarks,
+history, extensions, private-window screenshot protection, landscape and autofill. It fails on
+assertion failures, crashes or Pane ANRs and uploads screenshots and diagnostics.
 
 ### Releases
 
