@@ -146,7 +146,9 @@ fun AddressEditor(
     }
     // Stays composed a beat after closing, so the field can travel back into the bar.
     AnimatedVisibility(visibleState = state, enter = fadeIn(Motion.fade(120)), exit = fadeOut(Motion.fade(260))) {
-        EditorContent(visible, origin, initialText, private, showOpenTabs, onSubmit, onSwitchToTab, onDismiss)
+        androidx.compose.runtime.key(private, initialText) {
+            EditorContent(visible, origin, initialText, private, showOpenTabs, onSubmit, onSwitchToTab, onDismiss)
+        }
     }
 }
 
@@ -162,6 +164,7 @@ private fun EditorContent(
     onDismiss: () -> Unit,
 ) {
     val container = LocalAppContainer.current
+    val settings by container.settings.state.collectAsStateWithLifecycle()
     val colors = PaneTheme.colors
     val haptics = rememberHaptics()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -185,24 +188,33 @@ private fun EditorContent(
     var field by remember { mutableStateOf(TextFieldValue(initialText, TextRange(0, initialText.length))) }
     /** What the user actually typed, without the inline completion. */
     var typed by remember { mutableStateOf(initialText) }
+    var inlineAllowed by remember { mutableStateOf(false) }
     var suggestions by remember { mutableStateOf<List<Suggestion>>(emptyList()) }
     val openTabsAllowed by rememberUpdatedState(showOpenTabs)
 
-    LaunchedEffect(Unit) {
-        delay(40)
-        focus.requestFocus()
-        keyboard?.show()
+    LaunchedEffect(open) {
+        if (open) {
+            field = TextFieldValue(initialText, TextRange(0, initialText.length))
+            typed = initialText
+            delay(40)
+            focus.requestFocus()
+            keyboard?.show()
+        } else {
+            keyboard?.hide()
+        }
     }
 
     // Suggestions: local results instantly, engine suggestions once typing pauses.
-    LaunchedEffect(Unit) {
+    LaunchedEffect(open, private, settings.rememberHistory, settings.searchEngineId, settings.searchSuggestions, settings.searchSuggestionsInPrivate, showOpenTabs) {
+        if (!open) return@LaunchedEffect
         snapshotFlow { typed }.distinctUntilChanged().collectLatest { query ->
             if (query.isBlank() || query == initialText) {
                 suggestions = emptyList()
                 return@collectLatest
             }
             val now = System.currentTimeMillis()
-            val places = container.history.candidates(query) + container.bookmarks.candidates(query)
+            val places = (if (!private && settings.rememberHistory) container.history.candidates(query) else emptyList()) +
+                container.bookmarks.candidates(query)
             val tabs = container.store.state.value.tabs
                 .filter { openTabsAllowed && it.isPrivate == private && it.url.isNotEmpty() && it.id != container.store.state.value.selectedTabId }
                 .map { Suggestion.OpenTab(it.id, it.url, it.title) }
@@ -210,7 +222,7 @@ private fun EditorContent(
 
             // Inline completion only while appending characters.
             val completion = Autocomplete.complete(query, places, now)
-            if (completion != null && field.text == query && field.selection.collapsed && field.selection.end == query.length) {
+            if (inlineAllowed && completion != null && field.composition == null && field.text == query && field.selection.collapsed && field.selection.end == query.length) {
                 val stripped = query.lowercase().removePrefix("https://").removePrefix("http://")
                 val suffix = completion.removePrefix(stripped)
                 if (suffix.isNotEmpty() && completion.startsWith(stripped)) {
@@ -233,8 +245,8 @@ private fun EditorContent(
     // Before anything is typed: the last few pages, so a return trip is one tap. Private tabs don't
     // offer history.
     val history by remember { container.history.observeRecent(40) }.collectAsStateWithLifecycle(emptyList())
-    val recent = remember(history, private, initialText) {
-        if (private) {
+    val recent = remember(history, private, initialText, settings.rememberHistory) {
+        if (private || !settings.rememberHistory) {
             emptyList<FavoriteSite>()
         } else {
             history.asSequence()
@@ -245,7 +257,7 @@ private fun EditorContent(
                 .toList()
         }
     }
-    val engineId = remember { SearchEngines.byId(container.settings.current.searchEngineId).id }
+    val engineId = SearchEngines.byId(settings.searchEngineId).id
 
     Column(
         Modifier
@@ -271,6 +283,7 @@ private fun EditorContent(
                         if (!text.isNullOrEmpty() && text.length < 4000) onSubmit(text)
                     },
                     recent = recent,
+                    includeHistory = !private,
                 )
             } else {
                 LazyColumn(
@@ -293,7 +306,7 @@ private fun EditorContent(
                                 }
                             },
                             onFill = { text ->
-                                typed = text
+                                typed = "$text "
                                 field = TextFieldValue("$text ", TextRange(text.length + 1))
                             },
                             modifier = Modifier.animateItem().entrance(index, key = s.key),
@@ -362,6 +375,8 @@ private fun EditorContent(
                     BasicTextField(
                         value = field,
                         onValueChange = { v ->
+                            inlineAllowed = v.composition == null && v.text.length > typed.length &&
+                                v.text.startsWith(typed) && v.selection.collapsed && v.selection.end == v.text.length
                             // Deleting while a completion is shown removes just the completion.
                             val hadCompletion = !field.selection.collapsed && field.selection.end == field.text.length && field.text.startsWith(typed)
                             if (hadCompletion && v.text == typed) {
@@ -524,4 +539,3 @@ private fun highlight(text: String, query: String, strong: androidx.compose.ui.g
     withStyle(SpanStyle(color = strong, fontWeight = FontWeight.SemiBold)) { append(text.substring(index, index + q.length)) }
     append(text.substring(index + q.length))
 }
-

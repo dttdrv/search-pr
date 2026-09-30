@@ -23,7 +23,9 @@ object LinkPolicy {
      * providers, and never launches another app without an explicit tap from the user.
      */
     fun decide(url: String): LinkDecision {
-        val scheme = url.substringBefore(':', "").lowercase()
+        var target = url
+        while (target.startsWith("view-source:", ignoreCase = true)) target = target.substringAfter(':')
+        val scheme = target.substringBefore(':', "").lowercase()
         if (scheme.isEmpty()) return LinkDecision.Block
         return when (scheme) {
             in alwaysBlocked -> LinkDecision.Block

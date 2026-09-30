@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -45,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -103,7 +105,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** A snapshot flying between the full page and a card during open/close. */
-private data class Flight(val tabId: String?, val bitmap: Bitmap?, val card: Rect, val page: Rect)
+private class Flight(val tabId: String?, val bitmap: Bitmap?, val card: Rect, val page: Rect, val isPrivate: Boolean)
 
 /** Corner radius shared by the cards and the flying snapshot, so the hand-off has no seam. */
 private val CardRadius = 24.dp
@@ -138,6 +140,7 @@ fun TabSwitcher(
     /** 0 = the cluster waits below the screen, 1 = it floats in place. */
     val cluster = remember { Animatable(0f) }
     var shown by remember { mutableStateOf(false) }
+    var closing by remember { mutableStateOf(false) }
     var flight by remember { mutableStateOf<Flight?>(null) }
     var confirmCloseAll by remember { mutableStateOf(false) }
     val cardRects = remember { mutableStateMapOf<String, Rect>() }
@@ -149,6 +152,11 @@ fun TabSwitcher(
 
     // Which set is showing lives in the chrome, so the activity can block screenshots of private tabs.
     val showPrivate = chrome.showPrivateTabs
+    val privacyTransition = updateTransition(showPrivate, label = "tabPrivacy")
+    SideEffect {
+        BrowserChrome.privateTabsShowing.value = shown &&
+            (privacyTransition.currentState || privacyTransition.targetState)
+    }
     val tabs = state.tabsIn(showPrivate)
 
     suspend fun awaitCard(id: String): Rect? {
@@ -161,13 +169,19 @@ fun TabSwitcher(
 
     LaunchedEffect(visible) {
         if (visible && !shown) {
+            closing = false
             val selected = state.selectedTab
             chrome.showPrivateTabs = selected?.isPrivate ?: false
             enteredIds.clear()
             shown = true
             val index = state.tabsIn(chrome.showPrivateTabs).indexOfFirst { it.id == selected?.id }
             if (index >= 0) (if (chrome.showPrivateTabs) privateGrid else normalGrid).scrollToItem(index)
-            val snapshot = if (selected != null && selected.url.isNotEmpty()) chrome.capture() else null
+            val snapshot = if (selected != null && selected.url.isNotEmpty() && !(selected.isPrivate && privateLocked)) {
+                chrome.capture()?.takeIf {
+                    val current = container.store.state.value.selectedTab
+                    current?.id == selected.id && current.url == selected.url && !BrowserChrome.pageLocked.value
+                }
+            } else null
             if (selected != null && snapshot != null) {
                 scope.launch {
                     container.thumbnails.put(selected.id, snapshot, selected.isPrivate)
@@ -176,31 +190,42 @@ fun TabSwitcher(
             }
             // A locked private page never flies, not even to a card left over from before it locked.
             val card = selected?.takeUnless { it.isPrivate && privateLocked }?.let { awaitCard(it.id) }
-            flight = if (selected != null && card != null && chrome.pageRect != Rect.Zero) {
-                Flight(selected.id, snapshot ?: container.thumbnails.get(selected.id), card, chrome.pageRect)
+            if (closing) return@LaunchedEffect
+            flight = if (!settings.reduceMotion && selected != null &&
+                selected.id == container.store.state.value.selectedTabId && card != null && chrome.pageRect != Rect.Zero
+            ) {
+                Flight(selected.id, snapshot ?: container.thumbnails.get(selected.id), card, chrome.pageRect, selected.isPrivate)
             } else {
                 null
             }
             progress.snapTo(0f)
             cluster.snapTo(0f)
-            launch { cluster.animateTo(1f, Motion.bouncy()) }
-            progress.animateTo(1f, Motion.bouncy())
+            launch { cluster.animateTo(1f, if (settings.reduceMotion) Motion.fade(0) else Motion.bouncy()) }
+            progress.animateTo(1f, if (settings.reduceMotion) Motion.fade(0) else Motion.bouncy())
             flight = null
+        } else if (!visible) {
+            flight = null
+            shown = false
+            closing = false
+            progress.snapTo(0f)
+            cluster.snapTo(0f)
         }
     }
 
     fun closeInto(tab: TabState?) {
+        if (closing) return
+        closing = true
         scope.launch {
             val card = tab?.takeUnless { it.isPrivate && privateLocked }?.let { cardRects[it.id] }
             if (tab != null) container.browser.select(tab.id)
-            flight = if (tab != null && card != null && chrome.pageRect != Rect.Zero) {
-                Flight(tab.id, container.thumbnails.get(tab.id), card, chrome.pageRect)
+            flight = if (!settings.reduceMotion && tab != null && card != null && chrome.pageRect != Rect.Zero) {
+                Flight(tab.id, container.thumbnails.get(tab.id), card, chrome.pageRect, tab.isPrivate)
             } else {
                 null
             }
             flight?.bitmap?.let { chrome.overlay = app.pane.browser.ui.browser.PageOverlay(it, null, kind = app.pane.browser.ui.browser.PageOverlay.Kind.Cover) }
-            launch { cluster.animateTo(0f, Motion.snappy()) }
-            progress.animateTo(0f, Motion.push())
+            launch { cluster.animateTo(0f, if (settings.reduceMotion) Motion.fade(0) else Motion.snappy()) }
+            progress.animateTo(0f, if (settings.reduceMotion) Motion.fade(0) else Motion.push())
             flight = null
             shown = false
             onClosed()
@@ -238,11 +263,11 @@ fun TabSwitcher(
                         },
                 ) {
                     Spacer(Modifier.windowInsetsPadding(WindowInsets.statusBars))
-                    AnimatedContent(
-                        targetState = showPrivate,
+                    privacyTransition.AnimatedContent(
                         transitionSpec = {
                             // Private is the left segment, so it arrives from the left and normal from the right.
                             val sign = if (targetState) -1 else 1
+                            if (settings.reduceMotion) fadeIn(Motion.fade(0)) togetherWith fadeOut(Motion.fade(0)) else
                             (fadeIn(Motion.fade(220)) + slideInHorizontally(Motion.smooth()) { sign * it / 10 }) togetherWith
                                 (fadeOut(Motion.fade(160)) + slideOutHorizontally(Motion.smooth()) { -sign * it / 10 })
                         },
@@ -250,7 +275,6 @@ fun TabSwitcher(
                             .weight(1f)
                             .fillMaxWidth()
                             .hazeSource(haze),
-                        label = "mode",
                     ) { privateMode ->
                         val modeTabs = state.tabsIn(privateMode)
                         when {
@@ -304,7 +328,9 @@ fun TabSwitcher(
 
                 // The flying snapshot. Every animated value is read inside the layout/graphicsLayer
                 // lambdas, so the flight never recomposes per frame.
-                flight?.let { f ->
+                // Locking must hide an in-flight private bitmap in the same composition,
+                // even if capture or its animation began while the tabs were unlocked.
+                flight?.takeUnless { privateLocked && it.isPrivate }?.let { f ->
                     val density = LocalDensity.current
                     val lift = with(density) { 12.dp.toPx() }
                     Box(

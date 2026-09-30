@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
@@ -61,7 +64,7 @@ fun PaneAlert(
 
     BackHandler(enabled = visible, onBack = onDismissRequest)
 
-    Box(Modifier.fillMaxSize().imePadding().padding(vertical = 24.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         AnimatedVisibility(visibleState = state, enter = fadeIn(Motion.fade(160)), exit = fadeOut(Motion.fade(160))) {
             Box(
                 Modifier
@@ -72,6 +75,7 @@ fun PaneAlert(
         }
         AnimatedVisibility(
             visibleState = state,
+            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing).imePadding().padding(vertical = 24.dp),
             enter = if (reduce) {
                 fadeIn(Motion.fade(160))
             } else {

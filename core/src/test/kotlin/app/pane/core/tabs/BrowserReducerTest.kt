@@ -103,4 +103,29 @@ class BrowserReducerTest {
         store.updateTab("a") { it.copy(title = "Hello", progress = 50) }
         assertEquals("Hello", store.state.value.tab("a")!!.title)
     }
+
+    @Test fun restoreSelectsMostRecentlyUsedNormalTabWhenPrivateWasSelected() {
+        val tabs = listOf(TabState("older", "", lastAccessed = 1), TabState("recent", "", lastAccessed = 2))
+        store.dispatch(BrowserAction.Restore(tabs, null))
+        assertEquals("recent", selected)
+    }
+
+    @Test fun restoreDeduplicatesAndPreservesLiveSelection() {
+        add("live")
+        store.dispatch(BrowserAction.Restore(listOf(TabState("restored", ""), TabState("restored", "")), "restored"))
+        assertEquals(listOf("restored", "live"), ids)
+        assertEquals("live", selected)
+    }
+
+    @Test fun undoDoesNotResurrectEngineFlags() {
+        add("a")
+        store.updateTab("a") { it.copy(fullscreen = true, mediaPlaying = true, canGoBack = true, crashed = true) }
+        store.dispatch(BrowserAction.RemoveTab("a"))
+        store.dispatch(BrowserAction.UndoClose)
+        val tab = store.state.value.selectedTab!!
+        assertEquals(false, tab.fullscreen)
+        assertEquals(false, tab.mediaPlaying)
+        assertEquals(false, tab.canGoBack)
+        assertEquals(false, tab.crashed)
+    }
 }

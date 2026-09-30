@@ -50,7 +50,10 @@ object BrowserReducer {
             else -> nextSelection(state.tabs, selected, ids)
         }
         val closed = removed.filter { !it.value.isPrivate }
-            .map { ClosedTab(it.value.copy(loading = false, progress = 0), it.index, now) }
+            .map { ClosedTab(it.value.copy(
+                loading = false, progress = 0, canGoBack = false, canGoForward = false,
+                fullscreen = false, mediaPlaying = false, crashed = false, inReaderMode = false,
+            ), it.index, now) }
             .reversed()
         return state.copy(
             tabs = remaining,
@@ -101,9 +104,11 @@ object BrowserReducer {
 
     private fun restore(state: BrowserState, action: BrowserAction.Restore): BrowserState {
         val existingIds = state.tabs.map { it.id }.toSet()
-        val restored = action.tabs.filter { it.id !in existingIds }
+        val restored = action.tabs.filter { it.id.isNotBlank() && it.id !in existingIds }.distinctBy { it.id }
         val tabs = restored + state.tabs
-        val selected = state.selectedTabId ?: action.selectedTabId?.takeIf { id -> tabs.any { it.id == id } }
+        val selected = state.selectedTabId?.takeIf { id -> tabs.any { it.id == id } }
+            ?: action.selectedTabId?.takeIf { id -> tabs.any { it.id == id } }
+            ?: restored.maxByOrNull { it.lastAccessed }?.id
         return state.copy(tabs = tabs, selectedTabId = selected)
     }
 }

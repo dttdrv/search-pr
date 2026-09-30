@@ -40,4 +40,17 @@ class SearchEngineTest {
         assertEquals(emptyList(), Suggestions.parse("<html>", SuggestFormat.OpenSearch))
         assertEquals(emptyList(), Suggestions.parse("{}", SuggestFormat.OpenSearch))
     }
+
+    @Test fun extractsReorderedQueriesWithoutFragmentsAndRejectsOtherPaths() {
+        assertEquals("cats & dogs", SearchEngines.Google.extractQuery("https://www.google.com/search?hl=en&q=cats+%26+dogs#top"))
+        assertNull(SearchEngines.Google.extractQuery("https://www.google.com/other?q=cats"))
+        assertNull(SearchEngines.Google.extractQuery("https://www.google.com.evil.com/search?q=cats"))
+        assertNull(SearchEngines.Google.extractQuery("https://evil@www.google.com/search?q=cats"))
+        assertNull(SearchEngines.Google.extractQuery("https://www.google.com/search?q=%ZZ"))
+    }
+
+    @Test fun keywordSeparatorsIncludeTabsAndNewlines() {
+        assertEquals(SearchEngines.Wikipedia to "Ada Lovelace", SearchEngines.parseKeyword("@w\tAda Lovelace"))
+        assertEquals(SearchEngines.GitHub to "kotlin", SearchEngines.parseKeyword("@gh\nkotlin"))
+    }
 }

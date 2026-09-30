@@ -2,6 +2,7 @@ package app.pane.browser.ui.theme
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Build
 import android.os.PowerManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -98,7 +99,7 @@ fun Modifier.glass(
     val context = LocalContext.current
     val requested = LocalGlassQuality.current
     val debug = if (app.pane.browser.BuildConfig.DEBUG) GlassDebug.mode else ""
-    val quality = when {
+    val preferred = when {
         debug == "off" -> GlassQuality.Off
         debug == "light" -> GlassQuality.Light
         debug == "full" -> GlassQuality.Full
@@ -106,6 +107,9 @@ fun Modifier.glass(
         requested == GlassQuality.Full && context.isPowerSaving() -> GlassQuality.Light
         else -> requested
     }
+    // Glass's pre-33 renderer omits diffusion, leaving sharp page text behind labels.
+    // Blur retains diffusion on 31–32 and its readable tint fallback on older devices.
+    val quality = if (preferred == GlassQuality.Full && Build.VERSION.SDK_INT < 33) GlassQuality.Light else preferred
     val haze = LocalHazeState.current.takeIf { quality != GlassQuality.Off }
     val rounded = remember(shape) { shape.asRounded() }
     val frost = remember(colors, strength) { frostBrushes(colors, strength) }
@@ -235,6 +239,7 @@ fun ProgressiveEdge(state: HazeState, top: Boolean, height: Dp, modifier: Modifi
             noiseFactor(0f)
             backgroundColor(colors.background)
             colorEffects(listOf(HazeColorEffect.tint(veil.copy(alpha = 0.5f))))
+            fallbackColorEffect(HazeColorEffect.tint(veil.copy(alpha = 0.94f)))
             progressive(
                 HazeProgressive.verticalGradient(
                     startIntensity = if (top) 1f else 0f,

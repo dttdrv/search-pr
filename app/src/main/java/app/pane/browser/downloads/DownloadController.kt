@@ -123,7 +123,12 @@ class DownloadController(
     fun cancel(id: Long) {
         val job = jobs[id]
         if (job == null) {
-            scope.launch { repository.update(id, status = DownloadStatus.Cancelled) }
+            scope.launch {
+                val record = repository.get(id)
+                if (record?.status == DownloadStatus.Pending || record?.status == DownloadStatus.Running) {
+                    repository.update(id, status = DownloadStatus.Cancelled)
+                }
+            }
             return
         }
         job.cancel()
@@ -203,8 +208,10 @@ class DownloadController(
         var target: Target? = null
         try {
             repository.update(id, status = DownloadStatus.Running)
-            val created = withContext(Dispatchers.IO) { createTarget(name, mime) }
-            target = created
+            // Record ownership inside IO: cancellation at the dispatcher hand-off must still
+            // leave a target for the cleanup below to discard.
+            withContext(Dispatchers.IO) { target = createTarget(name, mime) }
+            val created = checkNotNull(target)
             if (created.name != name) repository.update(id, fileName = created.name)
             val written = withContext(Dispatchers.IO) {
                 val out = context.contentResolver.openOutputStream(created.uri) ?: throw IOException("Can't write ${created.uri}")

@@ -39,8 +39,9 @@
       return null;
     }
     port.onMessage.addListener(onNativeMessage);
+    const connected = port;
     port.onDisconnect.addListener(() => {
-      port = null;
+      if (port === connected) port = null;
     });
     return port;
   }

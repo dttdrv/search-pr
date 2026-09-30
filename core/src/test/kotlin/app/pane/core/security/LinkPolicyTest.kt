@@ -22,4 +22,10 @@ class LinkPolicyTest {
         assertNull(evil.fallbackUrl)
         assertNull(IntentUri.parse("https://x"))
     }
+
+    @Test fun viewSourceCannotBypassBlockedSchemes() {
+        assertEquals(LinkDecision.Block, LinkPolicy.decide("view-source:file:///etc/passwd"))
+        assertEquals(LinkDecision.Block, LinkPolicy.decide("view-source:view-source:content://contacts"))
+        assertEquals(LinkDecision.LoadInBrowser, LinkPolicy.decide("view-source:https://example.com/"))
+    }
 }

@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -27,6 +28,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.Motion
+import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
 import kotlin.math.roundToInt
@@ -47,6 +49,8 @@ fun PaneSwitch(
     val density = LocalDensity.current
     val source = remember { MutableInteractionSource() }
     val pressed by source.collectIsPressedAsState()
+    val changeNow by rememberUpdatedState(onCheckedChange)
+    val reduceMotion = LocalReduceMotion.current
 
     val trackW = 56.dp
     val trackH = 34.dp
@@ -58,8 +62,8 @@ fun PaneSwitch(
 
     // While dragging, the thumb's offset in px; NaN otherwise, when the spring below owns it.
     var drag by remember { mutableFloatStateOf(Float.NaN) }
-    val settled = animateFloatAsState(if (checked) 1f else 0f, Motion.bouncy(), label = "switch")
-    val width = animateFloatAsState(with(density) { (if (pressed || !drag.isNaN()) heldW else restW).toPx() }, Motion.snappy(), label = "thumbW")
+    val settled = animateFloatAsState(if (checked) 1f else 0f, if (reduceMotion) Motion.fade(0) else Motion.bouncy(), label = "switch")
+    val width = animateFloatAsState(with(density) { (if (pressed || !drag.isNaN()) heldW else restW).toPx() }, if (reduceMotion) Motion.fade(0) else Motion.snappy(), label = "thumbW")
     val alpha = animateFloatAsState(if (enabled) 1f else 0.4f, Motion.fade(), label = "alpha")
 
     Box(
@@ -71,7 +75,7 @@ fun PaneSwitch(
                 val track = lerp(colors.fill, colors.accent, fraction)
                 drawRoundRect(track.copy(alpha = track.alpha * alpha.value), cornerRadius = CornerRadius(size.height / 2f))
             }
-            .pointerInput(enabled, checked) {
+            .pointerInput(enabled, checked, trackPx, padPx) {
                 if (!enabled) return@pointerInput
                 detectHorizontalDragGestures(
                     onDragStart = { drag = settled.value * (trackPx - width.value - padPx * 2) },
@@ -81,7 +85,7 @@ fun PaneSwitch(
                         drag = Float.NaN
                         if (on != checked) {
                             haptics.toggle(on)
-                            onCheckedChange(on)
+                            changeNow(on)
                         }
                     },
                     onDragCancel = { drag = Float.NaN },

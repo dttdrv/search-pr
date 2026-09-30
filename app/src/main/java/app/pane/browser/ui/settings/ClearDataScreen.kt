@@ -88,7 +88,10 @@ fun ClearDataScreen() {
                     container.browser.newTab(private = false)
                 }
                 // "Recently Closed" on the start page is history too, and closing all tabs above just filled it.
-                if (history || tabs) container.browser.clearRecentlyClosed()
+                if (history || tabs) {
+                    container.browser.clearRecentlyClosed()
+                    container.snapshots.clear()
+                }
                 if (downloadList) {
                     if (allTime) container.downloadsRepository.clearFinished() else container.downloadsRepository.clearFinishedSince(since)
                 }

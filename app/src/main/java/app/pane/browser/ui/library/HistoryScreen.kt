@@ -94,6 +94,8 @@ fun HistoryScreen() {
         container.scope.launch {
             if (range == TimeRange.AllTime) {
                 container.history.clear()
+                container.browser.clearRecentlyClosed()
+                container.snapshots.clear()
                 // The icon cache is derived from what was visited, so it goes with the history.
                 container.favicons.clear()
             } else {

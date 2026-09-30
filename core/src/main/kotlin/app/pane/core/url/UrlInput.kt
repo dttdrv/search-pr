@@ -88,7 +88,8 @@ object UrlInput {
             if (close < 0) return false
             val inside = hostPort.substring(1, close)
             val tail = hostPort.substring(close + 1)
-            return inside.contains(':') && inside.all { it.isLetterOrDigit() || it == ':' || it == '.' } &&
+            val validAddress = runCatching { URI("http://[$inside]/").host != null }.getOrDefault(false)
+            return inside.contains(':') && validAddress &&
                 (tail.isEmpty() || isPort(tail.removePrefix(":")) && tail.startsWith(":"))
         }
         val colon = hostPort.lastIndexOf(':')
@@ -142,10 +143,5 @@ object UrlInput {
     }
 
     /** Returns the host of [url] or null when it cannot be parsed. */
-    fun hostOf(url: String): String? = try {
-        URI(url).host?.lowercase()
-    } catch (_: Exception) {
-        val start = url.indexOf("://").takeIf { it >= 0 }?.plus(3) ?: return null
-        url.substring(start).takeWhile { it != '/' && it != '?' && it != '#' && it != ':' }.substringAfterLast('@').lowercase().ifEmpty { null }
-    }
+    fun hostOf(url: String): String? = runCatching { URI(normalizeWebUrl(url)).host?.lowercase() }.getOrNull()
 }

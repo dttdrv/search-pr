@@ -1,6 +1,7 @@
 package app.pane.browser.ui.findinpage
 
 import android.annotation.SuppressLint
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.fadeIn
@@ -128,6 +129,7 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
         keyboard?.hide()
         onClose()
     }
+    BackHandler(onBack = close)
 
     val hasMatches = (match?.found == true) && (match?.total ?: 0) != 0
     Box(

@@ -49,4 +49,21 @@ class SuggestTest {
         val places = listOf(PlaceCandidate("https://a.com/", "Rust book", 1, now))
         assertTrue(SuggestionRanker.rank("rust go", places, emptyList(), emptyList(), now).none { it is Suggestion.Place })
     }
+
+    @Test fun mergedHistoryAndBookmarkRetainBothFrequencyAndBookmarkName() {
+        val places = listOf(
+            PlaceCandidate("https://example.com/", "Old page title", 20, now),
+            PlaceCandidate("https://example.com/", "My saved page", 1, now - day, bookmarked = true),
+        )
+        val suggestion = SuggestionRanker.rank("example", places, emptyList(), emptyList(), now).first() as Suggestion.Place
+        assertEquals("My saved page", suggestion.title)
+        assertTrue(suggestion.bookmarked)
+    }
+
+    @Test fun completesExplicitSchemesButNotPathsOrCredentials() {
+        val places = listOf(PlaceCandidate("https://github.com/", "GitHub", 3, now))
+        assertEquals("github.com", Autocomplete.complete("https://gi", places, now))
+        assertNull(Autocomplete.complete("github.com/a", places, now))
+        assertNull(Autocomplete.complete("user@gi", places, now))
+    }
 }

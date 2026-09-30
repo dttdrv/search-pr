@@ -5,6 +5,7 @@ import android.util.AtomicFile
 import android.util.Log
 import app.pane.browser.data.HistoryRepository
 import app.pane.browser.settings.SettingsStore
+import app.pane.core.settings.BrowserSettings
 import app.pane.core.security.IntentUri
 import app.pane.core.security.LinkDecision
 import app.pane.core.security.LinkPolicy
@@ -21,8 +22,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.ContentBlocking
@@ -99,6 +105,10 @@ class SessionManager(
     fun session(tabId: String?): GeckoSession? = tabId?.let { sessions[it] }
 
     val liveSessionCount: Int get() = sessions.size
+
+    fun applySettings(settings: BrowserSettings) {
+        sessions.values.forEach { it.settings.setAllowJavascript(settings.javascriptEnabled) }
+    }
 
     // region Tabs
 
@@ -198,6 +208,10 @@ class SessionManager(
             s.close()
             observers.forEach { it.onSessionClosed(tabId) }
             _sessionsVersion.value++
+            store.updateTab(tabId) { it.copy(
+                loading = false, progress = 0, canGoBack = false, canGoForward = false,
+                fullscreen = false, mediaPlaying = false,
+            ) }
         }
     }
 
@@ -271,7 +285,7 @@ class SessionManager(
         // E.g. the first load from a start-page tab: the tab is already on screen, so its new
         // session must be the active one (for rendering, and for extensions' `tabs.query`).
         if (tabId == store.state.value.selectedTabId) activate(tabId, session)
-        val saved = engineState[tabId]?.let { GeckoSession.SessionState.fromString(it) }
+        val saved = engineState[tabId]?.let { runCatching { GeckoSession.SessionState.fromString(it) }.getOrNull() }
         when {
             saved != null -> session.restoreState(saved)
             loadIfEmpty && tab.url.isNotEmpty() -> session.loadUri(tab.url)
@@ -427,9 +441,9 @@ class SessionManager(
 
         override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {
             val tab = store.state.value.tab(tabId) ?: return
-            if (tab.isPrivate) return
+            // Private history survives memory eviction, but snapshot() still excludes it from disk.
             engineState[tabId] = sessionState.toString()
-            schedulePersist()
+            if (!tab.isPrivate) schedulePersist()
         }
     }
 
@@ -463,12 +477,13 @@ class SessionManager(
             if (store.state.value.tab(tabId)?.parentId != null) closeTab(tabId)
         }
 
-        override fun onCrash(session: GeckoSession) = handleCrash()
+        override fun onCrash(session: GeckoSession) = handleCrash(session)
 
-        override fun onKill(session: GeckoSession) = handleCrash()
+        override fun onKill(session: GeckoSession) = handleCrash(session)
 
         // activeTabId is kept: the reloaded session is created active and must be deactivated on the next switch.
-        private fun handleCrash() {
+        private fun handleCrash(session: GeckoSession) {
+            if (sessions[tabId] !== session) return
             sessions.remove(tabId)?.let { runCatching { it.close() } }
             backEntries.remove(tabId)
             observers.forEach { it.onSessionClosed(tabId) }
@@ -550,6 +565,13 @@ class SessionManager(
     // region Persistence
 
     private var persistJob: Job? = null
+    private val persistence = Mutex()
+
+    init {
+        scope.launch {
+            store.state.map { store.snapshot() }.distinctUntilChanged().drop(1).collect { schedulePersist() }
+        }
+    }
 
     fun schedulePersist() {
         persistJob?.cancel()
@@ -559,12 +581,12 @@ class SessionManager(
         }
     }
 
-    suspend fun persistNow() {
+    suspend fun persistNow() = persistence.withLock {
         if (!settings.current.restoreTabs) {
             // Tabs saved before the setting was turned off mustn't come back if it's turned on again.
             // Only the file: engineState still backs this run's closed-to-save-memory tabs.
             withContext(Dispatchers.IO) { sessionFile.delete() }
-            return
+            return@withLock
         }
         val snapshot = store.snapshot { engineState[it] }
         withContext(Dispatchers.IO) {
@@ -591,8 +613,9 @@ class SessionManager(
         return saved.tabs.isNotEmpty()
     }
 
-    fun deletePersistedSession() {
-        sessionFile.delete()
+    suspend fun deletePersistedSession() = persistence.withLock {
+        persistJob?.cancel()
+        withContext(Dispatchers.IO) { sessionFile.delete() }
         engineState.clear()
     }
 

@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        lifecycleScope.launch { container.sessions.persistNow() }
+        container.scope.launch { container.sessions.persistNow() }
     }
 
     override fun onDestroy() {

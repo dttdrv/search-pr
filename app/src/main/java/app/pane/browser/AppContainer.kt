@@ -70,6 +70,7 @@ class AppContainer(val app: Application) {
         sessions.onTabClosed = { tabId ->
             prompts.dismissForTab(tabId)
             thumbnails.remove(tabId)
+            snapshots.remove(tabId)
         }
         sessions.onContextMenu = { tabId, x, y, element ->
             ContextMenus.request(prompts, tabId, store.state.value.tab(tabId)?.isPrivate == true, x, y, element)
@@ -82,7 +83,11 @@ class AppContainer(val app: Application) {
             }
         }
         scope.launch {
-            settings.state.drop(1).distinctUntilChanged().collect { EngineRuntime.apply(runtime, it) }
+            settings.state.drop(1).distinctUntilChanged().collect {
+                EngineRuntime.apply(runtime, it)
+                sessions.applySettings(it)
+                sessions.schedulePersist()
+            }
         }
         extensions.start()
     }

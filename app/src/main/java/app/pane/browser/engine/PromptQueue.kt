@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.getAndUpdate
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -36,14 +37,12 @@ class PromptQueue {
 
     /** Dismisses and drops everything belonging to [tabId], e.g. when it closes or navigates away. */
     fun dismissForTab(tabId: String) {
-        val (drop, keep) = _requests.value.partition { it.tabId == tabId }
-        _requests.value = keep
-        drop.forEach { it.dismiss() }
+        val before = _requests.getAndUpdate { list -> list.filterNot { it.tabId == tabId } }
+        before.filter { it.tabId == tabId }.forEach { it.dismiss() }
     }
 
     fun dismissAll() {
-        val all = _requests.value
-        _requests.value = emptyList()
+        val all = _requests.getAndUpdate { emptyList() }
         all.forEach { it.dismiss() }
     }
 }
