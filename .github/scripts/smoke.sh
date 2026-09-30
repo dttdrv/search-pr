@@ -4,6 +4,19 @@
 set -u
 APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
 mkdir -p shots
+diagnostics() {
+  local result=$?
+  adb logcat -d > shots/logcat.txt
+  if [ "$result" != 0 ]; then
+    adb shell dumpsys activity lastanr > shots/last-anr.txt
+    adb shell dumpsys dropbox --print data_app_anr > shots/anr.txt
+    # Google APIs emulator images are userdebug: retain the actual blocked-thread traces.
+    adb root > /dev/null 2>&1
+    adb wait-for-device
+    adb pull /data/anr shots/anr-traces > /dev/null 2>&1 || true
+  fi
+}
+trap diagnostics EXIT
 shot() { sleep "${2:-2}"; adb exec-out screencap -p > "shots/$1.png"; echo "shot $1"; }
 ui() { python3 .github/scripts/ui.py "$@"; }
 SIZE=$(adb shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1)
@@ -27,7 +40,7 @@ adb install -r "$APK"
 adb logcat -c
 adb shell am start -W -n app.pane.browser/.MainActivity
 shot 01-onboarding 12
-ui text "Start Browsing"
+ui text "Start Browsing" || exit 1
 shot 02-start-page 4
 # Onboarding opted into uBlock Origin: wait for the install sheet from addons.mozilla.org and approve it.
 for _ in 1 2 3 4 5 6; do
@@ -55,7 +68,35 @@ if ui desc-contains "Address"; then
 fi
 
 front
-if menu "Settings"; then shot 07-settings 3; back; fi
+menu "Find" || exit 1
+sleep 2
+adb shell input text "browser"
+shot 06b-find 2
+back 1
+# Android may consume the first Back to hide the IME. The next must close Find,
+# leaving the page and its toolbar in place instead of navigating or exiting Pane.
+if ui exists "Next match"; then back 1; fi
+ui desc "Menu" || exit 1
+back
+
+front
+if menu "Settings"; then
+  shot 07-settings 3
+  # Re-selecting the initial segment used to be ignored by a stale pointer handler.
+  # Check both the resulting value and the accessibility selection on repeated changes.
+  ui text "Appearance" || exit 1
+  for theme in Dark Automatic Light Automatic; do
+    ui text "$theme" || exit 1
+    sleep 1
+    ui selected "$theme" || exit 1
+  done
+  shot 07b-appearance 2
+  back
+  back
+else
+  echo "Settings could not be opened for the UI regression checks"
+  exit 1
+fi
 
 front
 if menu "Extensions"; then

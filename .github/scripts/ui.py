@@ -9,7 +9,12 @@ import xml.etree.ElementTree as ET
 
 def dump():
     for _ in range(4):
-        subprocess.run(["adb", "shell", "uiautomator", "dump", "/sdcard/ui.xml"], capture_output=True)
+        # Never let a failed dump make the test act on an old screen's hierarchy.
+        subprocess.run(["adb", "shell", "rm", "-f", "/sdcard/ui.xml"], capture_output=True)
+        result = subprocess.run(["adb", "shell", "uiautomator", "dump", "/sdcard/ui.xml"], capture_output=True)
+        if result.returncode != 0:
+            time.sleep(1)
+            continue
         out = subprocess.run(["adb", "exec-out", "cat", "/sdcard/ui.xml"], capture_output=True).stdout
         try:
             return ET.fromstring(out)
@@ -53,5 +58,22 @@ def tap(mode, needle):
     return True
 
 
+def selected(needle):
+    root = dump()
+    node = find(root, "text", needle) if root is not None else None
+    if node is None or node.get("selected") != "true":
+        print(f"ui.py: '{needle}' is not selected")
+        return False
+    print(f"ui.py: '{needle}' is selected")
+    return True
+
+
 if __name__ == "__main__":
-    sys.exit(0 if tap(sys.argv[1], sys.argv[2]) else 1)
+    if sys.argv[1] == "selected":
+        ok = selected(sys.argv[2])
+    elif sys.argv[1] == "exists":
+        root = dump()
+        ok = root is not None and find(root, "any-contains", sys.argv[2]) is not None
+    else:
+        ok = tap(sys.argv[1], sys.argv[2])
+    sys.exit(0 if ok else 1)
