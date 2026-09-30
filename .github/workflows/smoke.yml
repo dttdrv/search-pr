@@ -18,7 +18,11 @@ jobs:
       fail-fast: false
       matrix:
         # 34 is the everyday target; 28 covers the oldest APIs we still see in the wild.
-        api: [34, 28]
+        include:
+          - api: 34
+            gpu: lavapipe
+          - api: 28
+            gpu: software
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -40,7 +44,7 @@ jobs:
           # Pane uses Gecko and platform APIs; Play services add unrelated boot/memory load.
           target: default
           force-avd-creation: false
-          emulator-options: -no-window -gpu software -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -gpu ${{ matrix.gpu }} -feature -Vulkan -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: bash .github/scripts/smoke.sh
       - name: Print screenshots

@@ -105,7 +105,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** A snapshot flying between the full page and a card during open/close. */
-private class Flight(val tabId: String?, val bitmap: Bitmap?, val card: Rect, val page: Rect)
+private class Flight(val tabId: String?, val bitmap: Bitmap?, val card: Rect, val page: Rect, val isPrivate: Boolean)
 
 /** Corner radius shared by the cards and the flying snapshot, so the hand-off has no seam. */
 private val CardRadius = 24.dp
@@ -176,7 +176,12 @@ fun TabSwitcher(
             shown = true
             val index = state.tabsIn(chrome.showPrivateTabs).indexOfFirst { it.id == selected?.id }
             if (index >= 0) (if (chrome.showPrivateTabs) privateGrid else normalGrid).scrollToItem(index)
-            val snapshot = if (selected != null && selected.url.isNotEmpty() && !(selected.isPrivate && privateLocked)) chrome.capture() else null
+            val snapshot = if (selected != null && selected.url.isNotEmpty() && !(selected.isPrivate && privateLocked)) {
+                chrome.capture()?.takeIf {
+                    val current = container.store.state.value.selectedTab
+                    current?.id == selected.id && current.url == selected.url && !BrowserChrome.pageLocked.value
+                }
+            } else null
             if (selected != null && snapshot != null) {
                 scope.launch {
                     container.thumbnails.put(selected.id, snapshot, selected.isPrivate)
@@ -185,8 +190,11 @@ fun TabSwitcher(
             }
             // A locked private page never flies, not even to a card left over from before it locked.
             val card = selected?.takeUnless { it.isPrivate && privateLocked }?.let { awaitCard(it.id) }
-            flight = if (!settings.reduceMotion && selected != null && card != null && chrome.pageRect != Rect.Zero) {
-                Flight(selected.id, snapshot ?: container.thumbnails.get(selected.id), card, chrome.pageRect)
+            if (closing) return@LaunchedEffect
+            flight = if (!settings.reduceMotion && selected != null &&
+                selected.id == container.store.state.value.selectedTabId && card != null && chrome.pageRect != Rect.Zero
+            ) {
+                Flight(selected.id, snapshot ?: container.thumbnails.get(selected.id), card, chrome.pageRect, selected.isPrivate)
             } else {
                 null
             }
@@ -211,7 +219,7 @@ fun TabSwitcher(
             val card = tab?.takeUnless { it.isPrivate && privateLocked }?.let { cardRects[it.id] }
             if (tab != null) container.browser.select(tab.id)
             flight = if (!settings.reduceMotion && tab != null && card != null && chrome.pageRect != Rect.Zero) {
-                Flight(tab.id, container.thumbnails.get(tab.id), card, chrome.pageRect)
+                Flight(tab.id, container.thumbnails.get(tab.id), card, chrome.pageRect, tab.isPrivate)
             } else {
                 null
             }
@@ -320,7 +328,9 @@ fun TabSwitcher(
 
                 // The flying snapshot. Every animated value is read inside the layout/graphicsLayer
                 // lambdas, so the flight never recomposes per frame.
-                flight?.let { f ->
+                // Locking must hide an in-flight private bitmap in the same composition,
+                // even if capture or its animation began while the tabs were unlocked.
+                flight?.takeUnless { privateLocked && it.isPrivate }?.let { f ->
                     val density = LocalDensity.current
                     val lift = with(density) { 12.dp.toPx() }
                     Box(
