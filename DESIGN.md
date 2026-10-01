@@ -2,7 +2,7 @@
 
 Pane is a white page, a few quiet greys and one blue. Small calm type, flat tones instead of
 outlines, centred layouts, generous space, glyphs instead of words where a glyph is enough, and one
-floating pill that is the product. The floating bar is the one frosted surface; there is no other glass or blur, no gradient, no card inside a card. The page is the interface; everything else is a thin, flat,
+floating pill that is the product. Frost is for the floating bar, the tab overview's switch and the menu sheet, and nowhere else; there is no other glass or blur, no gradient, no card inside a card. The page is the interface; everything else is a thin, flat,
 confident layer around it. The reference is the Mac browser *Search* (Drice Roland / Office
 Commun): take its restraint and polish, not its logo.
 
@@ -38,11 +38,16 @@ Commun): take its restraint and polish, not its logo.
    never lighter or heavier.
 5. **The floating pill stays.** The address pill and its round buttons are frosted
    (`Modifier.frosted(shape)`): the page behind them blurred, its colour deepened, under a white veil
-   (black over dark pages), with ink glyphs, no shadow and no outline. Menus and sheets float as flat
-   solid surfaces (`Modifier.floating(shape)`) with one standard platform elevation shadow
-   (`FloatingElevation`, Material's menu elevation). They are the only things with a shadow:
-   cards, tiles and the start page sit flat on the grey ground, told apart by tone. The blue pill is
-   the only solid fill on a screen.
+   (black over dark pages) and then 10% of the opposite pole (a light bar reads 10% darker than a
+   white page, a dark one 10% lighter than a black page, so it never melts into either), with ink
+   glyphs, no shadow and no outline. The same frost, over the tab grid, is the tab overview's
+   Private / Tabs switch and plus button; over the page, the menu sheet's panel (its cards stay
+   solid, a wash of white on dark). Other menus and sheets float as flat solid surfaces
+   (`Modifier.floating(shape)`) with one standard platform elevation shadow (`FloatingElevation`,
+   Material's menu elevation). Where the blur can't be trusted a frosted surface is the solid
+   floating one, never a veil over the sharp page. Only menus and sheets cast a shadow: cards, tiles
+   and the start page sit flat on the grey ground, told apart by tone. The blue pill is the only
+   solid fill on a screen.
 6. **Icons, or nothing.** Real, well-drawn glyphs from `PaneIcons`, all one weight, in the label
    colour, with no tile behind them, and only where everyone already knows them. A row has either
    a glyph or none; never a letter standing in for a logo. Sites are shown by their own favicon
@@ -99,7 +104,7 @@ bouncy for its own sake. Honour `LocalReduceMotion`.
 
 ## Performance rules
 
-- Only the floating bar reads the page's pixels (`Modifier.frosted`), and only its own band of them, rendered once per frame. Nothing else blurs the page.
+- Only `Modifier.frosted` surfaces read the page's (or the tab grid's) pixels, and only the band under the bar, rendered once per frame; the menu sheet blurs the whole page, but only while it is up. Nothing else blurs the page.
 - No per-frame work in composition; nothing that redraws the whole window while the page scrolls.
 - No animated gradients, and no `renderEffect` outside `Modifier.frosted`.
 

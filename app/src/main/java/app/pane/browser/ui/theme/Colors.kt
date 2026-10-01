@@ -138,4 +138,14 @@ val PrivateColors = DarkColors.copy(
     separator = Color(0xFF282828),
 )
 
+/**
+ * The colours for cards and buttons set on a frosted panel. A dark panel is lighter than the ground
+ * these were drawn for, so a fixed grey would sink into it: they lift by a wash of white instead.
+ */
+fun PaneColors.onFrost(): PaneColors {
+    if (!isDark) return this
+    val lift = Color.White.copy(alpha = 0.08f)
+    return copy(elevatedSurface = lift, floating = lift)
+}
+
 val LocalPaneColors = staticCompositionLocalOf { LightColors }

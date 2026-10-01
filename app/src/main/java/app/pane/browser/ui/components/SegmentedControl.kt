@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -58,6 +59,7 @@ fun SegmentedControl(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     height: Dp = 44.dp,
+    track: Color = PaneTheme.colors.fill,
 ) {
     if (options.isEmpty()) return
     val colors = PaneTheme.colors
@@ -74,7 +76,7 @@ fun SegmentedControl(
         modifier = modifier
             .height(height)
             .clip(PaneShapes.pill)
-            .background(colors.fill)
+            .background(track)
             .padding(inset),
     ) {
         val segment = maxWidth / count

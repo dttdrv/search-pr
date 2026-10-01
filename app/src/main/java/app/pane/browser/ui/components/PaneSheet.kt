@@ -48,13 +48,14 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.LocalReduceMotion
-import app.pane.browser.ui.theme.floating
+import app.pane.browser.ui.theme.frosted
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.Spacing
@@ -83,6 +84,8 @@ fun PaneSheet(
     var sheetHeight by remember { mutableFloatStateOf(0f) }
     // From where the card rests to just below the screen.
     var travel by remember { mutableFloatStateOf(0f) }
+    // Where the card rests, in the root: its frost sits on the page, whatever the slide has done to the card.
+    var rest by remember { mutableStateOf(Offset.Zero) }
     // Starts far off-screen so nothing flashes before the first measurement.
     val offset = remember { Animatable(OFFSCREEN) }
     var shown by remember { mutableStateOf(false) }
@@ -182,6 +185,7 @@ fun PaneSheet(
                 .onPlaced {
                     sheetHeight = it.size.height.toFloat()
                     travel = bottom - it.positionInParent().y
+                    rest = it.positionInRoot()
                     scope.launch {
                         if (!measuredOnce) {
                             offset.snapTo(travel)
@@ -190,7 +194,7 @@ fun PaneSheet(
                     }
                 }
                 .graphicsLayer { translationY = offset.value }
-                .floating(SheetShape, fill = colors.background)
+                .frosted(SheetShape, whole = true, fill = colors.background) { rest + Offset(0f, offset.value) }
                 .pointerInput(Unit) { detectTapGestures { } }
                 // Inside the card, like a list in its frame: the rows stretch, the card keeps its shape.
                 .overscroll(stretch)
