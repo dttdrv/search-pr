@@ -41,6 +41,9 @@ class BrowserChrome(private val scope: CoroutineScope) {
     /** Where the address pill sits, in root coordinates; the address editor's field grows out of it. */
     var pillRect by mutableStateOf(Rect.Zero)
 
+    /** Where the open menu button sits, in root coordinates; the menu sheet grows out of it. */
+    var menuRect by mutableStateOf(Rect.Zero)
+
     /** Where the web content is drawn, in root coordinates; the anchor for zoom transitions. */
     var pageRect by mutableStateOf(Rect.Zero)
 

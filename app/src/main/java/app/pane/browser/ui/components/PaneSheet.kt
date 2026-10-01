@@ -40,6 +40,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.util.lerp
+import app.pane.browser.ui.theme.FloatingElevation
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -74,6 +91,7 @@ fun PaneSheet(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     maxHeightFraction: Float = 0.92f,
+    origin: Rect = Rect.Zero,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = PaneTheme.colors
@@ -85,6 +103,10 @@ fun PaneSheet(
     var travel by remember { mutableFloatStateOf(0f) }
     // Starts far off-screen so nothing flashes before the first measurement.
     val offset = remember { Animatable(OFFSCREEN) }
+    // 0 = the sheet is still its source (a button), 1 = at rest; a sheet with no source stays at 1
+    val reveal = remember { Animatable(1f) }
+    var rest by remember { mutableStateOf(Rect.Zero) }
+    val morphing by rememberUpdatedState(origin != Rect.Zero && !reduceMotion)
     var shown by remember { mutableStateOf(false) }
     var measuredOnce by remember { mutableStateOf(false) }
 
@@ -92,9 +114,10 @@ fun PaneSheet(
         if (visible) {
             shown = true
             if (!measuredOnce) return@LaunchedEffect
-            offset.animateTo(0f, if (reduceMotion) Motion.fade(0) else Motion.smooth())
+            if (morphing) reveal.animateTo(1f, Motion.smooth()) else offset.animateTo(0f, if (reduceMotion) Motion.fade(0) else Motion.smooth())
         } else if (shown) {
-            offset.animateTo(travel, if (reduceMotion) Motion.fade(0) else Motion.smooth())
+            // lowered by a drag it carries on down; otherwise it folds back into its button
+            if (morphing && offset.value == 0f) reveal.animateTo(0f, Motion.smooth()) else offset.animateTo(travel, if (reduceMotion) Motion.fade(0) else Motion.smooth())
             shown = false
             measuredOnce = false
         }
@@ -166,7 +189,7 @@ fun PaneSheet(
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = if (travel > 0f) (1f - offset.value / travel).coerceIn(0f, 1f) else 0f }
+                .graphicsLayer { alpha = if (travel > 0f) (1f - offset.value / travel).coerceIn(0f, 1f) * reveal.value else 0f }
                 .background(colors.scrim)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
         )
@@ -184,29 +207,48 @@ fun PaneSheet(
                     travel = bottom - it.positionInParent().y
                     scope.launch {
                         if (!measuredOnce) {
-                            offset.snapTo(travel)
+                            if (morphing) {
+                                offset.snapTo(0f)
+                                reveal.snapTo(0f)
+                            } else {
+                                offset.snapTo(travel)
+                                reveal.snapTo(1f)
+                            }
                             measuredOnce = true
                         }
                     }
                 }
-                .graphicsLayer { translationY = offset.value }
-                .floating(SheetShape, fill = colors.background)
+                .onGloballyPositioned { rest = it.boundsInRoot() }
+                .graphicsLayer {
+                    translationY = offset.value
+                    shadowElevation = FloatingElevation.toPx()
+                    shape = sheetShape(origin.translate(-rest.topLeft), reveal.value)
+                    clip = reveal.value >= 1f
+                }
+                .drawWithContent {
+                    val outline = sheetShape(origin.translate(-rest.topLeft), reveal.value).createOutline(size, layoutDirection, this)
+                    drawOutline(outline, colors.background)
+                    if (reveal.value >= 1f) drawContent() else clipPath(Path().apply { addOutline(outline) }) { this@drawWithContent.drawContent() }
+                }
                 .pointerInput(Unit) { detectTapGestures { } }
                 // Inside the card, like a list in its frame: the rows stretch, the card keeps its shape.
                 .overscroll(stretch)
                 .padding(bottom = Spacing.gutter),
         ) {
-            // A short, quiet handle, inside the top margin.
-            Box(Modifier.fillMaxWidth().height(Spacing.gutter), contentAlignment = Alignment.Center) {
-                Box(
-                    Modifier
-                        .width(32.dp)
-                        .height(3.dp)
-                        .clip(PaneShapes.pill)
-                        .background(colors.faint),
-                )
+            // what the sheet holds comes in once it has grown most of the way out of its button
+            Column(Modifier.graphicsLayer { alpha = ((reveal.value - ContentFrom) / (1f - ContentFrom)).coerceIn(0f, 1f) }) {
+                // A short, quiet handle, inside the top margin.
+                Box(Modifier.fillMaxWidth().height(Spacing.gutter), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .width(32.dp)
+                            .height(3.dp)
+                            .clip(PaneShapes.pill)
+                            .background(colors.faint),
+                    )
+                }
+                content()
             }
-            content()
         }
     }
 }
@@ -222,6 +264,23 @@ val SheetCardRadius = (SheetRadius - Spacing.gutter).coerceAtLeast(0.dp)
 
 /** A sheet's corners: a flat floating card. */
 private val SheetShape = ContinuousRoundedShape(SheetRadius)
+
+private const val ContentFrom = 0.45f
+
+/** The sheet [p] of the way out of [from], its button's bounds in the sheet's own space: a rounded box between the two. */
+private class Grown(val from: Rect, val p: Float) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline = Outline.Rounded(
+        RoundRect(
+            left = lerp(from.left, 0f, p),
+            top = lerp(from.top, 0f, p),
+            right = lerp(from.right, size.width, p),
+            bottom = lerp(from.bottom, size.height, p),
+            cornerRadius = CornerRadius(lerp(from.height / 2f, with(density) { SheetRadius.toPx() }, p)),
+        ),
+    )
+}
+
+private fun sheetShape(from: Rect, p: Float): Shape = if (p >= 1f) SheetShape else Grown(from, p)
 
 private const val OFFSCREEN = 100_000f
 

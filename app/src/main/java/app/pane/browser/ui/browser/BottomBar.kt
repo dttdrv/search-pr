@@ -315,7 +315,12 @@ fun BottomBar(
             }
             // drawn under the pill, so they tuck in behind it
             if (!folded) {
-                FloatingCircle(onClick = onMenu, size = BarMetrics.pill, contentDescription = "Menu") {
+                FloatingCircle(
+                    onClick = onMenu,
+                    size = BarMetrics.pill,
+                    contentDescription = "Menu",
+                    modifier = Modifier.onGloballyPositioned { if (morph() == 0f) chrome.menuRect = it.boundsInRoot() },
+                ) {
                     Icon(PaneIcons.More, null, tint = PaneTheme.colors.label, modifier = Modifier.size(22.dp))
                 }
                 if (backShown) {

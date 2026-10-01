@@ -503,6 +503,7 @@ fun BrowserScreen() {
 
             MenuSheet(
                 visible = chrome.showMenu,
+                origin = chrome.menuRect,
                 tab = tab,
                 locked = locked,
                 onDismiss = { chrome.showMenu = false },

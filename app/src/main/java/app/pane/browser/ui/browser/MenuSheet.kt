@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,6 +61,7 @@ private class PageAction(val icon: ImageVector, val label: String, val haptic: B
 @Composable
 fun MenuSheet(
     visible: Boolean,
+    origin: Rect,
     tab: TabState?,
     locked: Boolean,
     onDismiss: () -> Unit,
@@ -146,7 +148,7 @@ fun MenuSheet(
     val tabBeat = pageBeat + if (isPage) 2 else 0
     val libraryBeat = tabBeat + 2
 
-    PaneSheet(visible = visible, onDismiss = onDismiss, maxHeightFraction = 0.9f) {
+    PaneSheet(visible = visible, onDismiss = onDismiss, origin = origin, maxHeightFraction = 0.9f) {
         FadingColumn(Modifier.weight(1f, fill = false)) {
             if (pageActions.isNotEmpty()) {
                 Row(
