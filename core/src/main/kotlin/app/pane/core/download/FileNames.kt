@@ -26,11 +26,12 @@ object FileNames {
     fun extensionForMime(mime: String?): String? = mime?.substringBefore(';')?.trim()?.lowercase()?.let { mimeToExt[it] }
 
     /**
-     * Derives a name from `Content-Disposition`, falling back to the URL path and the MIME type.
+     * Derives a name from `Content-Disposition`, then the [suggested] one (the `download` attribute of the link),
+     * falling back to the URL path and the MIME type.
      * The result never contains path separators, control characters or a leading dot.
      */
-    fun choose(contentDisposition: String?, url: String, mimeType: String?): String {
-        val fromHeader = contentDisposition?.let { fromContentDisposition(it) }
+    fun choose(contentDisposition: String?, url: String, mimeType: String?, suggested: String? = null): String {
+        val fromHeader = contentDisposition?.let { fromContentDisposition(it) } ?: suggested
         val fromUrl = url.substringBefore('#').substringBefore('?').substringAfterLast('/').let { decode(it) }
         var name = sanitize(fromHeader ?: fromUrl)
         if (name.isEmpty()) name = "download"

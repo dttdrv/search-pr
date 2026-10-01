@@ -1,5 +1,6 @@
 package app.pane.browser.engine
 
+import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.webkit.ProfileStore
 import androidx.webkit.WebViewCompat
@@ -22,6 +23,12 @@ object Profiles {
             ProfileStore.getInstance().getOrCreateProfile(PRIVATE)
             WebViewCompat.setProfile(webView, PRIVATE)
         }
+    }
+
+    /** the cookie jar a tab's pages use: the private profile's for private tabs, none if that profile is gone. */
+    fun cookies(private: Boolean): CookieManager? = when {
+        !private || !supported -> CookieManager.getInstance()
+        else -> runCatching { ProfileStore.getInstance().getProfile(PRIVATE)?.cookieManager }.getOrNull()
     }
 
     /** Throws private data away; only valid once no private view is left. */
