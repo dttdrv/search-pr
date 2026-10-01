@@ -12,8 +12,7 @@ package app.pane.core.adblock
  *
  * What none of these can settle is `Accept: *` with an extension-less URL, which is how `<script>`,
  * `fetch()`, XHR, workers and beacons all ask. That returns [ResourceType.UNKNOWN], a set of bits, and a rule
- * matches when it shares any: so `$script`, `$xhr`, `$ping` and `$other` rules all apply to such a request,
- * which can block a fetch that a `$script`-only rule never meant, but never lets an obvious ad script through.
+ * can block only when it covers every possible type. Exceptions need cover only one possible type.
  * Fonts, `<object>` and CSS-initiated requests with no extension are likewise guessed at; WebSocket traffic
  * never reaches `shouldInterceptRequest`.
  */

@@ -7,6 +7,7 @@ import android.util.Log
 import app.pane.browser.settings.SettingsStore
 import app.pane.core.adblock.FilterEngine
 import app.pane.core.adblock.FilterEngineBuilder
+import app.pane.core.adblock.FilterResources
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,11 +33,10 @@ import java.util.concurrent.atomic.AtomicReference
 /**
  * The filter lists the ad blocker runs on, and the one live [FilterEngine] built from them.
  *
- * The lists (uBlock Origin's and EasyList's, which are GPL/CC-BY-SA and so not bundled) are downloaded
+ * default list snapshots ship with the app, and updated lists are downloaded
  * on the device to `filesDir/filters/`. The engine built from the enabled ones is saved next to them as
  * a compact binary index keyed by which lists went into it and which versions, so a launch reads one
- * file instead of parsing megabytes of text. Until the real lists have been fetched, the small bundled
- * host list stands in.
+ * file instead of parsing megabytes of text. bundled snapshots cover lists that have not been fetched.
  *
  * Nothing here runs on the main thread, and the engine is swapped atomically: a request already being
  * matched keeps the engine it started with.
@@ -85,6 +85,8 @@ class FilterLists(
     private val mutex = Mutex()
     private val engineRef = AtomicReference<FilterEngine?>(null)
     private val ready = CountDownLatch(1)
+    private val _engines = MutableStateFlow<FilterEngine?>(null)
+    val engines: StateFlow<FilterEngine?> = _engines.asStateFlow()
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -94,6 +96,13 @@ class FilterLists(
 
     /** The live engine, or null before the first one is ready (or while the blocker is off). Never waits. */
     fun engineOrNull(): FilterEngine? = engineRef.get()
+
+    private fun publish(engine: FilterEngine) {
+        engine.documentStartScript
+        engineRef.set(engine)
+        _engines.value = engine
+        ready.countDown()
+    }
 
     /**
      * The live engine. The first call after launch waits (up to two seconds) for the saved index to
@@ -115,6 +124,7 @@ class FilterLists(
                     throw e
                 } catch (e: Exception) {
                     Log.w(TAG, "Couldn't load filter lists", e)
+                    publish(FilterEngine.EMPTY)
                     ready.countDown()
                 }
             }
@@ -140,8 +150,7 @@ class FilterLists(
     // ---- loading
 
     private fun release() {
-        engineRef.set(FilterEngine.EMPTY)
-        ready.countDown()
+        publish(FilterEngine.EMPTY)
     }
 
     private fun readMeta() {
@@ -186,21 +195,21 @@ class FilterLists(
 
     private fun listFile(info: Info) = File(dir, "${info.id}.txt")
 
-    private fun enabledOnDisk(ids: List<String>): List<Info> =
-        catalogue.filter { it.id in ids && listFile(it).isFile }
+    private fun selected(ids: List<String>): List<Info> = catalogue.filter { it.id in ids }
+
+    private val bundledRevision by lazy { context.assets.open("filters/revision.txt").bufferedReader().use { it.readText().trim() } }
 
     private fun keyFor(lists: List<Info>): String =
-        "v${FilterEngine.FORMAT_VERSION}:" + lists.joinToString(",") { "${it.id}@${metas[it.id]?.bytes ?: 0}/${metas[it.id]?.etag ?: metas[it.id]?.modified ?: ""}" }
+        "v${FilterEngine.FORMAT_VERSION}:${FilterResources.revision}:$bundledRevision:" + lists.joinToString(",") { "${it.id}@${metas[it.id]?.bytes ?: 0}/${metas[it.id]?.etag ?: metas[it.id]?.modified ?: ""}" }
 
-    /** Reads the saved index when it matches the enabled lists, rebuilds from the downloaded text when it doesn't, and falls back to the bundled hosts. */
+    /** reads the saved index when it matches the enabled lists and rebuilds from downloaded or bundled text when it doesn't. */
     private fun load(ids: List<String>) {
         val startedAt = System.nanoTime()
         dir.mkdirs()
         readMeta()
-        val lists = enabledOnDisk(ids)
+        val lists = selected(ids)
         if (lists.isEmpty()) {
-            engineRef.set(bundled())
-            ready.countDown()
+            publish(FilterEngine.EMPTY)
             return
         }
         val key = keyFor(lists)
@@ -210,14 +219,10 @@ class FilterLists(
                 .getOrNull()
             if (loaded != null) {
                 Log.i(TAG, "Loaded filter index: ${loaded.networkRuleCount} request rules, ${loaded.cosmeticRuleCount} cosmetic, ${System.nanoTime().let { (it - startedAt) / 1_000_000 }} ms")
-                engineRef.set(loaded)
-                ready.countDown()
+                publish(loaded)
                 return
             }
         }
-        // Until the rebuild finishes, whatever was live (or the bundled hosts) keeps filtering.
-        if (engineRef.get() == null || engineRef.get() === FilterEngine.EMPTY) engineRef.set(bundled())
-        ready.countDown()
         rebuild(lists)
     }
 
@@ -227,10 +232,13 @@ class FilterLists(
         val builder = FilterEngineBuilder()
         val counts = HashMap<String, Int>()
         for (info in lists) {
-            counts[info.id] = runCatching { listFile(info).useLines { builder.addLines(it) } }.getOrDefault(0)
+            val file = listFile(info)
+            val input = if (file.isFile) FileInputStream(file) else context.assets.open("filters/${info.id}.txt")
+            counts[info.id] = input.bufferedReader().useLines { builder.addLines(it, trusted = info.id.startsWith("ublock-")) }
         }
         val engine = builder.build()
-        Log.i(TAG, "Built filter index: ${engine.networkRuleCount} request rules, ${engine.cosmeticRuleCount} cosmetic, ${(System.nanoTime() - builtAt) / 1_000_000} ms")
+        engine.documentStartScript
+        Log.i(TAG, "Built filter index: ${engine.networkRuleCount} request rules, ${engine.cosmeticRuleCount} cosmetic, ${engine.scriptletRuleCount} scriptlets, ${(System.nanoTime() - builtAt) / 1_000_000} ms")
         indexKey = keyFor(lists)
         metas = metas.toMutableMap().also { m -> for ((id, n) in counts) m[id] = (m[id] ?: Meta()).copy(rules = n) }
         val tmp = File(dir, "engine.bin.tmp")
@@ -239,19 +247,8 @@ class FilterLists(
             tmp.renameTo(indexFile)
         }.getOrDefault(false)
         if (!saved) indexKey = ""
-        engineRef.set(engine)
+        publish(engine)
         writeMeta()
-    }
-
-    private fun bundled(): FilterEngine {
-        val b = FilterEngineBuilder()
-        runCatching {
-            context.assets.open("blocklist.txt").bufferedReader().useLines { lines ->
-                // The bundled hosts only ever applied to third parties.
-                b.addLines(lines.map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("#") }.map { "||$it^\$third-party" })
-            }
-        }
-        return b.build()
     }
 
     // ---- downloading
@@ -293,7 +290,7 @@ class FilterLists(
                 }
                 metas = next
                 if (changed && settings.current.blockAds) {
-                    withContext(Dispatchers.Default) { rebuild(enabledOnDisk(ids)) }
+                    withContext(Dispatchers.Default) { rebuild(selected(ids)) }
                 } else {
                     writeMeta()
                 }

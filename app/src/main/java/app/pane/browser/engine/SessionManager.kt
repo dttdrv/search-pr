@@ -91,6 +91,7 @@ class SessionManager(
 ) {
     private val pages = LinkedHashMap<String, PaneWebView>()
     private val bridge = DownloadBridge()
+    private val navigationJobs = java.util.WeakHashMap<WebView, Job>()
     private val bridges = HashMap<String, PromptBridge>()
     private val backEntries = HashMap<String, BackEntry>()
     private val upgraded = HashMap<String, String>()
@@ -271,6 +272,7 @@ class SessionManager(
         bridges.remove(tabId)?.cancelAll()
         if (customViewTab == tabId) exitFullscreen()
         pages.remove(tabId)?.let { page ->
+            navigationJobs.remove(page)?.cancel()
             if (activeTabId == tabId) activeTabId = null
             page.release()
             privateIds.remove(tabId)
@@ -335,15 +337,23 @@ class SessionManager(
     }
 
     /** Starts a main-frame load of an address Pane itself chose, with `Sec-GPC: 1` when asked for. */
-    private fun open(view: WebView, url: String) {
-        val web = url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)
-        if (web && settings.current.globalPrivacyControl) view.loadUrl(url, mapOf("Sec-GPC" to "1")) else view.loadUrl(url)
+    private fun open(view: WebView, url: String, saved: Bundle? = null) {
+        navigationJobs.remove(view)?.cancel()
+        navigationJobs[view] = scope.launch {
+            if (settings.current.blockAds) adBlocker.awaitEngine()
+            adBlocker.setEnabled(view, settings.current.blockAds)
+            if (saved != null && view.restoreState(saved) != null) return@launch
+            val target = adBlocker.prepare(url, (view as? PaneWebView)?.siteHost)
+            val web = target.startsWith("http://", ignoreCase = true) || target.startsWith("https://", ignoreCase = true)
+            if (web && settings.current.globalPrivacyControl) view.loadUrl(target, mapOf("Sec-GPC" to "1")) else view.loadUrl(target)
+        }
     }
 
     /** Cleans tracking parameters off [url] and, where asked, tries the secure version of a plain-http address first. */
     private fun prepare(tabId: String, url: String): String {
         var target = url
         val s = settings.current
+        if (s.blockAds) target = adBlocker.prepare(target, pages[tabId]?.siteHost)
         if (s.stripTrackingParams) target = TrackingParams.strip(target)
         if (s.httpsMode != HttpsMode.Off && target.startsWith("http://", ignoreCase = true) && !isLocal(target) &&
             Uri.parse(target).host?.lowercase() !in httpAllowed
@@ -378,7 +388,10 @@ class SessionManager(
 
     fun goBack(tabId: String) = pages[tabId]?.takeIf { it.canGoBack() }?.goBack()
     fun goForward(tabId: String) = pages[tabId]?.takeIf { it.canGoForward() }?.goForward()
-    fun stop(tabId: String) = pages[tabId]?.stopLoading()
+    fun stop(tabId: String) = pages[tabId]?.let {
+        navigationJobs.remove(it)?.cancel()
+        it.stopLoading()
+    }
 
     fun reload(tabId: String, bypassCache: Boolean = false) {
         val tab = store.state.value.tab(tabId) ?: return
@@ -473,7 +486,7 @@ class SessionManager(
         if (tabId == store.state.value.selectedTabId) activate(tabId, page)
         val saved = engineState[tabId]?.let(::decode)
         when {
-            saved != null && page.restoreState(saved) != null -> Unit
+            saved != null -> open(page, prepare(tabId, tab.url), saved)
             loadIfEmpty && tab.url.isNotEmpty() -> open(page, prepare(tabId, tab.url))
         }
         return page
@@ -574,6 +587,7 @@ class SessionManager(
             }
         }
         adBlocker.cosmetics.setEnabled(page, s.blockAds)
+        adBlocker.setEnabled(page, s.blockAds)
     }
 
     private fun applyDesktop(page: PaneWebView, desktop: Boolean) {
@@ -1052,6 +1066,9 @@ class SessionManager(
     private val persistence = Mutex()
 
     init {
+        scope.launch {
+            adBlocker.engines.collect { pages.values.forEach { adBlocker.setEnabled(it, settings.current.blockAds) } }
+        }
         scope.launch {
             store.state.map { store.snapshot() }.distinctUntilChanged().drop(1).collect { schedulePersist() }
         }

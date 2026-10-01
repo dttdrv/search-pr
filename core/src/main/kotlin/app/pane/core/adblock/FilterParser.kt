@@ -1,6 +1,7 @@
 package app.pane.core.adblock
 
 import app.pane.core.url.Tlds
+import kotlinx.serialization.Serializable
 
 /** One parsed line of a filter list. Lines that can't be honoured by a WebView parse to nothing at all. */
 sealed interface ParsedFilter
@@ -9,7 +10,7 @@ sealed interface ParsedFilter
  * A request rule. [pattern] has its anchors and the options already taken off; for a [regex] it is the
  * source between the slashes. [party]: 0 any, 1 third-party only, 2 first-party only.
  */
-class NetworkFilter(
+data class NetworkFilter(
     val pattern: String,
     val exception: Boolean,
     val regex: Boolean,
@@ -24,6 +25,26 @@ class NetworkFilter(
     val includeDomains: List<String>,
     val excludeDomains: List<String>,
     val denyAllow: List<String>,
+    val extra: NetworkExtra? = null,
+    val strictParty: Int = 0,
+) : ParsedFilter
+
+@Serializable
+data class NetworkExtra(
+    val redirect: String? = null,
+    val redirectRule: Boolean = false,
+    val priority: Int = 0,
+    val removeParam: String? = null,
+    val methods: List<String> = emptyList(),
+    val excludedMethods: List<String> = emptyList(),
+)
+
+@Serializable
+data class ScriptletFilter(
+    val args: List<String>,
+    val exception: Boolean,
+    val includeDomains: List<String>,
+    val excludeDomains: List<String>,
 ) : ParsedFilter
 
 /** An element-hiding rule, one per selector (a comma list is split so one bad part can't sink the rest). */
@@ -38,9 +59,9 @@ class CosmeticFilter(
  * Reads Adblock Plus / uBlock Origin static filter syntax, hosts-file lines and bare domains.
  *
  * Deliberately conservative: an option that changes what a rule means and that a WebView can't do
- * (`csp`, `removeparam`, `replace`, `header`, `popup`, `redirect=` to a real resource, `to=` ...) drops
- * the whole rule, because loosening it would block things it was never meant to. Scriptlets
- * (`+js(...)`), HTML filters (`##^`), procedural cosmetics (`:has-text()`, `:xpath()` ...) and style
+ * (`csp`, `replace`, response `header`, `popup`, `to=` ...) drops
+ * the whole rule, because loosening it would block things it was never meant to. HTML filters
+ * (`##^`), procedural cosmetics (`:has-text()`, `:xpath()` ...) and style
  * injection (`#$#`) are skipped for the same reason.
  */
 object FilterParser {
@@ -144,7 +165,7 @@ object FilterParser {
     private fun domainPartOk(line: String, end: Int): Boolean {
         for (k in 0 until end) {
             val c = line[k]
-            if (!(c.isLetterOrDigit() || c == '.' || c == ',' || c == '~' || c == '-' || c == '_' || c == '*')) return false
+            if (!(c.isLetterOrDigit() || c == '.' || c == ',' || c == '~' || c == '-' || c == '_' || c == '*' || c == '>')) return false
         }
         return true
     }
@@ -152,15 +173,13 @@ object FilterParser {
     private fun parseCosmetic(line: String, sep: Int, sink: (ParsedFilter) -> Unit) {
         val len = separatorLength(line, sep)
         val marker = line.substring(sep, sep + len)
-        // Only plain element hiding: `##` and its exception `#@#`. Procedural (`#?#`), style (`#$#`)
-        // and script-injection (`#%#`) forms need an extension runtime.
         val exception = when (marker) {
             "##" -> false
             "#@#" -> true
             else -> return
         }
         val body = line.substring(sep + len).trim()
-        if (body.isEmpty() || body[0] == '^' || body.startsWith("+js(") || body.startsWith("script:")) return
+        if (body.isEmpty() || body[0] == '^' || body.startsWith("script:")) return
         val include = ArrayList<String>()
         val exclude = ArrayList<String>()
         if (sep > 0) {
@@ -170,10 +189,61 @@ object FilterParser {
                 if (e.startsWith("~")) exclude.add(e.substring(1)) else include.add(e)
             }
         }
+        if (body.startsWith("+js(") && body.endsWith(')')) {
+            if (exception && sep > 0 && include.isEmpty()) return
+            val args = scriptletArgs(body.substring(4, body.length - 1))
+            if (args.isEmpty()) {
+                if (exception) sink(ScriptletFilter(args, true, include, emptyList()))
+            } else if (exception || include.isNotEmpty()) {
+                val resource = FilterResources.scriptlet(args[0]) ?: return
+                sink(ScriptletFilter(listOf(resource.name) + args.drop(1), exception, include, if (exception) emptyList() else exclude))
+            }
+            return
+        }
+        if ((include + exclude).any { '>' in it }) return
         for (part in splitSelectorList(body)) {
             val s = part.trim()
             if (isNativeSelector(s)) sink(CosmeticFilter(s, exception, include, exclude))
         }
+    }
+
+    internal fun scriptletArgs(s: String): List<String> {
+        if (s.isBlank()) return emptyList()
+        val out = ArrayList<String>()
+        var start = 0
+        fun endOf(from: Int, delimiter: Char): Int {
+            var i = from
+            while (i < s.length) {
+                if (s[i] == '\\') { i += 2; continue }
+                if (s[i] == delimiter) return i
+                i++
+            }
+            return s.length
+        }
+        while (start <= s.length) {
+            while (start < s.length && s[start].isWhitespace()) start++
+            val quote = s.getOrNull(start)?.takeIf { it == '\'' || it == '"' || it == '`' }
+            var end = if (quote != null) endOf(start + 1, quote) else s.length
+            var next = end + 1
+            while (next < s.length && s[next].isWhitespace()) next++
+            val quoted = quote != null && end < s.length && (next == s.length || s.getOrNull(next) == ',')
+            if (!quoted) { end = endOf(start, ','); next = end }
+            val value = if (quoted) s.substring(start + 1, end) else s.substring(start, end).trimEnd()
+            val delimiter = if (quoted) quote!! else ','
+            val normalized = StringBuilder()
+            var i = 0
+            while (i < value.length) {
+                if (value[i] != '\\') { normalized.append(value[i++]); continue }
+                val from = i
+                while (i < value.length && value[i] == '\\') i++
+                val count = i - from
+                repeat(count - if (count % 2 == 1 && value.getOrNull(i) == delimiter) 1 else 0) { normalized.append('\\') }
+            }
+            out.add(normalized.toString())
+            if (next >= s.length) break
+            start = next + 1
+        }
+        return out
     }
 
     /** Splits `a, b` at top-level commas (not inside brackets, parentheses or quotes). */
@@ -248,13 +318,6 @@ object FilterParser {
 
     // ---- request rules
 
-    private val noopRedirects = setOf(
-        "noop.js", "noopjs", "noop.css", "noop.txt", "nooptext", "noop.html", "noopframe", "noop-0.1s.mp3",
-        "noopmp3-0.1s", "noop-1s.mp4", "noopmp4-1s", "1x1.gif", "1x1-transparent.gif", "2x2.png",
-        "2x2-transparent.png", "3x2.png", "3x2-transparent.png", "32x32.png", "32x32-transparent.png",
-        "empty",
-    )
-
     private fun parseNetwork(line0: String): NetworkFilter? {
         var s = line0
         var exception = false
@@ -266,7 +329,14 @@ object FilterParser {
         var optionText: String? = null
         val wholeRegex = s.length > 2 && s[0] == '/' && s[s.length - 1] == '/'
         if (!wholeRegex) {
-            val dollar = s.lastIndexOf('$')
+            var dollar = s.indexOf('$')
+            while (dollar >= 0) {
+                val name = s.substring(dollar + 1).substringBefore(',').substringBefore('=').removePrefix("~").lowercase()
+                if (ResourceType.fromOption(name) != 0 || name in setOf("domain", "from", "denyallow", "third-party", "3p", "first-party", "1p", "strict3p", "strict1p", "important", "badfilter", "match-case", "redirect", "redirect-rule", "removeparam", "queryprune", "method", "empty", "mp4")) break
+                val next = s.indexOf('$', dollar + 1)
+                if (next < 0) break
+                dollar = next
+            }
             if (dollar >= 0) {
                 optionText = s.substring(dollar + 1)
                 s = s.substring(0, dollar)
@@ -276,14 +346,21 @@ object FilterParser {
         var pos = 0
         var neg = 0
         var party = 0
+        var strictParty = 0
         var important = false
         var badfilter = false
         var matchCase = false
         val include = ArrayList<String>()
         val exclude = ArrayList<String>()
         val deny = ArrayList<String>()
+        var redirect: String? = null
+        var redirectRule = false
+        var priority = 0
+        var removeParam: String? = null
+        val methods = ArrayList<String>()
+        val excludedMethods = ArrayList<String>()
         if (optionText != null) {
-            for (raw in optionText.split(',')) {
+            for (raw in scriptletArgs(optionText)) {
                 val opt = raw.trim()
                 if (opt.isEmpty()) continue
                 val negated = opt.startsWith("~")
@@ -291,39 +368,72 @@ object FilterParser {
                 val eq = body.indexOf('=')
                 val name = (if (eq >= 0) body.substring(0, eq) else body).lowercase()
                 val value = if (eq >= 0) body.substring(eq + 1) else ""
+                if (negated && name in setOf("redirect", "redirect-rule", "removeparam", "queryprune", "method", "important", "badfilter", "match-case", "domain", "from", "denyallow", "empty", "mp4")) return null
                 when (name) {
                     "third-party", "3p" -> party = if (negated) 2 else 1
                     "first-party", "1p" -> party = if (negated) 1 else 2
-                    "strict3p" -> party = 1
-                    "strict1p" -> party = 2
+                    "strict3p" -> strictParty = if (negated) 2 else 1
+                    "strict1p" -> strictParty = if (negated) 1 else 2
                     "important" -> important = true
                     "badfilter" -> badfilter = true
                     "match-case" -> matchCase = true
                     "domain", "from" -> if (!readDomains(value, include, exclude)) return null
                     "denyallow" -> for (d in value.split('|')) {
                         val h = d.trim().lowercase()
-                        if (h.isEmpty() || h.startsWith("/") || h.startsWith("~")) return null
+                        if (h.isEmpty() || h.startsWith("/") || h.startsWith("~") || h.contains('*')) return null
                         deny.add(h)
                     }
-                    "empty", "mp4" -> Unit // a block that answers with an empty body: what we do anyway
-                    "redirect" -> if (value.lowercase() !in noopRedirects) return null
+                    "empty" -> redirect = "empty"
+                    "mp4" -> redirect = "noop-1s.mp4"
+                    "redirect", "redirect-rule" -> {
+                        redirectRule = name == "redirect-rule"
+                        val colon = value.lastIndexOf(':')
+                        val p = if (colon >= 0) value.substring(colon + 1).toIntOrNull() else null
+                        val token = if (p != null) value.substring(0, colon) else value
+                        priority = p ?: 0
+                        redirect = when {
+                            token == "none" -> token
+                            token.isEmpty() && exception && redirectRule -> ""
+                            else -> FilterResources.redirect(token)?.name ?: return null
+                        }
+                    }
+                    "removeparam", "queryprune" -> {
+                        val p = value.removePrefix("~")
+                        if (p.startsWith('/')) {
+                            val end = p.lastIndexOf('/')
+                            if (end <= 0 || p.substring(end + 1).any { it != 'i' }) return null
+                            try { java.util.regex.Pattern.compile(p.substring(1, end)) }
+                            catch (_: java.util.regex.PatternSyntaxException) { return null }
+                        }
+                        removeParam = value
+                    }
+                    "method" -> for (m in value.lowercase().split('|')) {
+                        val bare = m.removePrefix("~")
+                        if (bare !in setOf("connect", "delete", "get", "head", "options", "patch", "post", "put")) return null
+                        if (m.startsWith('~')) excludedMethods.add(bare) else methods.add(bare)
+                    }
                     else -> {
                         val bit = ResourceType.fromOption(name)
-                        if (bit == 0) return null // csp, removeparam, replace, header, popup, to=, ...
+                        if (bit == 0) return null
                         if (negated) neg = neg or bit else pos = pos or bit
                     }
                 }
             }
         }
-        var types = (if (pos != 0) pos else ResourceType.ALL_REQUESTS) and neg.inv()
-        if (!exception && types and ResourceType.ALL_REQUESTS == 0) return null // document-only blocks: the main frame is never filtered
+        val defaults = ResourceType.ALL_REQUESTS or if (removeParam != null) ResourceType.DOCUMENT else 0
+        val types = (if (pos != 0) pos else defaults) and neg.inv()
+        if (exception && redirect != null) redirectRule = true
+        if (!exception && types and ResourceType.ALL_REQUESTS == 0 && removeParam == null) return null
         if (types == 0) return null
+        if (redirect != null && removeParam != null) return null
+        if (deny.isNotEmpty() && include.isEmpty()) return null
+        val extra = NetworkExtra(redirect, redirectRule, priority, removeParam, methods.distinct().sorted(), excludedMethods.distinct().sorted()).takeUnless { it == NetworkExtra() }
 
         // The pattern.
         if (wholeRegex || (s.length > 2 && s[0] == '/' && s[s.length - 1] == '/')) {
             val src = s.substring(1, s.length - 1)
             if (src.isEmpty() || src.length > 400) return null
-            return NetworkFilter(src, exception, true, false, false, false, types, party, important, badfilter, matchCase, include, exclude, deny)
+            return NetworkFilter(src, exception, true, false, false, false, types, party, important, badfilter, matchCase, include, exclude, deny, extra, strictParty)
         }
         var anchorHost = false
         var anchorStart = false
@@ -352,11 +462,11 @@ object FilterParser {
         if (s.isEmpty() && !anchorHost && !anchorStart && !anchorEnd) {
             // `*$script,domain=x` style rules apply to everything; with no option at all they would block the web.
             if (optionText == null || optionText.isBlank()) return null
-            val constrained = types != ResourceType.ALL_REQUESTS || party != 0 || include.isNotEmpty() || deny.isNotEmpty()
+            val constrained = types != ResourceType.ALL_REQUESTS || party != 0 || include.isNotEmpty() || deny.isNotEmpty() || extra != null || strictParty != 0
             if (!constrained) return null
         }
         if (s.isEmpty() && (anchorHost || anchorStart)) return null
-        return NetworkFilter(s, exception, false, anchorHost, anchorStart, anchorEnd, types, party, important, badfilter, matchCase, include, exclude, deny)
+        return NetworkFilter(s, exception, false, anchorHost, anchorStart, anchorEnd, types, party, important, badfilter, matchCase, include, exclude, deny, extra, strictParty)
     }
 
     private fun collapseStars(s: String): String {

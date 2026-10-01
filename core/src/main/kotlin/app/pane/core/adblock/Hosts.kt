@@ -1,15 +1,42 @@
 package app.pane.core.adblock
 
+import java.net.IDN
+
 /** Host-name helpers shared by the filter engine and the code that feeds it. */
 object Hosts {
-    private val secondLevel = setOf("co", "com", "org", "net", "gov", "ac", "edu", "or", "ne", "go", "gob", "mil")
+    internal val suffixRules: Set<String> by lazy {
+        Hosts::class.java.getResourceAsStream("/adblock/public-suffixes.txt")!!.bufferedReader().useLines {
+            it.filter { line -> line.isNotEmpty() && !line.startsWith("//") }.toSet()
+        }
+    }
 
-    /** The registrable domain, judged by the last two labels (three under a country second level). */
+    fun isValid(host: String): Boolean = try {
+        IDN.toASCII(host.trimEnd('.'))
+        host.isNotEmpty()
+    } catch (_: IllegalArgumentException) { false }
+
+    internal fun normalize(host: String): String = IDN.toASCII(host.trimEnd('.').lowercase())
+
+    internal fun publicSuffix(host: String): String {
+        val h = normalize(host)
+        val suffix = h.substringAfterLast('.')
+        var candidate = h
+        while (true) {
+            if ("!$candidate" in suffixRules) return candidate.substringAfter('.')
+            if (candidate in suffixRules || "*.${candidate.substringAfter('.')}" in suffixRules && candidate.contains('.')) return candidate
+            if (!candidate.contains('.')) return suffix
+            candidate = candidate.substringAfter('.')
+        }
+    }
+
+    /** the registrable domain from the Public Suffix List, including its private section. */
     fun registrable(host: String): String {
-        val parts = host.split('.')
-        if (parts.size <= 2) return host
-        val take = if (parts.last().length == 2 && parts[parts.size - 2] in secondLevel) 3 else 2
-        return parts.takeLast(take).joinToString(".")
+        val h = normalize(host)
+        if (h.contains(':') || h.split('.').let { it.size == 4 && it.all { p -> p.toIntOrNull() in 0..255 } }) return h
+        val suffix = publicSuffix(h)
+        if (h == suffix) return h
+        val label = h.removeSuffix(".$suffix").substringAfterLast('.')
+        return "$label.$suffix"
     }
 
     /** Same registrable domain: the request is first-party to the page. */
@@ -20,5 +47,4 @@ object Hosts {
         candidate == domain || (candidate.length > domain.length && candidate.endsWith(domain) &&
             candidate[candidate.length - domain.length - 1] == '.')
 
-    internal fun hasSecondLevel(label: String) = label in secondLevel
 }
