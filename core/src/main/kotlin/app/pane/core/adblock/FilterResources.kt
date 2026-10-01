@@ -28,7 +28,8 @@ data class RedirectResource(
 }
 
 object FilterResources {
-    val origin: String = "https://${FilterResources::class.java.`package`.name}.invalid"
+    // a fixed name: a minified build moves classes into the default package, which has no package name to read
+    const val origin: String = "https://app.pane.core.adblock.invalid"
     @Serializable
     private class Catalogue(val revision: String, val notice: String, val scriptlets: List<ScriptletResource>, val redirects: List<RedirectResource>)
 
