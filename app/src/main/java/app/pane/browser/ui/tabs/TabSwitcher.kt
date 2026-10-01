@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -74,6 +75,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
@@ -86,12 +88,18 @@ import app.pane.browser.ui.components.SegmentedControl
 import app.pane.browser.ui.components.pressScale
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.LocalFrost
+import app.pane.browser.ui.theme.LocalPaneColors
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.canScroll
 import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.floating
+import app.pane.browser.ui.theme.frosted
+import app.pane.browser.ui.theme.frostSource
+import app.pane.browser.ui.theme.onFrost
+import app.pane.browser.ui.theme.rememberFrost
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.browser.ui.theme.stretch
 import app.pane.core.tabs.TabState
@@ -238,6 +246,7 @@ fun TabSwitcher(
         // The last row of cards must be able to scroll clear of the floating cluster.
         val clusterSpace = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + ClusterHeight + ClusterGap + 18.dp
 
+        val frost = rememberFrost()
         run {
             Box(Modifier.fillMaxSize()) {
                 Box(
@@ -250,6 +259,8 @@ fun TabSwitcher(
                     Modifier
                         .fillMaxSize()
                         .semantics { contentDescription = if (showPrivate) "Private tabs: ${tabs.size}" else "Open tabs: ${tabs.size}" }
+                        // outside the fade and scale below, so what the cluster blurs is what the grid shows
+                        .frostSource(frost, clusterSpace)
                         .graphicsLayer {
                             val p = progress.value
                             alpha = ((p - 0.15f) / 0.85f).coerceIn(0f, 1f)
@@ -361,49 +372,57 @@ fun TabSwitcher(
                 }
 
                 // The floating cluster: the Private / Tabs switch, then a plus for a new tab on the right.
-                // It rises from below and hovers clear of the screen edges; the grid scrolls beneath it.
-                Row(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .windowInsetsPadding(WindowInsets.navigationBars)
-                        .padding(start = 12.dp, end = 12.dp, bottom = ClusterGap)
-                        .widthIn(max = 520.dp)
-                        .fillMaxWidth()
-                        .graphicsLayer { translationY = (1f - cluster.value) * ClusterRest.toPx() },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
+                // It rises from below and hovers clear of the screen edges; the grid scrolls beneath it, frosted.
+                // The rise is a layout offset, so the frost under each piece follows it.
+                CompositionLocalProvider(LocalFrost provides frost) {
+                    Row(
                         Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp)
-                            .height(ClusterHeight - 4.dp)
-                            .floating(PaneShapes.pill)
-                            .padding(4.dp),
-                        contentAlignment = Alignment.Center,
+                            .align(Alignment.BottomCenter)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(start = 12.dp, end = 12.dp, bottom = ClusterGap)
+                            .widthIn(max = 520.dp)
+                            .fillMaxWidth()
+                            .offset { IntOffset(0, ((1f - cluster.value) * ClusterRest.toPx()).roundToInt()) },
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        val normalCount = state.normalTabs.size
-                        SegmentedControl(
-                            options = listOf("Private", if (normalCount == 1) "1 Tab" else "$normalCount Tabs"),
-                            selectedIndex = if (showPrivate) 0 else 1,
-                            onSelect = { chrome.showPrivateTabs = it == 0 },
-                            modifier = Modifier.fillMaxWidth(),
-                            height = ClusterHeight - 12.dp,
-                        )
-                    }
-                    FloatingCircle(
-                        onClick = {
-                            onNewTab(showPrivate)
-                            shown = false
-                            scope.launch {
-                                progress.snapTo(0f)
-                                cluster.snapTo(0f)
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
+                                .height(ClusterHeight - 4.dp)
+                                .frosted(PaneShapes.pill)
+                                .padding(4.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val normalCount = state.normalTabs.size
+                            // no track of its own: the frosted pill is the track, and the thumb lifts off it. Cards
+                            // of any tone pass under it, so the idle label is ink rather than a muted grey.
+                            CompositionLocalProvider(LocalPaneColors provides colors.onFrost().let { it.copy(secondaryLabel = it.label.copy(alpha = 0.7f)) }) {
+                                SegmentedControl(
+                                    options = listOf("Private", if (normalCount == 1) "1 Tab" else "$normalCount Tabs"),
+                                    selectedIndex = if (showPrivate) 0 else 1,
+                                    onSelect = { chrome.showPrivateTabs = it == 0 },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    height = ClusterHeight - 12.dp,
+                                    track = Color.Transparent,
+                                )
                             }
-                            onClosed()
-                        },
-                        size = ClusterHeight - 4.dp,
-                        contentDescription = "New tab",
-                    ) {
-                        Icon(PaneIcons.Plus, null, tint = PaneTheme.colors.label, modifier = Modifier.size(24.dp))
+                        }
+                        FloatingCircle(
+                            onClick = {
+                                onNewTab(showPrivate)
+                                shown = false
+                                scope.launch {
+                                    progress.snapTo(0f)
+                                    cluster.snapTo(0f)
+                                }
+                                onClosed()
+                            },
+                            size = ClusterHeight - 4.dp,
+                            contentDescription = "New tab",
+                        ) {
+                            Icon(PaneIcons.Plus, null, tint = PaneTheme.colors.label, modifier = Modifier.size(24.dp))
+                        }
                     }
                 }
             }

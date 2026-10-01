@@ -71,7 +71,9 @@ import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.LocalReduceMotion
-import app.pane.browser.ui.theme.floating
+import app.pane.browser.ui.theme.drawFrostBlur
+import app.pane.browser.ui.theme.frostTint
+import app.pane.browser.ui.theme.rememberSheetFrost
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.Spacing
@@ -105,7 +107,10 @@ fun PaneSheet(
     val offset = remember { Animatable(OFFSCREEN) }
     // 0 = the sheet is still its source (a button), 1 = at rest; a sheet with no source stays at 1
     val reveal = remember { Animatable(1f) }
+    // where the card rests, in the root: its frost sits on the page whatever the slide has done to the card
     var rest by remember { mutableStateOf(Rect.Zero) }
+    val frost = rememberSheetFrost()
+    val tint = frostTint(colors.isDark)
     val morphing by rememberUpdatedState(origin != Rect.Zero && !reduceMotion)
     var shown by remember { mutableStateOf(false) }
     var measuredOnce by remember { mutableStateOf(false) }
@@ -227,8 +232,13 @@ fun PaneSheet(
                 }
                 .drawWithContent {
                     val outline = sheetShape(origin.translate(-rest.topLeft), reveal.value).createOutline(size, layoutDirection, this)
+                    val path = Path().apply { addOutline(outline) }
                     drawOutline(outline, colors.background)
-                    if (reveal.value >= 1f) drawContent() else clipPath(Path().apply { addOutline(outline) }) { this@drawWithContent.drawContent() }
+                    if (frost != null) {
+                        clipPath(path) { drawFrostBlur(frost, rest.topLeft + Offset(0f, offset.value)) }
+                        drawOutline(outline, tint)
+                    }
+                    if (reveal.value >= 1f) drawContent() else clipPath(path) { this@drawWithContent.drawContent() }
                 }
                 .pointerInput(Unit) { detectTapGestures { } }
                 // Inside the card, like a list in its frame: the rows stretch, the card keeps its shape.

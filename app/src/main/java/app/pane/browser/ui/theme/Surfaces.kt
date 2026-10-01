@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,6 +26,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.CompositingStrategy
 import androidx.compose.ui.graphics.layer.GraphicsLayer
@@ -34,6 +37,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
@@ -53,15 +57,18 @@ fun Modifier.floating(shape: Shape, shadow: Dp = FloatingElevation, fill: Color?
     this.shadow(shadow, shape, clip = true).background(fill ?: PaneTheme.colors.floating)
 
 /**
- * The page under the floating bar: [frostSource] records it once and keeps its bottom band blurred,
- * one blur shared by every [frosted] surface over it. The layers are null where blur isn't reliable
+ * What chrome floats over: [frostSource] records it once and keeps its bottom band blurred, one blur
+ * shared by every [frosted] surface over it. The layers are null where blur isn't reliable
  * (RenderEffect needs Android 12, whose RenderNodes don't reliably repaint when drawn in two places),
- * and the surfaces are then only their veil.
+ * and the surfaces are then solid.
  */
 @Stable
 class Frost internal constructor(internal val page: GraphicsLayer?, internal val band: GraphicsLayer?) {
-    /** The band's top-left in the root. */
+    /** The source's top-left in the root. */
     internal var origin by mutableStateOf(Offset.Zero)
+
+    /** A sheet is up: it covers more than the band, so the whole source is blurred while it is. */
+    internal var whole by mutableStateOf(false)
 }
 
 /** The [Frost] that chrome floats over; none outside the bar. */
@@ -90,6 +97,16 @@ fun rememberFrost(): Frost {
 private const val FrostSaturation = 1.4f
 private const val FrostVeil = 0.37f
 
+// then this much of the other pole, so a frosted surface is 10% darker than a light page and 10%
+// lighter than a dark one, and still shows on a white or black page.
+private const val FrostShade = 0.10f
+
+/** The one fill a frosted surface wears over its blur: the veil, then the shade, as a single colour. */
+internal fun frostTint(dark: Boolean): Color {
+    val (veil, pole) = if (dark) Color.Black to Color.White else Color.White to Color.Black
+    return pole.copy(alpha = FrostShade).compositeOver(veil.copy(alpha = FrostVeil))
+}
+
 /** Draws this through [frost]'s page layer and keeps the bottom [band] of it blurred. */
 @Composable
 fun Modifier.frostSource(frost: Frost, band: Dp): Modifier {
@@ -99,32 +116,63 @@ fun Modifier.frostSource(frost: Frost, band: Dp): Modifier {
     val height = with(LocalDensity.current) { band.roundToPx() }
     // a page without a background of its own shows the ground through its transparent WebView
     val ground = PaneTheme.colors.background
-    return onGloballyPositioned { frost.origin = it.positionInRoot() + Offset(0f, (it.size.height - height).toFloat()) }
+    return onGloballyPositioned { frost.origin = it.positionInRoot() }
         .drawWithContent {
             page.record { this@drawWithContent.drawContent() }
             drawLayer(page)
-            val top = height - size.height
-            blurred.record(IntSize(size.width.roundToInt(), height)) {
+            val full = size.height.roundToInt()
+            val rows = if (frost.whole) full else height
+            blurred.topLeft = IntOffset(0, full - rows)
+            blurred.record(IntSize(size.width.roundToInt(), rows)) {
                 drawRect(ground)
-                translate(top = top) { drawLayer(page) }
+                translate(top = (rows - full).toFloat()) { drawLayer(page) }
             }
         }
 }
 
 /**
- * Chrome over the page, frosted: the page blurred and its colour deepened behind a veil of white
- * (black when the bar is dark, which follows the page behind it), with no shadow and no outline.
- * Outside the bar it is the solid [floating] surface.
+ * Chrome over its [Frost], frosted: the source blurred and its colour deepened behind the [frostTint]
+ * of the bar's tone (light over a light bar, dark over a dark one), with no shadow and no outline. A
+ * sheet passes [whole] to blur all of the source while it is up. Without a working blur (no [Frost],
+ * or an Android that can't be trusted with one) it is the solid [floating] surface; and should the
+ * blur ever draw nothing, the solid [fill] shows in its place, never the sharp source through a veil.
+ * The surface's place in the root is measured when it is laid out; a surface that a transform above
+ * it carries about (a sheet's slide) gives its [position] instead.
  */
 @Composable
-fun Modifier.frosted(shape: Shape): Modifier {
-    val frost = LocalFrost.current ?: return floating(shape)
-    val veil = (if (PaneTheme.colors.isDark) Color.Black else Color.White).copy(alpha = FrostVeil)
+fun Modifier.frosted(shape: Shape, whole: Boolean = false, fill: Color? = null, position: (() -> Offset)? = null): Modifier {
+    val frost = LocalFrost.current?.takeIf { it.band != null } ?: return floating(shape, fill = fill)
+    if (whole) DisposableEffect(frost) {
+        frost.whole = true
+        onDispose { frost.whole = false }
+    }
+    val colors = PaneTheme.colors
+    val blurred = frost.band!!
     var at by remember { mutableStateOf(Offset.Zero) }
     return onGloballyPositioned { at = it.positionInRoot() }
         .clip(shape)
-        .drawBehind { frost.band?.let { translate(frost.origin.x - at.x, frost.origin.y - at.y) { drawLayer(it) } } }
-        .background(veil)
+        .background(fill ?: colors.floating)
+        .drawBehind {
+            val here = position?.invoke() ?: at
+            translate(frost.origin.x - here.x, frost.origin.y - here.y) { drawLayer(blurred) }
+        }
+        .background(frostTint(colors.isDark))
+}
+
+/** The [Frost] a sheet frosts over, and that it is covering all of it while it is up; null where there is no working blur. */
+@Composable
+internal fun rememberSheetFrost(): Frost? {
+    val frost = LocalFrost.current?.takeIf { it.band != null } ?: return null
+    DisposableEffect(frost) {
+        frost.whole = true
+        onDispose { frost.whole = false }
+    }
+    return frost
+}
+
+/** The blur of [frost], where a surface whose top-left is [at] in the root sits, in whatever clip the caller has set. */
+internal fun DrawScope.drawFrostBlur(frost: Frost, at: Offset) {
+    translate(frost.origin.x - at.x, frost.origin.y - at.y) { drawLayer(frost.band!!) }
 }
 
 /**

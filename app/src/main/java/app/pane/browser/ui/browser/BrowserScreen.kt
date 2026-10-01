@@ -76,6 +76,7 @@ import app.pane.browser.ui.theme.EdgeFade
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.PrivateColors
 import app.pane.browser.ui.theme.frostSource
+import app.pane.browser.ui.theme.onFrost
 import app.pane.browser.ui.theme.rememberFrost
 import app.pane.core.tabs.TabState
 import app.pane.core.url.UrlDisplay
@@ -529,24 +530,27 @@ fun BrowserScreen() {
                 onDismiss = { chrome.editing = false },
             )
 
-            MenuSheet(
-                visible = chrome.showMenu,
-                origin = chrome.menuRect,
-                tab = tab,
-                locked = locked,
-                onDismiss = { chrome.showMenu = false },
-                onFindInPage = { chrome.findInPage = true },
-                tabCount = sameMode.size,
-                onTabs = { chrome.showTabs = true },
-                onNewTab = { p ->
-                    scope.launch {
-                        // a blank tab already is a new tab, so there is nothing to slide away from
-                        if (tab?.url.isNullOrEmpty()) container.browser.newTab(p) else slideAway(fromRight = true, behind = null) { container.browser.newTab(p) }
-                        editText = ""
-                        chrome.editing = true
-                    }
-                },
-            )
+            // the menu grows out of the bar's button, so it wears the bar's tone and frosts the same page
+            CompositionLocalProvider(LocalPaneColors provides barColors.onFrost(), LocalFrost provides frost) {
+                MenuSheet(
+                    visible = chrome.showMenu,
+                    origin = chrome.menuRect,
+                    tab = tab,
+                    locked = locked,
+                    onDismiss = { chrome.showMenu = false },
+                    onFindInPage = { chrome.findInPage = true },
+                    tabCount = sameMode.size,
+                    onTabs = { chrome.showTabs = true },
+                    onNewTab = { p ->
+                        scope.launch {
+                            // a blank tab already is a new tab, so there is nothing to slide away from
+                            if (tab?.url.isNullOrEmpty()) container.browser.newTab(p) else slideAway(fromRight = true, behind = null) { container.browser.newTab(p) }
+                            editText = ""
+                            chrome.editing = true
+                        }
+                    },
+                )
+            }
 
             SiteInfoSheet(visible = chrome.siteInfo && !locked, tabId = tab?.id, onDismiss = { chrome.siteInfo = false })
         }
