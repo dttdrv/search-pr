@@ -1,10 +1,5 @@
 package app.pane.browser.ui.browser
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -23,25 +18,31 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.VectorPainter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.util.lerp
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.PrivateColors
 import app.pane.browser.ui.theme.Spacing
+import kotlin.math.exp
+import kotlin.math.max
 import kotlin.math.min
 
-/** The three little films of the onboarding carousel. Each loops, quietly, on its own. */
-enum class Scene { Bar, Sideways, Up }
-
-private const val LoopMs = 4800
-
-/** The moment shown when motion is reduced: the gesture done. */
-private const val Done = 0.75f
+/**
+ * the three little films of the onboarding carousel. each plays from its first frame when its page arrives
+ * and loops every [ms]; [still] is the moment shown when motion is off: the gesture done
+ */
+enum class Scene(val ms: Int, val still: Float) {
+    Bar(7200, 0.5f),
+    Sideways(9600, 0.8f),
+    Up(9600, 0.4f),
+}
 
 /** Where a loop's after-state has faded out and it starts over. */
 private const val Restart = 0.93f
@@ -62,47 +63,65 @@ private val KeyRows = intArrayOf(10, 9, 7)
 private const val Count = 4
 private const val OpenTab = 1
 
+// a spring move counts as landed after this many natural periods, where the step response is within e^-Damped of its end
+private const val Damped = 7f
+
+/** how long a fingertip takes to appear or leave, and a spring to settle once the finger lets go, as shares of a loop */
+private const val Fade = 0.04f
+private const val Land = 0.08f
+
+/** how far the pill follows the finger, as a share of a stride, before it is let go and settles on its own */
+private const val Follow = 0.45f
+
+/** the share of the bar's collapse after which the padlock and reload are gone: BottomBar's DETAILS_GONE */
+private const val DetailsGone = 0.3f
+
 /**
- * One scene, drawn in code: this phone's own screen in miniature, filling the height it is given, with
- * Pane's real bar, spacing and text measures at the same scale, and a fingertip showing the gesture.
- * Flat: tones stepped between the raised surface and the ink, the blue only for the touch and the open tab.
+ * one scene, drawn in code: this phone's own screen in miniature, filling the height it is given, with the
+ * app's real bar, spacing and text measures at the same scale, and a fingertip showing the gesture. flat:
+ * tones stepped between the raised surface and the ink, the blue only for the touch and the open tab. the
+ * clock runs while [active] (the page is the one in view), from the first frame each time, and is read
+ * while drawing, so the film redraws the canvas and recomposes nothing
  */
 @Composable
-fun OnboardingArt(scene: Scene, modifier: Modifier = Modifier) {
+fun OnboardingArt(scene: Scene, active: Boolean, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
-    val body = PaneTheme.type.body
+    val type = PaneTheme.type
     val window = LocalWindowInfo.current.containerSize
-    val reduce = LocalReduceMotion.current
-    val clock = rememberInfiniteTransition(label = "art")
-        .animateFloat(0f, 1f, infiniteRepeatable(tween(LoopMs, easing = LinearEasing)), label = "t")
-    val ink = remember(colors) { Ink(colors.elevatedSurface, colors.background, colors.label, colors.accent, colors.onAccent) }
+    val still = rememberStill()
+    val clock = rememberLoop(scene.ms, run = active && !still, rest = if (still) scene.still else 0f)
+    val ink = remember(colors) { Ink(colors.elevatedSurface, colors.background, colors.label, colors.accent) }
+    val dark = remember { Ink(PrivateColors.elevatedSurface, PrivateColors.background, PrivateColors.label, PrivateColors.accent) }
     val glyphs = Glyphs(
         lock = rememberVectorPainter(PaneIcons.LockFill),
         more = rememberVectorPainter(PaneIcons.More),
         plus = rememberVectorPainter(PaneIcons.Plus),
+        back = rememberVectorPainter(PaneIcons.Back),
+        reload = rememberVectorPainter(PaneIcons.Reload),
     )
     Canvas(modifier) {
         if (window.width == 0 || window.height == 0) return@Canvas
-        // read here, in the draw phase: the loop redraws the drawing and recomposes nothing
-        val t = if (reduce) Done else clock.value
+        val t = clock.value
         // the screen plus its body, a gap wide all round, fitted to the space given
         val frame = 2 * BarMetrics.gap.toPx()
         val k = min(size.width / (window.width + frame), size.height / (window.height + frame))
         val s = Screen(
             w = window.width * k,
             h = window.height * k,
+            dp = density * k,
             pill = BarMetrics.pill.toPx() * k,
             mini = BarMetrics.mini.toPx() * k,
             gap = BarMetrics.gap.toPx() * k,
             unit = Spacing.gutter.toPx() * k,
-            line = body.fontSize.toPx() * k / 2,
-            pitch = body.lineHeight.toPx() * k,
+            line = type.body.fontSize.toPx() * k / 2,
+            pitch = type.body.lineHeight.toPx() * k,
+            small = type.caption.fontSize.value / type.body.fontSize.value,
         )
         translate((size.width - s.w) / 2, (size.height - s.h) / 2) {
             when (scene) {
                 Scene.Bar -> barScene(t, s, ink, glyphs)
                 Scene.Sideways -> sidewaysScene(t, s, ink, glyphs)
-                Scene.Up -> upScene(t, s, ink, glyphs)
+                Scene.Up -> upScene(t, s, ink, dark, glyphs)
             }
         }
     }
@@ -112,12 +131,14 @@ fun OnboardingArt(scene: Scene, modifier: Modifier = Modifier) {
 private class Screen(
     val w: Float,
     val h: Float,
+    val dp: Float,
     val pill: Float,
     val mini: Float,
     val gap: Float,
     val unit: Float,
     val line: Float,
     val pitch: Float,
+    val small: Float,
 ) {
     /** Concentric with the bar's pill, which sits [gap] in from the bottom corners. */
     val corner = pill / 2 + gap
@@ -126,27 +147,48 @@ private class Screen(
     val top = 3 * unit
     val barTop = h - gap - pill
 
-    /** The pill's width: the row less the two round buttons. */
+    /** the pill's width with no back button: the row less the menu button */
     val slot = w - 3 * gap - pill
     val reach = h / 4
     val stroke = gap / 4
+
+    /** the host's width in the open pill; [small] times that in the collapsed bar */
+    val host = 1.6f * pill
+
+    /** the bar's row of the pill, and of the cluster in the overview */
+    val row = Rect(gap, barTop, w - 2 * gap - pill, barTop + pill)
 }
 
 /** A page is [paper]; Pane's own screens are [ground] with paper raised on it, as in the app. */
-private class Ink(val paper: Color, val ground: Color, val ink: Color, val accent: Color, val onAccent: Color) {
+private class Ink(val paper: Color, val ground: Color, val ink: Color, val accent: Color) {
     fun tone(f: Float) = lerp(paper, ink, f)
+
+    /** the bar's glass as a flat tone: the real one blurs the page behind it, which would not read at this size */
+    val glass = tone(Soft)
 
     /** The [i]th site's favicon, each a step darker than the one before. */
     fun site(i: Int) = tone(Soft + (Strong - Soft) * i / (Count - 1))
 }
 
-private class Glyphs(val lock: VectorPainter, val more: VectorPainter, val plus: VectorPainter)
+private class Glyphs(val lock: VectorPainter, val more: VectorPainter, val plus: VectorPainter, val back: VectorPainter, val reload: VectorPainter)
 
-/** 0 to 1 as [t] runs from [a] to [b], eased at both ends and never past them. */
+/** 0 to 1 as [t] runs from [a] to [b], eased at both ends and never past them: how a fingertip moves. */
 private fun seg(t: Float, a: Float, b: Float): Float {
     val x = ((t - a) / (b - a)).coerceIn(0f, 1f)
     return x * x * (3f - 2f * x)
 }
+
+/** the same run on a critically damped spring, like the app's own motion: quick off the mark, a long soft landing, no overshoot */
+private fun settle(t: Float, a: Float, b: Float): Float {
+    val x = ((t - a) / (b - a)).coerceIn(0f, 1f) * Damped
+    return (1f - (1f + x) * exp(-x)) / (1f - (1f + Damped) * exp(-Damped))
+}
+
+/** the fingertip's opacity for a gesture running from [from] to [to]: in just before, out just after */
+private fun shown(t: Float, from: Float, to: Float) = seg(t, from - Fade, from) * (1f - seg(t, to, to + Fade))
+
+/** The after-state fades out and the loop starts over, fading in. */
+private fun restartFade(t: Float) = if (t >= Restart) seg(t, Restart, 1f) else 1f - seg(t, Restart - 0.07f, Restart)
 
 /** Draws [block] as one layer at [alpha], so overlapping shapes fade together. */
 private inline fun DrawScope.layer(alpha: Float, block: DrawScope.() -> Unit) {
@@ -195,100 +237,132 @@ private fun DrawScope.page(s: Screen, c: Ink, seed: Int, scroll: Float = 0f) {
     }
 }
 
-/** The address pill in ink: the padlock, and the host in the middle. */
-private fun DrawScope.pill(r: Rect, s: Screen, c: Ink, g: Glyphs) {
-    drawRoundRect(c.ink, r.topLeft, r.size, CornerRadius(r.height / 2))
-    glyph(g.lock, Offset(r.left + r.height / 2, r.center.y), s.pill / 4, c.paper)
-    textLine(r.center.x - s.pill, r.center.y, 2 * s.pill, s.line, c.paper)
+/** the address pill as BottomBar lays it out: padlock and reload at its ends, fading as [details] goes to 0, the host between at [k] of its size */
+private fun DrawScope.pill(r: Rect, s: Screen, c: Ink, g: Glyphs, details: Float = 1f, k: Float = 1f) {
+    drawRoundRect(c.glass, r.topLeft, r.size, CornerRadius(r.height / 2))
+    if (details > 0f) {
+        val tint = c.ink.copy(alpha = details)
+        glyph(g.lock, Offset(r.left + 23 * s.dp, r.center.y), 12 * s.dp, tint)
+        glyph(g.reload, Offset(r.right - 23 * s.dp, r.center.y), 17 * s.dp, tint)
+    }
+    textLine(r.center.x - s.host * k / 2, r.center.y, s.host * k, s.line * k, c.ink)
 }
 
-private fun DrawScope.button(x: Float, s: Screen, fill: Color, p: VectorPainter, tint: Color) {
-    val at = Offset(x, s.barTop + s.pill / 2)
-    drawCircle(fill, s.pill / 2, at)
-    glyph(p, at, s.pill / 2, tint)
+/** one of the bar's round buttons, centred on [at] and scaled by [k] about its middle */
+private fun DrawScope.round(at: Offset, k: Float, s: Screen, c: Ink, p: VectorPainter) {
+    if (k <= 0f) return
+    withTransform({ scale(k, k, at) }) {
+        drawCircle(c.glass, s.pill / 2, at)
+        glyph(p, at, s.pill / 2, c.ink)
+    }
 }
 
-/** The menu button at the bar's end. */
-private fun DrawScope.buttons(s: Screen, c: Ink, g: Glyphs) {
-    button(s.w - s.gap - s.pill / 2, s, c.tone(Soft), g.more, c.ink)
+private fun DrawScope.menu(s: Screen, c: Ink, g: Glyphs) =
+    round(Offset(s.w - s.gap - s.pill / 2, s.barTop + s.pill / 2), 1f, s, c, g.more)
+
+/**
+ * the whole bar at collapse [p], laid out as BottomBar does: the pill shrinks to the host label, its middle
+ * travelling to the screen's with the bottom edge staying put, the host shrinks from body to caption, the
+ * padlock and reload are gone by [DetailsGone], and the round buttons shrink into the pill's middle, drawn
+ * first so it covers them. [back] is how far the back button has come out
+ */
+private fun DrawScope.bar(s: Screen, c: Ink, g: Glyphs, p: Float, back: Float = 1f) {
+    val start = s.gap + back * (s.pill + s.gap)
+    val end = s.w - 2 * s.gap - s.pill
+    val width = lerp(end - start, s.host * s.small + s.mini, p)
+    val height = lerp(s.pill, s.mini, p)
+    val x = lerp((start + end) / 2, s.w / 2, p)
+    val r = Rect(x - width / 2, s.barTop + s.pill - height, x + width / 2, s.barTop + s.pill)
+    val tucked = max(p, 1f - back)
+    round(Offset(lerp(s.w - s.gap - s.pill / 2, x, p), r.center.y), 1f - p, s, c, g.more)
+    round(Offset(lerp(s.gap + s.pill / 2, x, tucked), r.center.y), 1f - tucked, s, c, g.back)
+    pill(r, s, c, g, details = 1f - p / DetailsGone, k = lerp(1f, s.small, p))
 }
 
 /** The fingertip, as wide as the pill is tall, and the streak of where it has been. */
 private fun DrawScope.touch(from: Offset, at: Offset, alpha: Float, s: Screen, c: Ink) {
     if (alpha <= 0f) return
+    val radius = s.pill / 2 * (0.75f + 0.25f * alpha)
     drawLine(c.accent.copy(alpha = 0.16f * alpha), from, at, s.pill, StrokeCap.Round)
-    drawCircle(c.accent.copy(alpha = 0.3f * alpha), s.pill / 2, at)
-    drawCircle(c.accent.copy(alpha = alpha), s.pill / 2, at, style = Stroke(s.stroke))
+    drawCircle(c.accent.copy(alpha = 0.3f * alpha), radius, at)
+    drawCircle(c.accent.copy(alpha = alpha), radius, at, style = Stroke(s.stroke))
 }
 
-/** In, the gesture, out: the fingertip's opacity over a loop whose gesture ends at [end]. */
-private fun shownFinger(t: Float, end: Float) = seg(t, 0.04f, 0.12f) * (1f - seg(t, end, end + 0.08f))
-
-/** The after-state fades out and the loop starts over, fading in. */
-private fun restartFade(t: Float) = if (t >= Restart) seg(t, Restart, 1f) else 1f - seg(t, Restart - 0.07f, Restart)
-
-/** Scrolling the page tucks the bar into a small host label; then it all comes back. */
+/** scrolling the page: the bar melts into its host label as the content moves up, and comes back as it moves down */
 private fun DrawScope.barScene(t: Float, s: Screen, c: Ink, g: Glyphs) {
-    val scroll = seg(t, 0.12f, 0.5f) * (1f - seg(t, 0.78f, 0.96f))
+    val down = seg(t, 0.12f, 0.36f)
+    val up = seg(t, 0.60f, 0.84f)
+    // the collapse follows the scroll over the strip the bar takes (BrowserScreen's dynamicPx), then holds; scrolling back unfolds it the same way
+    val strip = s.pill + 2 * s.gap
+    val p = min(1f, s.reach * down / strip) - min(1f, s.reach * up / strip)
     phone(s, c) {
-        page(s, c, seed = 0, scroll = s.reach * scroll)
-        layer(1f - seg(scroll, 0f, 0.5f)) {
-            translate(top = s.gap * scroll) {
-                pill(Rect(s.gap, s.barTop, s.gap + s.slot, s.barTop + s.pill), s, c, g)
-                buttons(s, c, g)
-            }
-        }
-        layer(seg(scroll, 0.5f, 1f)) {
-            val label = Rect(Offset(s.w / 2 - s.pill, s.h - s.gap - s.mini), Size(2 * s.pill, s.mini))
-            drawRoundRect(c.ink, label.topLeft, label.size, CornerRadius(s.mini / 2))
-            textLine(label.center.x - s.pill / 2, label.center.y, s.pill, s.line, c.paper)
-        }
+        page(s, c, seed = 0, scroll = s.reach * (down - up))
+        bar(s, c, g, p)
     }
-    val from = Offset(s.w / 2, (s.h + s.reach) / 2)
-    touch(from, from.copy(y = from.y - s.reach * scroll), shownFinger(t, 0.5f), s, c)
+    val x = s.w / 2
+    touch(Offset(x, s.h * 0.62f), Offset(x, s.h * 0.62f - s.reach * down), shown(t, 0.12f, 0.36f), s, c)
+    touch(Offset(x, s.h * 0.4f), Offset(x, s.h * 0.4f + s.reach * up), shown(t, 0.6f, 0.84f), s, c)
 }
 
-/** Swiping the pill left: past the last tab comes a new one, and its pill opens into the address field. */
+/**
+ * swiping the pill left twice: to the next tab, then past the last one to a new tab, whose pill opens into
+ * the address field as the keyboard comes up. the pill follows the finger, then is let go and settles on a
+ * spring, as the real one does
+ */
 private fun DrawScope.sidewaysScene(t: Float, s: Screen, c: Ink, g: Glyphs) {
-    val restart = t >= Restart
-    val drag = if (restart) 0f else seg(t, 0.12f, 0.48f)
-    val open = if (restart) 0f else seg(t, 0.52f, 0.7f)
+    val visible = restartFade(t)
+    val u = if (t >= Restart) 0f else t
     val stride = s.slot + s.gap
-    val wider = s.w - 2 * s.gap - s.slot
+    fun hop(a: Float, b: Float): Float {
+        val follow = Follow * seg(u, a, b)
+        return follow + (1f - follow) * settle(u, b, b + Land)
+    }
+    val pos = hop(0.10f, 0.19f) + hop(0.35f, 0.44f)
+    val open = settle(u, 0.58f, 0.70f)
     // the keyboard comes up, and the field and the editor's sites ride on it
     val rise = ((KeyRows.size + 1) * s.pill + 2 * s.gap) * open
-    val shown = restartFade(t)
+    val wider = s.w - 2 * s.gap - s.slot
+    val slot = Rect(s.gap, s.barTop, s.gap + s.slot, s.barTop + s.pill)
     phone(s, c) {
-        layer(shown) {
-            translate(left = -s.w * drag) { page(s, c, seed = 0) }
+        layer(visible) {
+            if (pos < 1f) translate(left = -s.w * pos) { page(s, c, seed = 0) }
+            if (pos > 0f && pos < 2f) translate(left = s.w * (1f - pos)) { page(s, c, seed = 1) }
             // the new tab: the editor's own page, on the ground
-            translate(left = s.w * (1f - drag)) {
-                drawRect(c.ground, size = Size(s.w, s.h))
-                layer(open) { translate(top = -rise) { editor(s, c) } }
+            if (pos > 1f) {
+                translate(left = s.w * (2f - pos)) {
+                    drawRect(c.ground, size = Size(s.w, s.h))
+                    layer(open) { translate(top = -rise) { editor(s, c) } }
+                }
             }
-            layer(1f - open) { buttons(s, c, g) }
+            layer(1f - open) { menu(s, c, g) }
             keyboard(s.h - rise, s, c)
-            // the new tab's pill: a plus, then the field with its cursor
-            fun field(r: Rect) {
-                drawRoundRect(c.ink, r.topLeft, r.size, CornerRadius(s.pill / 2))
-                glyph(g.plus, r.center, s.pill / 2, c.paper.copy(alpha = 1f - open))
-                val x = r.left + s.pill / 2
-                drawLine(c.accent.copy(alpha = open), Offset(x, r.center.y - s.pill / 4), Offset(x, r.center.y + s.pill / 4), s.stroke)
-            }
-            val slot = Rect(s.gap, s.barTop, s.gap + s.slot, s.barTop + s.pill)
             if (open > 0f) {
-                field(Rect(slot.left, slot.top - rise, slot.right + wider * open, slot.bottom - rise))
+                // the new tab's pill has become the field, with its cursor, and has risen with the keyboard
+                val field = Rect(slot.left, slot.top - rise, slot.right + wider * open, slot.bottom - rise)
+                drawRoundRect(c.glass, field.topLeft, field.size, CornerRadius(s.pill / 2))
+                val x = field.left + s.pill / 2
+                drawLine(c.accent, Offset(x, field.center.y - s.pill / 4), Offset(x, field.center.y + s.pill / 4), s.stroke)
             } else {
-                // the pills pass through a pill-shaped window, so their ends stay round
-                clipPath(Path().apply { addRoundRect(RoundRect(slot, CornerRadius(s.pill / 2))) }) {
-                    pill(slot.translate(-stride * drag, 0f), s, c, g)
-                    field(slot.translate(stride * (1f - drag), 0f))
+                // the pills pass through the strip's slot, cut off at its sides as the real bar's are
+                clipRect(slot.left, slot.top - s.pill, slot.right, slot.bottom + s.pill) {
+                    repeat(3) { i ->
+                        val r = slot.translate(stride * (i - pos), 0f)
+                        if (i < 2) pill(r, s, c, g, k = 1f - 0.15f * i) else newTab(r, s, c)
+                    }
                 }
             }
         }
     }
-    val from = Offset(s.gap + s.slot * 3 / 4, s.barTop + s.pill / 2)
-    touch(from, from.copy(x = from.x - s.slot / 2 * drag), shown * shownFinger(t, 0.48f), s, c)
+    val from = Offset(slot.left + s.slot * 3 / 4, slot.center.y)
+    fun swipe(a: Float, b: Float) = touch(from, from.copy(x = from.x - Follow * stride * seg(u, a, b)), shown(u, a, b), s, c)
+    swipe(0.10f, 0.19f)
+    swipe(0.35f, 0.44f)
+}
+
+/** the new tab's pill: a short line of muted text where a host would be */
+private fun DrawScope.newTab(r: Rect, s: Screen, c: Ink) {
+    drawRoundRect(c.glass, r.topLeft, r.size, CornerRadius(r.height / 2))
+    textLine(r.center.x - s.host * 0.35f, r.center.y, s.host * 0.7f, s.line, c.tone(Strong))
 }
 
 /** The keyboard from [top] down: rows of raised keys on the editor's ground, and the space bar. */
@@ -324,48 +398,77 @@ private fun DrawScope.editor(s: Screen, c: Ink) {
     }
 }
 
-/** Swiping the pill up: the page shrinks into its card among the others, and the overview's buttons rise. */
-private fun DrawScope.upScene(t: Float, s: Screen, c: Ink, g: Glyphs) {
-    val up = if (t >= Restart) 0f else seg(t, 0.12f, 0.5f)
-    val shown = restartFade(t)
-    // two rows of cards and captions fill the screen above the overview's row; pages crop to fit, as thumbnails do
-    val card = Size((s.w - 3 * s.unit) / 2, (s.barTop - s.top - 2 * s.gap - 4 * s.unit) / 2)
-    fun at(i: Int) = Rect(Offset(s.unit + i % 2 * (card.width + s.unit), s.top + i / 2 * (card.height + s.gap + 2 * s.unit)), card)
+/**
+ * swiping the pill up: the page shrinks into its card among the others and the overview's row rises. then a
+ * tap on private: the switch slides over and the overview goes to the private ground, empty; a tap on the
+ * tabs brings the cards back
+ */
+private fun DrawScope.upScene(t: Float, s: Screen, c: Ink, dark: Ink, g: Glyphs) {
+    val visible = restartFade(t)
+    val u = if (t >= Restart) 0f else t
+    val up = seg(u, 0.10f, 0.30f)
+    // 1 while the private side is showing: the switch slides over on a spring, and back
+    val away = settle(u, 0.48f, 0.58f) - settle(u, 0.72f, 0.82f)
     phone(s, c) {
-        layer(shown) {
-            drawRect(lerp(c.paper, c.ground, up), size = Size(s.w, s.h))
-            layer(up) {
-                for (i in 0 until Count) {
-                    val r = at(i)
-                    if (i != OpenTab) sheet(r, s, c) { page(s, c, seed = i) }
-                    drawRoundRect(c.site(i), Offset(r.left, r.bottom + s.gap), Size(s.unit, s.unit), CornerRadius(s.gap / 2))
-                    textLine(r.left + s.unit + s.gap, r.bottom + s.gap + s.unit / 2, r.width / 2, s.line, c.tone(Soft))
-                }
-            }
-            val flying = lerp(Rect(0f, 0f, s.w, s.h), at(OpenTab), up)
-            sheet(flying, s, c) { page(s, c, seed = OpenTab) }
-            val corner = CornerRadius(s.corner * flying.width / s.w)
-            drawRoundRect(c.accent.copy(alpha = seg(up, 0.5f, 1f)), flying.topLeft, flying.size, corner, Stroke(s.stroke))
-            // the bar goes, then the overview's row comes up in its place
-            layer(1f - seg(up, 0f, 0.5f)) {
-                pill(Rect(s.gap, s.barTop, s.gap + s.slot, s.barTop + s.pill), s, c, g)
-                buttons(s, c, g)
-            }
-            val row = seg(up, 0.5f, 1f)
-            layer(row) { translate(top = s.unit * (1f - row)) { cluster(s, c, g) } }
+        layer(visible) {
+            layer(1f - away) { overview(s, c, g, up, away) }
+            layer(away) { emptyOverview(s, dark, g, away) }
         }
     }
     val from = Offset(s.gap + s.slot / 2, s.barTop + s.pill / 2)
-    touch(from, from.copy(y = from.y - s.reach * up), shown * shownFinger(t, 0.5f), s, c)
+    touch(from, from.copy(y = from.y - s.reach * up), shown(u, 0.10f, 0.30f), s, c)
+    // the taps land on the two halves of the switch
+    fun tap(a: Float, half: Float) {
+        val at = Offset(s.row.left + s.row.width * half, s.row.center.y)
+        touch(at, at, shown(u, a, a + 0.02f), s, c)
+    }
+    tap(0.46f, 0.25f)
+    tap(0.70f, 0.75f)
 }
 
-/** The overview's row: the private and normal switch, and a new tab. */
-private fun DrawScope.cluster(s: Screen, c: Ink, g: Glyphs) {
-    val r = Rect(s.gap, s.barTop, s.w - 2 * s.gap - s.pill, s.barTop + s.pill)
+/** the overview as the page shrinks into its card at [up]: cards and captions, the open tab wearing the accent, and the row */
+private fun DrawScope.overview(s: Screen, c: Ink, g: Glyphs, up: Float, away: Float) {
+    // two rows of cards and captions fill the screen above the overview's row; pages crop to fit, as thumbnails do
+    val card = Size((s.w - 3 * s.unit) / 2, (s.barTop - s.top - 2 * s.gap - 4 * s.unit) / 2)
+    fun at(i: Int) = Rect(Offset(s.unit + i % 2 * (card.width + s.unit), s.top + i / 2 * (card.height + s.gap + 2 * s.unit)), card)
+    drawRect(lerp(c.paper, c.ground, up), size = Size(s.w, s.h))
+    layer(up) {
+        for (i in 0 until Count) {
+            val r = at(i)
+            if (i != OpenTab) sheet(r, s, c) { page(s, c, seed = i) }
+            drawRoundRect(c.site(i), Offset(r.left, r.bottom + s.gap), Size(s.unit, s.unit), CornerRadius(s.gap / 2))
+            textLine(r.left + s.unit + s.gap, r.bottom + s.gap + s.unit / 2, r.width / 2, s.line, c.tone(Soft))
+        }
+    }
+    val flying = lerp(Rect(0f, 0f, s.w, s.h), at(OpenTab), up)
+    sheet(flying, s, c) { page(s, c, seed = OpenTab) }
+    val corner = CornerRadius(s.corner * flying.width / s.w)
+    drawRoundRect(c.accent.copy(alpha = seg(up, 0.5f, 1f)), flying.topLeft, flying.size, corner, Stroke(s.stroke))
+    // the bar goes, then the overview's row comes up in its place
+    layer(1f - seg(up, 0f, 0.5f)) { bar(s, c, g, p = 0f, back = 0f) }
+    val row = seg(up, 0.5f, 1f)
+    layer(row) { translate(top = s.unit * (1f - row)) { cluster(s, c, g, away) } }
+}
+
+/** the private side with nothing open: the private ground, a title and a line under it, and the row */
+private fun DrawScope.emptyOverview(s: Screen, c: Ink, g: Glyphs, away: Float) {
+    drawRect(c.ground, size = Size(s.w, s.h))
+    val y = (s.top + s.barTop) / 2
+    textLine(s.w / 2 - s.pill * 0.6f, y, s.pill * 1.2f, 2 * s.line, c.ink)
+    textLine(s.w / 2 - s.pill * 0.9f, y + s.unit + s.line, s.pill * 1.8f, s.line, c.tone(Soft))
+    cluster(s, c, g, away)
+}
+
+/** the overview's row: the private and normal switch, its thumb [away] of the way to the private side, and a new tab */
+private fun DrawScope.cluster(s: Screen, c: Ink, g: Glyphs, away: Float) {
+    val r = s.row
     drawRoundRect(c.tone(Soft), r.topLeft, r.size, CornerRadius(r.height / 2))
-    val on = Rect(r.center.x, r.top, r.right, r.bottom).deflate(s.gap / 2)
+    val half = r.width / 2
+    val on = Rect(r.left + half * (1f - away), r.top, r.left + half * (2f - away), r.bottom).deflate(s.gap / 2)
     drawRoundRect(c.paper, on.topLeft, on.size, CornerRadius(on.height / 2))
-    textLine(on.center.x - s.pill / 2, on.center.y, s.pill, s.line, c.ink)
-    textLine(r.left + r.width / 4 - s.pill / 2, r.center.y, s.pill, s.line, c.tone(Strong))
-    button(s.w - s.gap - s.pill / 2, s, c.tone(Soft), g.plus, c.ink)
+    textLine(r.left + r.width / 4 - s.pill / 2, r.center.y, s.pill, s.line, lerp(c.tone(Strong), c.ink, away))
+    textLine(r.left + r.width * 3 / 4 - s.pill / 2, r.center.y, s.pill, s.line, lerp(c.ink, c.tone(Strong), away))
+    val at = Offset(s.w - s.gap - s.pill / 2, s.barTop + s.pill / 2)
+    drawCircle(c.tone(Soft), s.pill / 2, at)
+    glyph(g.plus, at, s.pill / 2, c.ink)
 }

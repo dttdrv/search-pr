@@ -1,19 +1,23 @@
 package app.pane.browser.ui.browser
 
-import app.pane.browser.ui.components.IconPill
-import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.components.ChromeButton
 import android.app.role.RoleManager
+import android.content.Context
+import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -32,67 +36,103 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.R
 import app.pane.browser.ui.components.EngineIcon
 import app.pane.browser.ui.components.PaneSwitch
-import app.pane.browser.ui.components.PrimaryButton
 import app.pane.browser.ui.components.SectionLabel
 import app.pane.browser.ui.components.Separator
-import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.components.pressDim
+import app.pane.browser.ui.icons.PaneIcons
+import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.Spacing
 import app.pane.browser.ui.theme.entrance
+import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.search.SearchEngines
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sin
 
 /**
- * First launch, as a short carousel: what the bar is, then the two gestures worth knowing (swipe it
- * sideways, swipe it up), then the two choices that matter (search engine, ad blocking). One
- * drawing and a few words a page, never a paragraph. Everything here can be changed in Settings.
+ * first launch, as a carousel you swipe, with nothing to press: a welcome, three small films of the gestures
+ * worth knowing, then the two choices that matter. the app's name is one element for the whole flow, big in
+ * the middle of the welcome and following the swipe up into the header. swiping up on the last page lifts the
+ * carousel away. everything chosen here can be changed in settings.
  */
 @Composable
 fun Onboarding(visible: Boolean, onDone: () -> Unit) {
     val state = remember { MutableTransitionState(visible) }
     state.targetState = visible
     if (!state.currentState && !state.targetState && state.isIdle) return
-    AnimatedVisibility(
-        visibleState = state,
-        exit = fadeOut(Motion.fade(260)) + scaleOut(Motion.smooth(), targetScale = 1.06f),
-    ) {
-        OnboardingContent(onDone)
-    }
+    // it carries on up from wherever the finger left it
+    val exit = if (LocalReduceMotion.current) fadeOut(Motion.fade(0)) else fadeOut(Motion.fade(260)) + slideOutVertically(Motion.pushOffset) { -it / 6 }
+    AnimatedVisibility(visibleState = state, exit = exit) { OnboardingContent(onDone) }
 }
 
 private val choices = SearchEngines.defaults
@@ -100,111 +140,259 @@ private val choices = SearchEngines.defaults
 private class Intro(val scene: Scene, val title: String, val line: String)
 
 private val intro = listOf(
-    Intro(Scene.Bar, "Just the page", "One floating bar does the rest."),
+    Intro(Scene.Bar, "Just the page", "The bar steps aside as you scroll."),
     Intro(Scene.Sideways, "Swipe the bar", "Left for the next tab, then a new one."),
     Intro(Scene.Up, "Swipe it up", "All your tabs, at a glance."),
 )
 
-private val pageCount = intro.size + 1
+// the welcome, the films, then the choices
+private val pageCount = intro.size + 2
 private val lastPage = pageCount - 1
+
+private val HeaderHeight = 56.dp
+
+/** the name in the welcome, as a multiple of its size in the header */
+private const val HeroScale = 2.4f
+
+/** one loop of the prompt's shimmer, and the share of it the band spends crossing the hint */
+private const val PromptMs = 2400
+private const val Sweep = 0.7f
 
 @Composable
 private fun OnboardingContent(onDone: () -> Unit) {
     val container = LocalAppContainer.current
     val context = LocalContext.current
     val colors = PaneTheme.colors
+    val type = PaneTheme.type
+    val name = stringResource(R.string.app_name)
+    val still = rememberStill()
     val scope = rememberCoroutineScope()
+    val haptics = rememberHaptics()
+    val density = LocalDensity.current
     val pager = rememberPagerState(pageCount = { pageCount })
     var engine by remember { mutableIntStateOf(0) }
     var blocker by remember { mutableStateOf(true) }
-    val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
+    var request by remember { mutableStateOf(defaultRoleIntent(context)) }
+    val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { request = defaultRoleIntent(context) }
 
     fun finish() {
         container.settings.update { it.copy(searchEngineId = choices[engine].id, blockAds = blocker, onboardingDone = true) }
         onDone()
     }
 
-    val onLast = pager.currentPage == lastPage
+    val last = pager.currentPage == lastPage
+    fun advance() {
+        if (last) finish() else scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
+    }
+
+    // swiping up on the last page pulls the carousel up with the finger; let go past the threshold and it finishes
+    var pull by remember { mutableFloatStateOf(0f) }
+    val threshold = with(density) { 64.dp.toPx() }
+    val finishNow by rememberUpdatedState(::finish)
+    val connection = remember(pager) {
+        object : NestedScrollConnection {
+            // swiping back down gives the pull up before the page scrolls
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val back = min(pull, max(available.y, 0f))
+                pull -= back
+                return Offset(0f, back)
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (pager.currentPage == lastPage && source == NestedScrollSource.UserInput && available.y < 0f) {
+                    val before = pull
+                    pull -= available.y
+                    if (before < threshold && pull >= threshold) haptics.tick()
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (pull >= threshold) finishNow() else if (pull > 0f) scope.launch { animate(pull, 0f, animationSpec = Motion.smooth()) { v, _ -> pull = v } }
+                return Velocity.Zero
+            }
+        }
+    }
+
+    // the name starts in the middle of the pager and ends in the header; both are read once laid out
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    var stage by remember { mutableStateOf(Rect.Zero) }
+    var header by remember { mutableStateOf(Rect.Zero) }
+    var word by remember { mutableStateOf(IntSize.Zero) }
+    // as big as HeroScale, unless a longer name would not fit between the gutters
+    val hero = if (word.width == 0) HeroScale else min(HeroScale, (stage.width - 2 * with(density) { Spacing.gutter.toPx() }) / word.width)
+    val small = type.title3.fontSize.value / type.largeTitle.fontSize.value
+    val arrival = rememberArrival(NameAt, still)
+    val footer = rememberArrival(FooterAt, still)
 
     Box(
         Modifier
             .fillMaxSize()
             .background(colors.background)
-            .clickable(remember { MutableInteractionSource() }, indication = null) { },
+            .clickable(remember { MutableInteractionSource() }, indication = null) { }
+            .onGloballyPositioned { origin = it.positionInRoot() },
     ) {
-        Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            // The name on the left; a way out on the right until there is nothing left to skip.
-            Row(
-                Modifier.fillMaxWidth().height(56.dp).padding(horizontal = Spacing.gutter),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Pane", style = PaneTheme.type.title3.copy(fontWeight = FontWeight.Medium), color = colors.label)
-                Spacer(Modifier.weight(1f))
-                AnimatedVisibility(visible = !onLast, enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
-                    ChromeButton(PaneIcons.Forward, "Skip", onClick = { scope.launch { pager.animateScrollToPage(lastPage) } }, tint = colors.secondaryLabel)
-                }
-            }
+        Column(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .nestedScroll(connection)
+                .graphicsLayer { translationY = -pull / 2 },
+        ) {
+            // the name's place in the header; it is drawn above, once for every page, and read from here (a layer's
+            // transform does not move a node's accessibility bounds)
+            Spacer(
+                Modifier
+                    .fillMaxWidth()
+                    .height(HeaderHeight)
+                    .semantics { heading(); contentDescription = name }
+                    .onGloballyPositioned { header = it.boundsInRoot() },
+            )
 
             HorizontalPager(
                 state = pager,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier.weight(1f).fillMaxWidth().onGloballyPositioned { stage = it.boundsInRoot() },
                 beyondViewportPageCount = 1,
             ) { page ->
                 // How far this page is from being the one in view, read while drawing.
                 val away = { (page - pager.currentPage) - pager.currentPageOffsetFraction }
-                if (page < intro.size) {
-                    IntroPage(intro[page], away)
-                } else {
-                    SetupPage(engine, { engine = it }, blocker, { blocker = it })
+                when {
+                    page == 0 -> WelcomePage(name, with(density) { (word.height * hero / 2).toDp() }, away, still)
+                    page < lastPage -> IntroPage(intro[page - 1], pager.settledPage == page, away)
+                    else -> SetupPage(engine, { engine = it }, blocker, { blocker = it }, name, request?.let { { roleLauncher.launch(it) } })
                 }
             }
 
-            Indicator(pager, Modifier.align(Alignment.CenterHorizontally).padding(bottom = Spacing.gutter))
-
-            // The action stays put at the bottom; only its words change.
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Spacing.gutter)
-                    .padding(bottom = Spacing.gutter / 2),
+                    .padding(bottom = Spacing.gutter / 2)
+                    .graphicsLayer { alpha = footer.value },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                IconPill(
-                    if (onLast) PaneIcons.Check else PaneIcons.Forward,
-                    if (onLast) "Start Browsing" else "Next",
-                    onClick = { if (onLast) finish() else scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } },
-                    modifier = Modifier.fillMaxWidth().widthIn(max = 480.dp),
+                Indicator(pager)
+                Spacer(Modifier.height(Spacing.gutter / 2))
+                SwipePrompt(
+                    hint = when {
+                        pager.currentPage == 0 -> "Swipe to begin"
+                        last -> "Swipe up to start"
+                        else -> "Swipe"
+                    },
+                    up = last,
+                    still = still,
+                    description = if (last) "Finish" else "Next",
+                    state = "Page ${pager.currentPage + 1} of $pageCount",
+                    onTap = ::advance,
                 )
-                // Reserve the line so the button never jumps between pages.
-                Box(Modifier.height(48.dp), contentAlignment = Alignment.Center) {
-                    if (onLast && Build.VERSION.SDK_INT >= 29) {
-                        val roles = context.getSystemService(RoleManager::class.java)
-                        if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roles.isRoleHeld(RoleManager.ROLE_BROWSER)) {
-                            TextButton(
-                                "Make Pane your default browser",
-                                onClick = { roleLauncher.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER)) },
-                                color = colors.secondaryLabel,
-                                icon = PaneIcons.Globe,
-                            )
-                        }
-                    }
-                }
             }
+        }
+
+        Text(
+            name,
+            style = type.largeTitle,
+            color = colors.label,
+            maxLines = 1,
+            softWrap = false,
+            modifier = Modifier
+                .wrapContentSize(Alignment.TopStart, unbounded = true)
+                .clearAndSetSemantics { }
+                .onSizeChanged { word = it }
+                .graphicsLayer {
+                    // driven by the pager, not a clock: it follows the finger from the welcome to the next page, and back
+                    val travelled = (pager.currentPage + pager.currentPageOffsetFraction).coerceIn(0f, 1f)
+                    val a = arrival.value
+                    val scale = hero * (small / hero).pow(travelled) * (0.94f + 0.06f * a)
+                    scaleX = scale
+                    scaleY = scale
+                    // laid out at the top left and scaled about its middle, so the middle is what travels
+                    val from = stage.center - origin
+                    val to = header.center - origin
+                    translationX = lerp(from.x, to.x, travelled) - size.width / 2
+                    translationY = lerp(from.y, to.y, travelled) - size.height / 2 + (1f - a) * 12.dp.toPx() - pull / 2
+                    alpha = if (stage == Rect.Zero) 0f else a
+                },
+        )
+    }
+}
+
+/** a clock that runs 0 to 1 every [ms] while [run], and rests at [rest] otherwise */
+@Composable
+internal fun rememberLoop(ms: Int, run: Boolean, rest: Float = 0f): Animatable<Float, AnimationVector1D> {
+    val clock = remember { Animatable(rest) }
+    LaunchedEffect(ms, run, rest) {
+        clock.snapTo(rest)
+        if (run) clock.animateTo(1f, infiniteRepeatable(tween(ms, easing = LinearEasing)))
+    }
+    return clock
+}
+
+/** no looping animation: the app's reduce-motion setting, or the system's animations turned off */
+@Composable
+internal fun rememberStill(): Boolean {
+    val reduce = LocalReduceMotion.current
+    val resolver = LocalContext.current.contentResolver
+    return reduce || remember { Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
+}
+
+/** when each piece of the welcome arrives, in ms: the greeting, the name a beat later, the closing line, the prompt */
+private const val GreetingAt = 0
+private const val NameAt = 160
+private const val ClosingAt = 340
+private const val FooterAt = 760
+
+/** 0 to 1 on the app's spring [after] a delay, or a quick fade where motion is off */
+@Composable
+private fun rememberArrival(after: Int, still: Boolean): Animatable<Float, AnimationVector1D> {
+    val progress = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        if (!still) delay(after.toLong())
+        progress.animateTo(1f, if (still) Motion.fade(160) else Motion.smooth())
+    }
+    return progress
+}
+
+/** rises into place as [arrival] runs, and fades [fade] times as fast as the page leaves */
+private fun Modifier.arriving(arrival: Animatable<Float, AnimationVector1D>, away: () -> Float, still: Boolean, fade: Float) = graphicsLayer {
+    val a = away()
+    alpha = (arrival.value * (1f - abs(a) * fade)).coerceIn(0f, 1f)
+    translationX = a * size.width * 0.12f
+    if (!still) translationY = (1f - arrival.value) * 8.dp.toPx()
+}
+
+/** the greeting either side of the name, which [OnboardingContent] draws; [half] is half its height, so both lines sit the same distance from it */
+@Composable
+private fun WelcomePage(name: String, half: Dp, away: () -> Float, still: Boolean) {
+    val colors = PaneTheme.colors
+    val greeting = rememberArrival(GreetingAt, still)
+    val closing = rememberArrival(ClosingAt, still)
+    val lines = PaneTheme.type.title3.copy(fontWeight = FontWeight.Normal)
+    Column(
+        Modifier
+            .fillMaxSize()
+            .clearAndSetSemantics { contentDescription = "Welcome to $name, let's show you the ropes" },
+    ) {
+        Box(Modifier.weight(1f).fillMaxWidth().padding(bottom = half + Spacing.gutter / 2), contentAlignment = Alignment.BottomCenter) {
+            // gone before the name, on its way up, has crossed it
+            Text("Welcome to", style = lines, color = colors.secondaryLabel, modifier = Modifier.arriving(greeting, away, still, fade = 6f))
+        }
+        Box(Modifier.weight(1f).fillMaxWidth().padding(top = half + Spacing.gutter / 2), contentAlignment = Alignment.TopCenter) {
+            Text("Let's show you the ropes", style = lines, color = colors.secondaryLabel, modifier = Modifier.arriving(closing, away, still, fade = 1.4f))
         }
     }
 }
 
-/** A drawing, a title and one line. The drawing drifts and fades as the page leaves. */
+/** a film, a title and one line; the film drifts and fades as the page leaves, and plays while the page is the one in view */
 @Composable
-private fun IntroPage(page: Intro, away: () -> Float) {
+private fun IntroPage(page: Intro, active: Boolean, away: () -> Float) {
     val colors = PaneTheme.colors
     Column(
         Modifier.fillMaxSize().padding(horizontal = Spacing.gutter),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // the drawing takes all the height the words leave
+        // the film takes all the height the words leave
         OnboardingArt(
             page.scene,
+            active,
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
@@ -233,9 +421,16 @@ private fun IntroPage(page: Intro, away: () -> Float) {
     }
 }
 
-/** The last page: the search engine, as plain rows, and one switch. Nothing else. */
+/** the search engine as plain rows, one switch, and the default browser row while this isn't it */
 @Composable
-private fun SetupPage(engine: Int, onEngine: (Int) -> Unit, blocker: Boolean, onBlocker: (Boolean) -> Unit) {
+private fun SetupPage(
+    engine: Int,
+    onEngine: (Int) -> Unit,
+    blocker: Boolean,
+    onBlocker: (Boolean) -> Unit,
+    name: String,
+    onDefault: (() -> Unit)?,
+) {
     val colors = PaneTheme.colors
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -258,6 +453,10 @@ private fun SetupPage(engine: Int, onEngine: (Int) -> Unit, blocker: Boolean, on
                 Separator()
                 ToggleLine("Block ads", checked = blocker, onCheckedChange = onBlocker)
                 Separator()
+                if (onDefault != null) {
+                    DefaultRow("Make $name your default browser", onDefault)
+                    Separator()
+                }
             }
             Spacer(Modifier.height(Spacing.gutter))
         }
@@ -266,7 +465,7 @@ private fun SetupPage(engine: Int, onEngine: (Int) -> Unit, blocker: Boolean, on
 
 /** Page dots: faint grey, and the one in view stretches into an ink pill, handing over to the next as you swipe. */
 @Composable
-private fun Indicator(pager: androidx.compose.foundation.pager.PagerState, modifier: Modifier = Modifier) {
+private fun Indicator(pager: PagerState, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
     val dot = 6.dp
     val wide = 22.dp
@@ -290,6 +489,64 @@ private fun Indicator(pager: androidx.compose.foundation.pager.PagerState, modif
                 }
             },
     )
+}
+
+/**
+ * what to do next, without a button: a few muted words with a band of the accent sweeping through them, like
+ * a chat's "thinking" line, and a chevron drifting the way to swipe. both run off one clock, read while
+ * drawing; with motion off they stand still. a tap, or the accessibility action, does what the swipe does.
+ */
+@Composable
+private fun SwipePrompt(hint: String, up: Boolean, still: Boolean, description: String, state: String, onTap: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = PaneTheme.colors
+    val clock = rememberLoop(PromptMs, run = !still)
+    Crossfade(
+        targetState = hint to up,
+        modifier = modifier
+            .widthIn(min = 160.dp)
+            .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClickLabel = description, onClick = onTap)
+            .clearAndSetSemantics {
+                contentDescription = description
+                stateDescription = state
+                role = Role.Button
+                onClick(description) { onTap(); true }
+            }
+            // SrcAtop paints the band onto the words only, so they need a layer of their own
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                if (still) return@drawWithContent
+                val band = size.width * 0.6f
+                val x = lerp(-band, size.width, (clock.value / Sweep).coerceAtMost(1f))
+                drawRect(
+                    Brush.horizontalGradient(listOf(colors.accent.copy(alpha = 0f), colors.accent, colors.accent.copy(alpha = 0f)), startX = x, endX = x + band),
+                    blendMode = BlendMode.SrcAtop,
+                )
+            },
+        animationSpec = Motion.fade(),
+        label = "hint",
+    ) { (text, vertical) ->
+        Row(
+            Modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
+        ) {
+            Text(text, style = PaneTheme.type.callout, color = colors.secondaryLabel)
+            Icon(
+                if (vertical) PaneIcons.ChevronUp else PaneIcons.ChevronRight,
+                contentDescription = null,
+                tint = colors.accent,
+                modifier = Modifier
+                    .size(20.dp)
+                    .graphicsLayer {
+                        val f = if (still) 0.5f else clock.value
+                        val drift = lerp(-6.dp.toPx(), 6.dp.toPx(), f)
+                        if (vertical) translationY = -drift else translationX = drift
+                        alpha = if (still) 1f else sin(PI.toFloat() * f)
+                    },
+            )
+        }
+    }
 }
 
 /** A search engine: its mark, its name and a radio dot at the end. */
@@ -325,5 +582,31 @@ private fun ToggleLine(title: String, checked: Boolean, onCheckedChange: (Boolea
     ) {
         Text(title, style = PaneTheme.type.body, color = colors.label, modifier = Modifier.weight(1f))
         PaneSwitch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+}
+
+/** asks the phone to make this the default browser */
+@Composable
+private fun DefaultRow(title: String, onClick: () -> Unit) {
+    val colors = PaneTheme.colors
+    Row(
+        Modifier.fillMaxWidth().defaultMinSize(minHeight = 60.dp).pressDim(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(PaneIcons.Globe, null, tint = colors.secondaryLabel, modifier = Modifier.size(22.dp))
+        Text(title, style = PaneTheme.type.body, color = colors.label, modifier = Modifier.weight(1f))
+        Icon(PaneIcons.ChevronRight, null, tint = colors.tertiaryLabel, modifier = Modifier.size(18.dp))
+    }
+}
+
+/** the request to make this the default browser; null where it already is, or the phone can't be asked */
+private fun defaultRoleIntent(context: Context): Intent? {
+    if (Build.VERSION.SDK_INT < 29) return null
+    val roles = context.getSystemService(RoleManager::class.java) ?: return null
+    return if (roles.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roles.isRoleHeld(RoleManager.ROLE_BROWSER)) {
+        roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER)
+    } else {
+        null
     }
 }
