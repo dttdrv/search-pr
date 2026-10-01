@@ -1,12 +1,9 @@
 package app.pane.browser.downloads
 
-import android.Manifest
-import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -17,15 +14,15 @@ import android.webkit.CookieManager
 import android.webkit.MimeTypeMap
 import android.webkit.WebSettings
 import androidx.annotation.RequiresApi
-import androidx.core.app.NotificationChannelCompat
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import app.pane.browser.data.DownloadRecord
 import app.pane.browser.data.DownloadStatus
 import app.pane.browser.data.DownloadsRepository
+import app.pane.browser.engine.Profiles
+import app.pane.core.download.BlobReader
+import app.pane.core.download.BlobStream
 import app.pane.core.download.FileNames
+import app.pane.core.download.Referer
 import app.pane.core.library.UniqueNames
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -65,16 +62,28 @@ data class DownloadRequest(
     /** Bytes the page announced, or `<= 0` when unknown. */
     val contentLength: Long,
     val private: Boolean,
-    /** The page the link was on; sent as the `Referer` when set. */
+    /** the page the link was on; its origin is sent as the `Referer`. */
     val referrer: String? = null,
+    /** reads `blob:` addresses out of the page that made them. */
+    val blobs: BlobReader? = null,
+    /** the form that was posted to get this file, to be sent again. */
+    val form: FormPost? = null,
+    /** what the page called the file: the `download` attribute of the link that led here. */
+    val name: String? = null,
 )
+
+/** a posted form: the web view's download callback reports only the address, so the page remembers the body. */
+class FormPost(val contentType: String, val body: ByteArray)
 
 /**
  * Saves files the page hands over (responses WebView can't render) and direct "Download Link"
  * requests into the user's Downloads.
  *
  * The bytes come from a small in-process downloader (one `HttpURLConnection` per file, streamed
- * through a 64 KB buffer, with the page's cookies and user agent) so no engine is involved.
+ * through a 64 KB buffer, with the page's cookies, user agent and referrer) so no engine is involved.
+ * It stays in-process because the platform `DownloadManager` can't read a blob or a `data:` address out of
+ * a page or send a form again, and records every address in a system database, private tabs' included.
+ * [DownloadService] keeps the process in the foreground meanwhile.
  *
  * Android 10+ writes through MediaStore, so files land in the shared Downloads folder without any
  * storage permission. Older versions use the app's own external Downloads folder and share files
@@ -88,16 +97,6 @@ class DownloadController(
     private val repository: DownloadsRepository,
     private val scope: CoroutineScope,
 ) {
-    /**
-     * Where the `Cookie` header comes from, given the URL and whether the download is private.
-     * Normal downloads use WebView's own cookie jar. Private tabs have a jar of their own, so the
-     * app should point this at it; until it does, private downloads go out without cookies rather
-     * than with the normal profile's. Called on a background thread.
-     */
-    var cookieSource: (url: String, isPrivate: Boolean) -> String? = { url, isPrivate ->
-        if (isPrivate) null else CookieManager.getInstance().getCookie(url)
-    }
-
     private val jobs = ConcurrentHashMap<Long, Job>()
 
     /** The connection a running download is blocked on, so [cancel] can break out of the read. */
@@ -108,18 +107,29 @@ class DownloadController(
     /** Short user-facing messages ("Downloading report.pdf…", "Saved report.pdf") for toasts. */
     val events: SharedFlow<String> = _events.asSharedFlow()
 
+    private val _started = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** emits when a download begins, the moment to ask for the notification permission. */
+    val started: SharedFlow<Unit> = _started.asSharedFlow()
+
     init {
+        // downloads a dead process left half written: their hidden partial files go too
         val startedAt = System.currentTimeMillis()
-        scope.launch { runCatching { repository.markInterrupted(beforeMillis = startedAt) } }
+        scope.launch {
+            runCatching { repository.markInterrupted(beforeMillis = startedAt) }.getOrNull()?.forEach { uri ->
+                withContext(Dispatchers.IO) { runCatching { context.contentResolver.delete(Uri.parse(uri), null, null) } }
+            }
+        }
     }
 
     /**
-     * Starts saving [request]. `http(s):` addresses are fetched, `data:` addresses are decoded.
-     * `blob:` (and anything else) can't be fetched outside the page that owns it, so it says so.
+     * Starts saving [request]. `http(s):` addresses are fetched, `data:` addresses are decoded and `blob:`
+     * addresses are read out of the page that made them. Anything else can't be saved, so it says so.
      */
     fun start(request: DownloadRequest) {
         val url = request.url.trim()
-        if (isWeb(url) || url.startsWith("data:", ignoreCase = true)) {
+        val blob = request.blobs != null && url.startsWith("blob:", ignoreCase = true)
+        if (isWeb(url) || blob || url.startsWith("data:", ignoreCase = true)) {
             scope.launch { begin(request, url) }
         } else {
             _events.tryEmit("Couldn't download this file")
@@ -159,6 +169,8 @@ class DownloadController(
         connections.remove(id)?.let { connection -> scope.launch(Dispatchers.IO) { closeQuietly(connection) } }
     }
 
+    fun cancelAll() = jobs.keys.forEach(::cancel)
+
     /** Removes [record] from the list; with [deleteFile] the file goes too, if Pane still owns it. */
     fun remove(record: DownloadRecord, deleteFile: Boolean) {
         if (record.status == DownloadStatus.Running || record.status == DownloadStatus.Pending) cancel(record.id)
@@ -173,21 +185,24 @@ class DownloadController(
         }
     }
 
-    /** An intent that opens the finished file in another app, or null if there is no file yet. */
+    /** an intent that opens the finished file in another app, or null if there is no file (any more: other apps can delete it). */
     fun viewIntent(record: DownloadRecord): Intent? {
-        val uri = record.contentUri?.let { Uri.parse(it) } ?: return null
+        val uri = existing(record) ?: return null
         return viewIntent(uri, record.mime)
     }
 
-    /** A share sheet for the finished file, or null if there is no file yet. */
+    /** a share sheet for the finished file, or null if there is no file (any more). */
     fun shareIntent(record: DownloadRecord): Intent? {
-        val uri = record.contentUri?.let { Uri.parse(it) } ?: return null
+        val uri = existing(record) ?: return null
         val send = Intent(Intent.ACTION_SEND)
             .setType(record.mime ?: "application/octet-stream")
             .putExtra(Intent.EXTRA_STREAM, uri)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         return Intent.createChooser(send, record.fileName)
     }
+
+    private fun existing(record: DownloadRecord): Uri? =
+        record.contentUri?.let(Uri::parse)?.takeIf { runCatching { context.contentResolver.openAssetFileDescriptor(it, "r")?.close() }.isSuccess }
 
     private fun viewIntent(uri: Uri, mime: String?): Intent =
         Intent(Intent.ACTION_VIEW)
@@ -196,10 +211,10 @@ class DownloadController(
 
     /** Adds the row to the list straight away (name and size are best guesses), then fetches in the background. */
     private suspend fun begin(request: DownloadRequest, url: String) {
-        val name = FileNames.choose(request.contentDisposition, nameSource(url), request.mimeType ?: dataUriMime(url))
+        val name = FileNames.choose(request.contentDisposition, nameSource(url), request.mimeType ?: dataUriMime(url), request.name)
         val mime = mimeFor(name, request.mimeType ?: dataUriMime(url))
         val length = request.contentLength.takeIf { it > 0 } ?: -1L
-        // data: URLs can be megabytes long and say nothing useful; only web addresses are kept.
+        // data: and blob: addresses say nothing useful (a data: one can be megabytes); only web addresses are kept.
         val source = if (request.private || !isWeb(url)) "" else url
         val id = try {
             repository.insert(source, name, mime, length)
@@ -209,27 +224,32 @@ class DownloadController(
             _events.tryEmit("Couldn't download $name")
             return
         }
-        val job = scope.launch(start = CoroutineStart.LAZY) { transfer(id, request, url, name, mime, length) }
+        // the cookie jar is looked up here, on the main thread, where the profile api wants it
+        val cookies = Profiles.cookies(request.private)
+        val job = scope.launch(start = CoroutineStart.LAZY) { transfer(id, request, url, cookies, name, mime, length) }
         jobs[id] = job
         job.invokeOnCompletion {
             jobs.remove(id)
             connections.remove(id)
         }
         _events.tryEmit("Downloading $name…")
+        _started.tryEmit(Unit)
+        DownloadService.start(context)
         job.start()
     }
 
-    private suspend fun transfer(id: Long, request: DownloadRequest, url: String, guessedName: String, guessedMime: String?, guessedLength: Long) {
+    private suspend fun transfer(id: Long, request: DownloadRequest, url: String, cookies: CookieManager?, guessedName: String, guessedMime: String?, guessedLength: Long) {
         var name = guessedName
         var target: Target? = null
         try {
             repository.update(id, status = DownloadStatus.Running)
-            val opened = withContext(Dispatchers.IO) { open(id, request, url) }
+            val opened = withContext(Dispatchers.IO) { open(id, request, url, cookies) }
             // The response knows better than the page what it is called and how big it is.
             val headerName = FileNames.choose(
                 opened.contentDisposition ?: request.contentDisposition,
                 nameSource(opened.url),
                 opened.contentType ?: request.mimeType,
+                request.name,
             )
             val mime = mimeFor(headerName, opened.contentType ?: request.mimeType) ?: guessedMime
             if (headerName != name || mime != guessedMime || (opened.length >= 0 && opened.length != guessedLength)) {
@@ -240,25 +260,26 @@ class DownloadController(
             // leave a target for the cleanup below to discard.
             withContext(Dispatchers.IO) { target = createTarget(name, mime) }
             val created = checkNotNull(target)
-            if (created.name != name) {
-                name = created.name
-                repository.update(id, fileName = name)
-            }
+            name = created.name
+            repository.update(id, fileName = name, contentUri = created.uri.toString())
             val written = withContext(Dispatchers.IO) {
                 val out = context.contentResolver.openOutputStream(created.uri) ?: throw IOException("Can't write ${created.uri}")
                 out.use { sink -> opened.stream.use { copy(id, it, sink) } }
             }
             currentCoroutineContext().ensureActive()
-            withContext(Dispatchers.IO) { publish(created) }
+            // a connection that ends early must not pass for a finished file
+            if (opened.length >= 0 && written != opened.length) throw IOException("Got $written of ${opened.length} bytes")
+            name = withContext(Dispatchers.IO) { publish(created) }
             repository.update(
                 id,
                 status = DownloadStatus.Completed,
                 downloadedBytes = written,
                 totalBytes = written,
                 contentUri = created.uri.toString(),
+                fileName = name,
             )
-            _events.tryEmit("Saved ${created.name}")
-            notifyFinished(id, created.name, created.uri, mime)
+            _events.tryEmit("Saved $name")
+            notifyFinished(id, name, created.uri, mime)
         } catch (e: Exception) {
             // Closing the connection to cancel can surface as an IOException rather than a cancellation.
             val cancelled = e is CancellationException || !currentCoroutineContext().isActive
@@ -271,6 +292,7 @@ class DownloadController(
             if (e is CancellationException) throw e
             if (!cancelled) {
                 _events.tryEmit(if (e is HttpStatusException) "Couldn't download $name (error ${e.code})" else "Couldn't download $name")
+                DownloadNotifications.done(context, id, name, "Couldn't download", DownloadNotifications.list(context))
             }
         } finally {
             withContext(NonCancellable + Dispatchers.IO) { connections.remove(id)?.let { closeQuietly(it) } }
@@ -292,11 +314,13 @@ class DownloadController(
         val length: Long,
     )
 
-    /** Blocking: connects (following redirects by hand so cookies can follow each hop) or decodes a `data:` URL. */
-    private fun open(id: Long, request: DownloadRequest, startUrl: String): Opened {
+    /** blocking: connects (following redirects by hand so cookies can follow each hop), decodes a `data:` URL or reads a blob. */
+    private fun open(id: Long, request: DownloadRequest, startUrl: String, cookies: CookieManager?): Opened {
         if (startUrl.startsWith("data:", ignoreCase = true)) return openDataUri(startUrl)
+        if (startUrl.startsWith("blob:", ignoreCase = true)) return openBlob(request.blobs ?: throw IOException("No page to read $startUrl from"), startUrl)
         val userAgent = request.userAgent?.takeIf { it.isNotBlank() } ?: defaultUserAgent()
         var current = startUrl
+        var form = request.form
         var redirects = 0
         while (true) {
             val connection = URL(current).openConnection() as HttpURLConnection
@@ -306,14 +330,24 @@ class DownloadController(
                 connection.readTimeout = READ_TIMEOUT_MS
                 connection.instanceFollowRedirects = false
                 connection.useCaches = false
-                connection.requestMethod = "GET"
+                connection.requestMethod = if (form != null) "POST" else "GET"
                 connection.setRequestProperty("User-Agent", userAgent)
                 connection.setRequestProperty("Accept", "*/*")
                 // Files are stored as sent; a server's transfer compression must not be undone silently.
                 connection.setRequestProperty("Accept-Encoding", "identity")
-                request.referrer?.takeIf { it.isNotBlank() }?.let { connection.setRequestProperty("Referer", it) }
-                val cookie = runCatching { cookieSource(current, request.private) }.getOrNull()
+                Referer.origin(request.referrer, current)?.let {
+                    connection.setRequestProperty("Referer", it)
+                    if (form != null) connection.setRequestProperty("Origin", it.trimEnd('/'))
+                }
+                val cookie = runCatching { cookies?.getCookie(current) }.getOrNull()
                 if (!cookie.isNullOrEmpty()) connection.setRequestProperty("Cookie", cookie)
+                // the body goes last: writing it sends the headers
+                if (form != null) {
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", form.contentType)
+                    connection.setFixedLengthStreamingMode(form.body.size)
+                    connection.outputStream.use { it.write(form.body) }
+                }
 
                 val code = connection.responseCode
                 if (code in 300..399 && code != HttpURLConnection.HTTP_NOT_MODIFIED) {
@@ -322,6 +356,8 @@ class DownloadController(
                     if (location.isNullOrEmpty()) throw HttpStatusException(code)
                     val next = URL(URL(current), location).toString()
                     if (!isWeb(next) || ++redirects > MAX_REDIRECTS) throw IOException("Bad redirect")
+                    // only 307 and 308 send the form again
+                    if (code != 307 && code != 308) form = null
                     current = next
                     continue
                 }
@@ -356,6 +392,11 @@ class DownloadController(
         }
         val mime = meta.substringBefore(';').trim().ifEmpty { "text/plain" }
         return Opened(ByteArrayInputStream(bytes), uri, mime, null, bytes.size.toLong())
+    }
+
+    private fun openBlob(reader: BlobReader, url: String): Opened {
+        val blob = BlobStream.open(reader, url, BLOB_SLICE)
+        return Opened(blob, url, blob.type.ifEmpty { null }, null, blob.size)
     }
 
     private fun dataUriMime(url: String): String? {
@@ -429,14 +470,14 @@ class DownloadController(
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: throw IOException("MediaStore refused $name")
-        // MediaStore resolves name clashes itself ("report (1).pdf"); record the name it chose.
-        val actual = runCatching {
-            resolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                if (c.moveToFirst()) c.getString(0) else null
-            }
-        }.getOrNull()
-        return Target(uri, actual ?: name, file = null)
+        return Target(uri, displayName(uri) ?: name, file = null)
     }
+
+    private fun displayName(uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull()
 
     private fun createFileTarget(name: String): Target {
         val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: File(context.filesDir, "downloads")
@@ -448,8 +489,11 @@ class DownloadController(
         return Target(uri, unique, file)
     }
 
-    private fun publish(target: Target) {
-        if (target.file == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) publishPending(target.uri)
+    /** makes the finished file visible and returns its name: MediaStore settles a clash ("report (1).pdf") only now. */
+    private fun publish(target: Target): String {
+        if (target.file != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return target.name
+        publishPending(target.uri)
+        return displayName(target.uri) ?: target.name
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
@@ -467,34 +511,16 @@ class DownloadController(
         }
     }
 
-    // The runtime check below is what matters; lint can't follow the SDK-gated permission check.
-    @SuppressLint("MissingPermission")
+    /** a touch opens the file in whichever app takes it, but a file that can run code goes through the list's warning first. */
     private fun notifyFinished(id: Long, name: String, uri: Uri, mime: String?) {
-        val manager = NotificationManagerCompat.from(context)
-        if (!manager.areNotificationsEnabled()) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
+        val tap = if (FileNames.isPotentiallyDangerous(name)) {
+            DownloadNotifications.list(context)
+        } else {
+            // A chooser rather than a bare VIEW intent, so a file no app can open says so instead of doing nothing.
+            val open = Intent.createChooser(viewIntent(uri, mime), name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            PendingIntent.getActivity(context, id.toInt(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         }
-        manager.createNotificationChannel(
-            NotificationChannelCompat.Builder(CHANNEL_ID, NotificationManagerCompat.IMPORTANCE_LOW)
-                .setName("Downloads")
-                .setDescription("Finished downloads")
-                .build(),
-        )
-        // A chooser rather than a bare VIEW intent, so a file no app can open says so instead of doing nothing.
-        val open = Intent.createChooser(viewIntent(uri, mime), name).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val pending = PendingIntent.getActivity(context, id.toInt(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle(name)
-            .setContentText("Download complete")
-            .setContentIntent(pending)
-            .setAutoCancel(true)
-            .setOnlyAlertOnce(true)
-            .build()
-        runCatching { manager.notify(NOTIFICATION_TAG, id.toInt(), notification) }
+        DownloadNotifications.done(context, id, name, "Download complete", tap)
     }
 
     private fun mimeFor(name: String, contentType: String?): String? {
@@ -520,13 +546,12 @@ class DownloadController(
 
     private companion object {
         const val BUFFER_SIZE = 64 * 1024
+        const val BLOB_SLICE = 1L shl 20
         const val PROGRESS_INTERVAL_MS = 250L
         const val CONNECT_TIMEOUT_MS = 20_000
         const val READ_TIMEOUT_MS = 30_000
         const val MAX_REDIRECTS = 8
         const val DATA_PREFIX = "data:"
-        const val CHANNEL_ID = "downloads"
-        const val NOTIFICATION_TAG = "download"
 
         /** Must match the FileProvider `android:authorities` in the manifest. */
         const val AUTHORITY_SUFFIX = ".fileprovider"

@@ -27,6 +27,14 @@ class FileNamesTest {
         assertEquals("ab.txt", FileNames.sanitize("a\u0000b.txt"))
     }
 
+    @Test fun theLinksOwnNameBeatsTheAddressButNotTheServers() {
+        assertEquals("renamed file.txt", FileNames.choose(null, "https://x/inline.txt", "text/plain", "renamed file.txt"))
+        assertEquals("renamed file.txt", FileNames.choose("attachment", "https://x/inline.txt", "text/plain", "renamed file.txt"))
+        assertEquals("server.txt", FileNames.choose("attachment; filename=server.txt", "https://x/inline.txt", "text/plain", "renamed file.txt"))
+        assertEquals("report.pdf", FileNames.choose(null, "blob:https://x/1", "application/pdf", "report"))
+        assertEquals("passwd", FileNames.choose(null, "https://x/", null, "../../passwd"))
+    }
+
     @Test fun capsLength() {
         val long = "a".repeat(300) + ".txt"
         val s = FileNames.sanitize(long)

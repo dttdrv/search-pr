@@ -1,8 +1,11 @@
 package app.pane.browser
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.SearchManager
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
@@ -20,6 +23,7 @@ import app.pane.browser.ui.AppRoot
 import app.pane.browser.ui.browser.BrowserChrome
 import app.pane.browser.ui.browser.KeyboardShortcuts
 import app.pane.browser.ui.navigation.Navigator
+import app.pane.browser.ui.navigation.Route
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
@@ -30,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private val fileChooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         PromptEnvironment.deliverFileResult(it.resultCode, it.data)
     }
+    private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
     private val chooserLauncher: (Intent, (Int, Intent?) -> Unit) -> Unit = { intent, done ->
         PromptEnvironment.pendingFileResult = done
         fileChooser.launch(intent)
@@ -41,6 +46,14 @@ class MainActivity : ComponentActivity() {
         container.sessions.attachHost(this)
         PromptEnvironment.launchFileChooser = chooserLauncher
         setContent { AppRoot(container, navigator) }
+        // a download's progress and result live in a notification: ask the first time one starts (the system stops asking by itself)
+        lifecycleScope.launch {
+            container.downloads.started.collect {
+                if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+        }
 
         lifecycleScope.launch {
             if (ClearOnExit.isPending(container)) ClearOnExit.run(container)
@@ -125,6 +138,10 @@ class MainActivity : ComponentActivity() {
                 browser.submit(url ?: text, tabId = tab, private = false)
                 return true
             }
+            ACTION_SHOW_DOWNLOADS -> {
+                navigator.closeAll()
+                navigator.push(Route.Downloads)
+            }
             ACTION_NEW_TAB, ACTION_NEW_PRIVATE_TAB -> {
                 navigator.closeAll()
                 browser.newTab(private = intent.action == ACTION_NEW_PRIVATE_TAB)
@@ -168,5 +185,6 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val ACTION_NEW_TAB = "app.pane.browser.NEW_TAB"
         const val ACTION_NEW_PRIVATE_TAB = "app.pane.browser.NEW_PRIVATE_TAB"
+        const val ACTION_SHOW_DOWNLOADS = "app.pane.browser.SHOW_DOWNLOADS"
     }
 }

@@ -81,7 +81,7 @@ fun DownloadsScreen() {
             warnVisible = true
             return
         }
-        val intent = downloads.viewIntent(record) ?: return
+        val intent = downloads.viewIntent(record) ?: return toasts.show("File not found", PaneIcons.Warning)
         startOrToast(context, intent, toasts, "No app on this device can open ${record.fileName}")
     }
 
@@ -184,7 +184,8 @@ fun DownloadsScreen() {
                     record = target,
                     onOpen = { openFile(target) },
                     onShare = {
-                        downloads.shareIntent(target)?.let { startOrToast(context, it, toasts, "No app can share this file") }
+                        val send = downloads.shareIntent(target)
+                        if (send == null) toasts.show("File not found", PaneIcons.Warning) else startOrToast(context, send, toasts, "No app can share this file")
                     },
                     onRetry = { retryDownload(target) },
                     onCancel = { downloads.cancel(target.id) },
@@ -216,9 +217,6 @@ fun DownloadsScreen() {
 
 private val DownloadRecord.isFinished: Boolean
     get() = status == DownloadStatus.Completed || status == DownloadStatus.Failed || status == DownloadStatus.Cancelled
-
-private val DownloadRecord.isActive: Boolean
-    get() = status == DownloadStatus.Running || status == DownloadStatus.Pending || status == DownloadStatus.Paused
 
 /** The long-press menu for a download; what it offers depends on where the download stands. */
 private fun menuActions(

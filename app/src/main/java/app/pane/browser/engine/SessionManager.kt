@@ -90,6 +90,7 @@ class SessionManager(
     private val scope: CoroutineScope,
 ) {
     private val pages = LinkedHashMap<String, PaneWebView>()
+    private val bridge = DownloadBridge()
     private val bridges = HashMap<String, PromptBridge>()
     private val backEntries = HashMap<String, BackEntry>()
     private val upgraded = HashMap<String, String>()
@@ -625,8 +626,10 @@ class SessionManager(
     private fun wire(page: PaneWebView, tabId: String, private: Boolean) {
         page.webViewClient = Client(tabId, private)
         page.webChromeClient = Chrome(tabId, private)
+        bridge.attach(page)
         page.setDownloadListener { url, userAgent, disposition, mime, length ->
-            onDownload(DownloadRequest(tabId, url, userAgent, disposition, mime, length, private))
+            val request = DownloadRequest(tabId, url, userAgent, disposition, mime, length, private, page.url, bridge.reader(page))
+            bridge.about(page, url) { name, form -> onDownload(request.copy(name = name, form = form)) }
         }
         page.setOnLongClickListener { view -> longPress(tabId, view as PaneWebView) }
     }
@@ -641,7 +644,7 @@ class SessionManager(
                 // A linked image has two addresses; only the page itself can say which is which.
                 val message = android.os.Handler(android.os.Looper.getMainLooper()) { m ->
                     val data = m.data
-                    onContextMenu(tabId, page.touchX, page.touchY, HitInfo(type, extra, data.getString("url"), data.getString("src") ?: extra, data.getString("title")))
+                    onContextMenu(tabId, page.touchX, page.touchY, HitInfo(type, extra, data.getString("url"), data.getString("src") ?: extra, data.getString("title"), page.url))
                     true
                 }.obtainMessage()
                 page.requestFocusNodeHref(message)
@@ -653,6 +656,7 @@ class SessionManager(
                     linkUrl = if (type == WebView.HitTestResult.SRC_ANCHOR_TYPE) extra else null,
                     imageUrl = if (type == WebView.HitTestResult.IMAGE_TYPE) extra else null,
                     title = null,
+                    pageUrl = page.url,
                 ),
             )
         }

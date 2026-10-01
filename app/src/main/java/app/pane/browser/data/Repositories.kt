@@ -30,7 +30,9 @@ data class DownloadRecord(
     val downloadedBytes: Long,
     val status: DownloadStatus,
     val created: Long,
-)
+) {
+    val isActive: Boolean get() = status == DownloadStatus.Pending || status == DownloadStatus.Running || status == DownloadStatus.Paused
+}
 
 /** Base for repositories: a change counter drives cold flows that re-query on every write. */
 abstract class Repository(protected val database: PaneDatabase) {
@@ -312,19 +314,18 @@ class DownloadsRepository(database: PaneDatabase, private val clock: () -> Long 
 
     /**
      * Downloads created before [beforeMillis] (app start) and still marked as in progress were cut
-     * off when the process died.
+     * off when the process died. returns where their half-written files are.
      */
-    suspend fun markInterrupted(beforeMillis: Long) = write { db ->
-        db.update(
-            "downloads",
-            ContentValues().apply { put("status", DownloadStatus.Failed.ordinal) },
-            "status IN (?, ?, ?) AND created < ?",
-            arrayOf(
-                DownloadStatus.Pending.ordinal.toString(),
-                DownloadStatus.Running.ordinal.toString(),
-                DownloadStatus.Paused.ordinal.toString(),
-                beforeMillis.toString(),
-            ),
+    suspend fun markInterrupted(beforeMillis: Long): List<String> = write { db ->
+        val where = "status IN (?, ?, ?) AND created < ?"
+        val args = arrayOf(
+            DownloadStatus.Pending.ordinal.toString(),
+            DownloadStatus.Running.ordinal.toString(),
+            DownloadStatus.Paused.ordinal.toString(),
+            beforeMillis.toString(),
         )
+        val partial = db.rawQuery("SELECT content_uri FROM downloads WHERE $where AND content_uri IS NOT NULL", args).mapAll { it.getString(0) }
+        db.update("downloads", ContentValues().apply { put("status", DownloadStatus.Failed.ordinal) }, where, args)
+        partial
     }
 }
