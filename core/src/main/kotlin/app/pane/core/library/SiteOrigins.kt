@@ -1,7 +1,7 @@
 package app.pane.core.library
 
 /**
- * Normalises the URIs Gecko reports for stored permissions (`https://example.com/`,
+ * Normalises the URIs stored with site permissions (`https://example.com/`,
  * `https://example.com:8443/`) into origins, so every permission of a site lands in one group.
  */
 object SiteOrigins {

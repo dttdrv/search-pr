@@ -1,41 +1,37 @@
 package app.pane.browser
 
 import android.app.Application
+import android.webkit.WebView
 import androidx.compose.runtime.staticCompositionLocalOf
 import app.pane.browser.data.BookmarksRepository
 import app.pane.browser.data.DownloadsRepository
 import app.pane.browser.data.HistoryRepository
 import app.pane.browser.data.PaneDatabase
 import app.pane.browser.downloads.DownloadController
+import app.pane.browser.engine.AdBlocker
 import app.pane.browser.engine.BrowserController
-import app.pane.browser.engine.EngineRuntime
+import app.pane.browser.engine.FilterLists
 import app.pane.browser.engine.FaviconStore
 import app.pane.browser.engine.PageSnapshots
-import app.pane.browser.engine.PrivacyStats
+import app.pane.browser.engine.Profiles
 import app.pane.browser.engine.PromptQueue
 import app.pane.browser.engine.SessionManager
+import app.pane.browser.engine.SitePermissionStore
 import app.pane.browser.engine.Thumbnails
 import app.pane.browser.engine.WebFetcher
 import app.pane.browser.engine.prompts.ContextMenus
-import app.pane.browser.engine.prompts.PromptEnvironment
-import app.pane.browser.engine.prompts.WebPermissionDelegate
-import app.pane.browser.engine.prompts.WebPromptDelegate
-import app.pane.browser.extensions.ExtensionsManager
-import app.pane.browser.extensions.HelperBridge
+import app.pane.browser.engine.prompts.PromptBridge
 import app.pane.browser.settings.SettingsStore
 import app.pane.core.tabs.BrowserStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
-import org.mozilla.geckoview.GeckoRuntime
 
-/**
- * Manual dependency graph. Created lazily from the main activity so Gecko's child processes,
- * which also run [PaneApp.onCreate], never start a runtime of their own.
- */
+/** Manual dependency graph, created lazily from the main activity. */
 class AppContainer(val app: Application) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -48,49 +44,51 @@ class AppContainer(val app: Application) {
     val prompts = PromptQueue()
     val thumbnails = Thumbnails(app)
     val snapshots = PageSnapshots()
-    val privacyStats = PrivacyStats(app)
-
-    val runtime: GeckoRuntime = EngineRuntime.create(app, settings.current)
-    val fetcher = WebFetcher(runtime)
-    val favicons = FaviconStore(app, fetcher)
-    val sessions = SessionManager(app, runtime, store, settings, history, scope)
+    val sitePermissions = SitePermissionStore(app)
+    val filterLists = FilterLists(app, settings, scope)
+    val adBlocker = AdBlocker(filterLists) { settings.current.blockAds }
+    val fetcher = WebFetcher()
+    val favicons = FaviconStore(app)
+    val sessions = SessionManager(app, store, settings, history, adBlocker, scope)
     val browser = BrowserController(store, sessions, settings)
     val downloads = DownloadController(app, downloadsRepository, scope)
-    val extensions = ExtensionsManager(app, runtime, sessions, browser, store, fetcher, scope)
 
     init {
-        downloads.runtime = runtime
-        PromptEnvironment.install(runtime, settings, store)
-        sessions.promptDelegateFactory = { tabId -> WebPromptDelegate(tabId, prompts) }
-        sessions.permissionDelegateFactory = { tabId -> WebPermissionDelegate(tabId, prompts) }
-        sessions.onExternalResponse = { tabId, response ->
-            downloads.onExternalResponse(tabId, response, store.state.value.tab(tabId)?.isPrivate == true)
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+        // A private profile never survives a process restart.
+        Profiles.dropPrivate()
+
+        // The saved filter index loads in the background; the first update check waits until the UI has been up a moment.
+        filterLists.start()
+        scope.launch {
+            delay(FILTER_CHECK_DELAY_MS)
+            filterLists.updateIfStale()
         }
-        sessions.onTrackerBlocked = privacyStats::increment
+
+        sessions.bridgeFactory = { tabId -> PromptBridge(tabId, prompts, store, sitePermissions, settings) }
+        sessions.onDownload = downloads::start
+        sessions.onContextMenu = { tabId, x, y, hit ->
+            ContextMenus.request(prompts, tabId, store.state.value.tab(tabId)?.isPrivate == true, x, y, hit)
+        }
+        // Site icons come from normal-tab pages and, like history, are only kept while history is on.
+        sessions.onFavicon = { pageUrl, icon ->
+            val isPrivate = store.state.value.tabs.firstOrNull { it.url == pageUrl }?.isPrivate == true
+            if (!isPrivate && settings.current.rememberHistory) favicons.put(pageUrl, icon)
+        }
         sessions.onTabClosed = { tabId ->
             prompts.dismissForTab(tabId)
             thumbnails.remove(tabId)
             snapshots.remove(tabId)
         }
-        sessions.onContextMenu = { tabId, x, y, element ->
-            ContextMenus.request(prompts, tabId, store.state.value.tab(tabId)?.isPrivate == true, x, y, element)
-        }
-        // Site icons are learned from normal-tab pages that have loaded, and, like history, only
-        // remembered while history is on. Private tabs never reach the store.
-        HelperBridge.onIcons = { pageUrl, icons, isPrivate ->
-            if (!isPrivate && settings.current.rememberHistory) {
-                scope.launch { favicons.onPageIcons(pageUrl, icons, isPrivate) }
-            }
-        }
         scope.launch {
             settings.state.drop(1).distinctUntilChanged().collect {
-                EngineRuntime.apply(runtime, it)
                 sessions.applySettings(it)
                 sessions.schedulePersist()
             }
         }
-        extensions.start()
     }
 }
+
+private const val FILTER_CHECK_DELAY_MS = 4_000L
 
 val LocalAppContainer = staticCompositionLocalOf<AppContainer> { error("AppContainer not provided") }

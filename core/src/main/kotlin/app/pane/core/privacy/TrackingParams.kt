@@ -3,8 +3,8 @@ package app.pane.core.privacy
 /**
  * Removes click-tracking parameters from URLs before they are copied or shared.
  *
- * Gecko already strips a remote-managed list during navigation; this covers the copy/share path,
- * which is where tracking IDs usually leak to other people.
+ * Applied to links the browser opens and to the copy/share path, which is where tracking IDs
+ * usually leak to other people.
  */
 object TrackingParams {
     private val exact = setOf(

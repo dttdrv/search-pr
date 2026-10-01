@@ -1,6 +1,5 @@
 package app.pane.browser.ui.prompts
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,20 +19,18 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -47,18 +44,26 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import app.pane.browser.ui.components.OutlineButton
+import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.floating
+import app.pane.browser.ui.components.GlyphSize
+import app.pane.browser.ui.components.LeadingGap
+import app.pane.browser.ui.components.QuietButton
 import app.pane.browser.ui.components.PrimaryButton
+import app.pane.browser.ui.components.RowMargin
 import app.pane.browser.ui.components.SectionLabel
 import app.pane.browser.ui.components.Separator
+import app.pane.browser.ui.components.SheetCardRadius
 import app.pane.browser.ui.components.autofill
 import app.pane.browser.ui.components.excludeFromAutofill
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.EdgeFade
-import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.Spacing
+import app.pane.browser.ui.theme.canScroll
 import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.rememberHaptics
 
@@ -114,23 +119,6 @@ internal fun AlertTextField(
     }
 }
 
-/** A round checkbox: an empty ring, or a solid ink disc with a tick. */
-@Composable
-internal fun CheckCircle(checked: Boolean, modifier: Modifier = Modifier, size: Dp = 22.dp) {
-    val colors = PaneTheme.colors
-    val fill by animateColorAsState(if (checked) colors.accent else Color.Transparent, Motion.fade(150), label = "check")
-    Box(
-        modifier
-            .size(size)
-            .clip(CircleShape)
-            .drawBehind { drawRect(fill) }
-            .then(if (checked) Modifier else Modifier.border(1.5.dp, colors.tertiaryLabel, CircleShape)),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (checked) Icon(PaneIcons.Check, null, tint = colors.onAccent, modifier = Modifier.size(size * 0.62f))
-    }
-}
-
 /** "Block more dialogs", shown inside alerts from a page that keeps opening them. */
 @Composable
 internal fun OptOutRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
@@ -147,7 +135,7 @@ internal fun OptOutRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        CheckCircle(checked, size = 20.dp)
+        Checkbox(checked = checked, onCheckedChange = null)
         Text(
             "Block more dialogs",
             style = PaneTheme.type.footnote,
@@ -188,17 +176,17 @@ internal fun SheetButtons(
     onSecondary: (() -> Unit)? = null,
     sideBySide: Boolean = false,
 ) {
-    val padding = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 16.dp)
+    val padding = Modifier.fillMaxWidth().padding(start = Spacing.gutter, end = Spacing.gutter, top = Spacing.gutter)
     if (sideBySide && secondary != null && onSecondary != null) {
         Row(modifier.then(padding), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlineButton(secondary, onSecondary, Modifier.weight(1f))
-            PrimaryButton(primary, onPrimary, Modifier.weight(1f))
+            QuietButton(secondary, onSecondary, Modifier.weight(1f), icon = PaneIcons.Close)
+            PrimaryButton(primary, onPrimary, Modifier.weight(1f), icon = PaneIcons.Check)
         }
     } else {
         Column(modifier.then(padding), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            PrimaryButton(primary, onPrimary)
+            PrimaryButton(primary, onPrimary, icon = PaneIcons.Check)
             if (secondary != null && onSecondary != null) {
-                OutlineButton(secondary, onSecondary, Modifier.fillMaxWidth())
+                QuietButton(secondary, onSecondary, Modifier.fillMaxWidth(), icon = PaneIcons.Close)
             }
         }
     }
@@ -218,6 +206,7 @@ internal fun FlatRow(
     chevron: Boolean = false,
     onClick: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    icon: ImageVector? = null,
 ) {
     val colors = PaneTheme.colors
     Row(
@@ -225,10 +214,11 @@ internal fun FlatRow(
             .fillMaxWidth()
             .heightIn(min = 54.dp)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 24.dp, vertical = 6.dp),
+            .padding(horizontal = RowMargin, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(LeadingGap),
     ) {
+        if (icon != null) Icon(icon, null, tint = titleColor, modifier = Modifier.size(GlyphSize))
         Text(
             title,
             style = PaneTheme.type.body,
@@ -277,7 +267,7 @@ internal class FlatRows {
 }
 
 /**
- * A group of [FlatRow]s in a sheet: no fill, a hairline between rows (inset to the text), an
+ * A group of [FlatRow]s in a sheet, on one flat card: a hairline between rows (inset to the text), an
  * optional small-capitals [header] and a quiet [footer]. When [entranceIndex] is 0 or more, each
  * row arrives with a staggered entrance starting at that beat.
  */
@@ -287,28 +277,37 @@ internal fun FlatSection(
     header: String? = null,
     footer: String? = null,
     entranceIndex: Int = -1,
+    /** Where the hairline between rows starts: after the glyph column for rows that have glyphs. */
+    separatorInset: Dp = RowMargin,
     rows: FlatRows.() -> Unit,
 ) {
     val colors = PaneTheme.colors
     val built = FlatRows().apply(rows).rows
-    Column(modifier.fillMaxWidth()) {
+    // the same gutters as GroupedSection: headings and footnotes line up with the rows' text.
+    Column(modifier.fillMaxWidth().padding(horizontal = Spacing.gutter)) {
         if (header != null) {
-            SectionLabel(header, modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 4.dp))
+            SectionLabel(header, modifier = Modifier.padding(start = RowMargin, end = RowMargin, top = Spacing.gutter, bottom = Spacing.gutter / 2))
         }
-        built.forEachIndexed { index, row ->
-            Box(if (entranceIndex >= 0) Modifier.entrance(entranceIndex + index) else Modifier) { row() }
-            if (index < built.lastIndex) Separator(Modifier.padding(horizontal = 24.dp))
+        // The group is one flat card on the sheet's grey ground; rows are told apart by a short
+        // hairline inside it, and groups by the space between cards.
+        Column(Modifier.floating(GroupShape, shadow = 0.dp, fill = colors.elevatedSurface)) {
+            built.forEachIndexed { index, row ->
+                Box(if (entranceIndex >= 0) Modifier.entrance(entranceIndex + index) else Modifier) { row() }
+                if (index < built.lastIndex) Separator(Modifier.padding(start = separatorInset, end = RowMargin))
+            }
         }
         if (footer != null) {
             Text(
                 footer,
                 style = PaneTheme.type.footnote,
                 color = colors.secondaryLabel,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 6.dp, bottom = 4.dp),
+                modifier = Modifier.padding(start = RowMargin, end = RowMargin, top = Spacing.gutter / 2),
             )
         }
     }
 }
+
+private val GroupShape = ContinuousRoundedShape(SheetCardRadius)
 
 private val ScrollFadeHeight = 28.dp
 
@@ -320,7 +319,7 @@ private val ScrollFadeHeight = 28.dp
  */
 @Composable
 internal fun BoxScope.ScrollEdges(top: () -> Float, bottom: () -> Float) {
-    val fill = PaneTheme.colors.floating
+    val fill = PaneTheme.colors.background
     EdgeFade(
         top = true,
         height = ScrollFadeHeight,
@@ -341,7 +340,7 @@ internal fun FadingColumn(modifier: Modifier = Modifier, content: @Composable Co
     val scroll = rememberScrollState()
     val fadePx = with(LocalDensity.current) { ScrollFadeHeight.toPx() }
     Box(modifier) {
-        Column(Modifier.fillMaxWidth().verticalScroll(scroll), content = content)
+        Column(Modifier.fillMaxWidth().verticalScroll(scroll, enabled = scroll.canScroll), content = content)
         ScrollEdges(top = { scroll.value / fadePx }, bottom = { (scroll.maxValue - scroll.value) / fadePx })
     }
 }

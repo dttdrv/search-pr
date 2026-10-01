@@ -279,6 +279,7 @@ class DownloadsRepository(database: PaneDatabase, private val clock: () -> Long 
         totalBytes: Long? = null,
         contentUri: String? = null,
         fileName: String? = null,
+        mime: String? = null,
     ) = write { db ->
         val values = ContentValues().apply {
             status?.let { put("status", it.ordinal) }
@@ -286,6 +287,7 @@ class DownloadsRepository(database: PaneDatabase, private val clock: () -> Long 
             totalBytes?.let { put("total_bytes", it) }
             contentUri?.let { put("content_uri", it) }
             fileName?.let { put("file_name", it) }
+            mime?.let { put("mime", it) }
         }
         if (values.size() > 0) db.update("downloads", values, "id = ?", arrayOf(id.toString()))
     }

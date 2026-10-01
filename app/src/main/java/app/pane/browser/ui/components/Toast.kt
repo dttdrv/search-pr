@@ -77,7 +77,7 @@ fun ToastHost(state: ToastState, modifier: Modifier = Modifier) {
         AnimatedContent(
             targetState = toast,
             transitionSpec = {
-                (slideInVertically(Motion.bouncy()) { -it * 2 } + scaleIn(Motion.bouncy(), initialScale = 0.85f) + fadeIn(Motion.fade(120)))
+                (slideInVertically(Motion.smooth()) { -it * 2 } + scaleIn(Motion.smooth(), initialScale = 0.85f) + fadeIn(Motion.fade(120)))
                     .togetherWith(slideOutVertically(Motion.smooth()) { -it * 2 } + scaleOut(Motion.smooth(), targetScale = 0.85f) + fadeOut(Motion.fade(150)))
             },
             contentKey = { it?.id },
@@ -88,7 +88,7 @@ fun ToastHost(state: ToastState, modifier: Modifier = Modifier) {
                     Modifier
                         .widthIn(max = 420.dp)
                         .heightIn(min = 44.dp)
-                        .floating(PaneShapes.pill, shadow = 8.dp)
+                        .floating(PaneShapes.pill)
                         .padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp),

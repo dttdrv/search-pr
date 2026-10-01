@@ -2,9 +2,6 @@ package app.pane.browser.engine
 
 import androidx.core.content.edit
 import app.pane.browser.AppContainer
-import kotlinx.coroutines.suspendCancellableCoroutine
-import org.mozilla.geckoview.StorageController
-import kotlin.coroutines.resume
 
 /**
  * "Clear browsing data on exit": wipes tabs, history, cookies, site data and caches. Runs when
@@ -30,10 +27,10 @@ object ClearOnExit {
         container.thumbnails.clearAll()
         container.favicons.clear()
         container.snapshots.clear()
-        suspendCancellableCoroutine { cont ->
-            container.runtime.storageController.clearData(StorageController.ClearFlags.ALL)
-                .accept({ if (cont.isActive) cont.resume(Unit) }, { if (cont.isActive) cont.resume(Unit) })
-        }
+        WebData.clearCookies()
+        WebData.clearSiteData(container.app)
+        container.sitePermissions.clearAll()
+        container.sessions.clearCache()
         container.app.getSharedPreferences(PREFS, 0).edit { putBoolean(PENDING, false) }
     }
 }

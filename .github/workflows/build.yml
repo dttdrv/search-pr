@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    paths-ignore: ['**.md', '.github/workflows/probe.yml', '.github/workflows/gecko-api.yml']
+    paths-ignore: ['**.md']
   pull_request:
   workflow_dispatch:
 
@@ -32,11 +32,11 @@ jobs:
       - name: Accept SDK licenses
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
       - name: Assemble debug
-        run: ./gradlew :app:assembleDebug -Ppane.abis=arm64-v8a,x86_64 --continue 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+        run: ./gradlew :app:assembleDebug --continue 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
       - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest -Ppane.abis=arm64-v8a,x86_64 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
+        run: ./gradlew :app:testDebugUnitTest 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
       - name: Lint
-        run: ./gradlew :app:lintDebug -Ppane.abis=arm64-v8a,x86_64 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
+        run: ./gradlew :app:lintDebug 2>&1 | tee -a build.log; exit ${PIPESTATUS[0]}
       - name: Error summary
         if: failure()
         run: |
@@ -66,8 +66,8 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '21' }
       - uses: gradle/actions/setup-gradle@v4
-      - name: Assemble release (arm64)
-        run: ./gradlew :app:assembleRelease -Ppane.abis=arm64-v8a 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
+      - name: Assemble release
+        run: ./gradlew :app:assembleRelease 2>&1 | tee build.log; exit ${PIPESTATUS[0]}
       - name: Error summary
         if: failure()
         run: |
@@ -77,5 +77,5 @@ jobs:
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: pane-release-arm64
+          name: pane-release
           path: app/build/outputs/apk/release/*.apk

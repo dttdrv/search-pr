@@ -64,9 +64,14 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="false"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Pane"
         tools:targetApi="36">
+
+        <!-- Google's Safe Browsing check for the pages WebView loads. -->
+        <meta-data
+            android:name="android.webkit.WebView.EnableSafeBrowsing"
+            android:value="true" />
 
         <activity
             android:name=".MainActivity"

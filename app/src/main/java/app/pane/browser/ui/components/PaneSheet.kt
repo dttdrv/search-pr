@@ -1,13 +1,14 @@
 package app.pane.browser.ui.components
 
+import app.pane.browser.ui.icons.PaneIcons
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -21,12 +22,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.overscroll
+import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -45,11 +46,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -59,14 +57,15 @@ import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.floating
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.Spacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 /**
- * A modal sheet that springs up from the bottom, follows the finger (including from nested
- * scrolling content at its top), dismisses on a flick, and shrinks away with the predictive back
+ * A modal sheet that slides up from the bottom, follows a drag down from anywhere on it (the handle,
+ * its rows, the scrim around it) or from scrolling content back at its top, dismisses on a flick,
+ * stretches like every other surface when pulled up, and shrinks away with the predictive back
  * gesture.
  */
 @Composable
@@ -78,11 +77,12 @@ fun PaneSheet(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val colors = PaneTheme.colors
-    val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val dismissNow by rememberUpdatedState(onDismiss)
     val reduceMotion = LocalReduceMotion.current
     var sheetHeight by remember { mutableFloatStateOf(0f) }
+    // From where the card rests to just below the screen.
+    var travel by remember { mutableFloatStateOf(0f) }
     // Starts far off-screen so nothing flashes before the first measurement.
     val offset = remember { Animatable(OFFSCREEN) }
     var shown by remember { mutableStateOf(false) }
@@ -92,9 +92,9 @@ fun PaneSheet(
         if (visible) {
             shown = true
             if (!measuredOnce) return@LaunchedEffect
-            offset.animateTo(0f, if (reduceMotion) Motion.fade(0) else Motion.bouncy())
+            offset.animateTo(0f, if (reduceMotion) Motion.fade(0) else Motion.smooth())
         } else if (shown) {
-            offset.animateTo(sheetHeight.coerceAtLeast(1f) + with(density) { 160.dp.toPx() }, if (reduceMotion) Motion.fade(0) else Motion.smooth())
+            offset.animateTo(travel, if (reduceMotion) Motion.fade(0) else Motion.smooth())
             shown = false
             measuredOnce = false
         }
@@ -107,11 +107,13 @@ fun PaneSheet(
             if (offset.value > sheetHeight * 0.3f || velocity > 1400f) {
                 dismissNow()
             } else {
-                offset.animateTo(0f, Motion.bouncy(), initialVelocity = velocity)
+                offset.animateTo(0f, Motion.smooth(), initialVelocity = velocity)
             }
         }
     }
 
+    // Every drag on the sheet passes through here. Up first lifts a lowered card and what is left
+    // stretches it; down lowers the card once any scrolling content is back at its top.
     val nested = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -146,93 +148,62 @@ fun PaneSheet(
             progress.collect { event -> offset.snapTo(event.progress * sheetHeight * 0.25f) }
             dismissNow()
         } catch (e: CancellationException) {
-            scope.launch { offset.animateTo(0f, Motion.bouncy()) }
+            scope.launch { offset.animateTo(0f, Motion.smooth()) }
             throw e
         }
     }
 
-    val travelExtra = with(density) { 160.dp.toPx() }
-    val origin = LocalSheetOrigin.current
-    var cardBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val stretch = rememberOverscrollEffect()
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .nestedScroll(nested)
+            // Moves nothing (see Modifier.stretch): it hands a drag anywhere on the sheet to [nested] and the card's stretch.
+            .scrollable(rememberScrollableState { 0f }, Orientation.Vertical, enabled = visible, overscrollEffect = stretch),
+    ) {
         val maxHeight = maxHeight * maxHeightFraction
-        val travel = sheetHeight + travelExtra
-        val progress = if (sheetHeight > 0f) (1f - offset.value / travel).coerceIn(0f, 1f) else 0f
+        val bottom = constraints.maxHeight.toFloat()
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = progress }
+                .graphicsLayer { alpha = if (travel > 0f) (1f - offset.value / travel).coerceIn(0f, 1f) else 0f }
                 .background(colors.scrim)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onDismiss),
         )
         Column(
             modifier
                 .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.navigationBars)
+                .windowInsetsPadding(WindowInsets.tappableElement)
                 .imePadding()
-                .padding(start = 10.dp, end = 10.dp, bottom = 10.dp)
+                .padding(start = Spacing.gutter, end = Spacing.gutter, bottom = Spacing.gutter)
                 .fillMaxWidth()
                 .heightIn(max = maxHeight)
-                .onSizeChanged {
-                    val h = it.height.toFloat()
-                    if (!measuredOnce && h > 0f) {
-                        sheetHeight = h
-                        scope.launch {
-                            offset.snapTo(h + travelExtra)
+                // Outside the slide below, so this is where the card rests.
+                .onPlaced {
+                    sheetHeight = it.size.height.toFloat()
+                    travel = bottom - it.positionInParent().y
+                    scope.launch {
+                        if (!measuredOnce) {
+                            offset.snapTo(travel)
                             measuredOnce = true
                         }
-                    } else {
-                        sheetHeight = h
                     }
                 }
-                .onGloballyPositioned { cardBounds = it.boundsInRoot() }
-                .graphicsLayer {
-                    if (origin != null && cardBounds.width > 1f) {
-                        // Grows out of the control that opened it, and shrinks back into it.
-                        val p = 1f - offset.value / travel
-                        val s = 0.3f + 0.7f * p.coerceIn(0f, 1.12f)
-                        scaleX = s
-                        scaleY = s
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(
-                            ((origin.x - cardBounds.left) / cardBounds.width),
-                            ((origin.y - cardBounds.top) / cardBounds.height),
-                        )
-                        alpha = (p * 1.5f).coerceIn(0f, 1f)
-                        // A drag on the card still moves it.
-                        translationY = (offset.value.coerceAtLeast(0f) - (1f - p.coerceIn(0f, 1f)) * travel).coerceAtLeast(0f)
-                    } else {
-                        translationY = offset.value.coerceAtLeast(0f)
-                        // A whisper of scale as it lands, so the card feels like it settles into place.
-                        val s = 0.96f + 0.04f * progress
-                        scaleX = s
-                        scaleY = s
-                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
-                    }
-                }
-                .floating(SheetShape, shadow = 16.dp)
+                .graphicsLayer { translationY = offset.value }
+                .floating(SheetShape, fill = colors.background)
                 .pointerInput(Unit) { detectTapGestures { } }
-                .nestedScroll(nested),
+                // Inside the card, like a list in its frame: the rows stretch, the card keeps its shape.
+                .overscroll(stretch)
+                .padding(bottom = Spacing.gutter),
         ) {
-            // A short, quiet handle; also the drag handle for sheets whose content doesn't scroll.
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(24.dp)
-                    .draggable(
-                        orientation = Orientation.Vertical,
-                        state = rememberDraggableState { delta ->
-                            scope.launch { offset.snapTo((offset.value + delta).coerceAtLeast(0f)) }
-                        },
-                        onDragStopped = { velocity -> settle(velocity) },
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
+            // A short, quiet handle, inside the top margin.
+            Box(Modifier.fillMaxWidth().height(Spacing.gutter), contentAlignment = Alignment.Center) {
                 Box(
                     Modifier
                         .width(32.dp)
                         .height(3.dp)
                         .clip(PaneShapes.pill)
-                        .background(colors.tertiaryLabel),
+                        .background(colors.faint),
                 )
             }
             content()
@@ -240,11 +211,17 @@ fun PaneSheet(
     }
 }
 
-/** A sheet's corners: a flat floating card. */
-private val SheetShape = ContinuousRoundedShape(28.dp)
+/** The radius of a sheet's corners, which every corner inside it derives from. */
+private val SheetRadius = 32.dp
 
-/** Where a sheet should grow from (root coordinates), e.g. the menu button; null slides it up from the bottom. */
-val LocalSheetOrigin = androidx.compose.runtime.staticCompositionLocalOf<Offset?> { null }
+/**
+ * Corners of a card set in a sheet by [Spacing.gutter]: concentric with the sheet's, so the gap
+ * between the two curves is as wide round the corner as along the sides.
+ */
+val SheetCardRadius = (SheetRadius - Spacing.gutter).coerceAtLeast(0.dp)
+
+/** A sheet's corners: a flat floating card. */
+private val SheetShape = ContinuousRoundedShape(SheetRadius)
 
 private const val OFFSCREEN = 100_000f
 
@@ -264,7 +241,7 @@ fun SheetHeader(title: String, onDone: (() -> Unit)? = null, doneLabel: String =
             modifier = Modifier.weight(1f),
         )
         if (onDone != null) {
-            TextButton(doneLabel, onClick = onDone, bold = true)
+            ChromeButton(PaneIcons.Close, doneLabel, onClick = onDone)
         }
     }
 }

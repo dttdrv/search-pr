@@ -14,7 +14,9 @@ import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.components.EngineIcon
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.LargeTitleScaffold
+import app.pane.browser.ui.components.LeadingGap
 import app.pane.browser.ui.components.ListRow
+import app.pane.browser.ui.components.RowMargin
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
@@ -23,9 +25,9 @@ import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.search.SearchEngines
 
-/** Engine logos are 28dp; with the 20dp margin and 16dp gap, titles (and hairlines) start at 64dp. */
+/** Engine logos are 28dp; hairlines start where the titles do, after the margin, the logo and the gap. */
 private val ENGINE_ICON = 28.dp
-private val EngineSeparatorInset = 64.dp
+private val EngineSeparatorInset = RowMargin + ENGINE_ICON + LeadingGap
 
 /**
  * The default engine and suggestions. Engines that don't build a profile of you say "Private" in

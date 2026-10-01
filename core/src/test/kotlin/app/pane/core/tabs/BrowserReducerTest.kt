@@ -119,7 +119,7 @@ class BrowserReducerTest {
 
     @Test fun undoDoesNotResurrectEngineFlags() {
         add("a")
-        store.updateTab("a") { it.copy(fullscreen = true, mediaPlaying = true, canGoBack = true, crashed = true) }
+        store.updateTab("a") { it.copy(fullscreen = true, mediaPlaying = true, canGoBack = true, crashed = true, readerable = true, inReaderMode = true) }
         store.dispatch(BrowserAction.RemoveTab("a"))
         store.dispatch(BrowserAction.UndoClose)
         val tab = store.state.value.selectedTab!!
@@ -127,5 +127,7 @@ class BrowserReducerTest {
         assertEquals(false, tab.mediaPlaying)
         assertEquals(false, tab.canGoBack)
         assertEquals(false, tab.crashed)
+        assertEquals(false, tab.readerable)
+        assertEquals(false, tab.inReaderMode)
     }
 }

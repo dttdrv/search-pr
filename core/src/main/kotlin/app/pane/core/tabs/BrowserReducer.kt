@@ -52,7 +52,8 @@ object BrowserReducer {
         val closed = removed.filter { !it.value.isPrivate }
             .map { ClosedTab(it.value.copy(
                 loading = false, progress = 0, canGoBack = false, canGoForward = false,
-                fullscreen = false, mediaPlaying = false, crashed = false, inReaderMode = false,
+                fullscreen = false, mediaPlaying = false, crashed = false,
+                readerable = false, inReaderMode = false,
             ), it.index, now) }
             .reversed()
         return state.copy(

@@ -1,7 +1,6 @@
 package app.pane.browser.ui.theme
 
 import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.LocalOverscrollFactory
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.foundation.text.selection.TextSelectionColors
@@ -65,9 +64,9 @@ fun PaneTheme(
             LocalHapticsEnabled provides hapticsEnabled,
             LocalReduceMotion provides reduceMotion,
             LocalContentColor provides colors.label,
-            // iOS highlights instead of rippling; a soft, bounded ripple is the closest native equivalent.
-            LocalIndication provides ripple(color = colors.label.copy(alpha = 0.12f)),
-            LocalTextSelectionColors provides TextSelectionColors(colors.accent, colors.accent.copy(alpha = 0.3f)),
+            // A barely-there, bounded wash: the nearest native thing to a row simply dimming.
+            LocalIndication provides ripple(color = colors.label.copy(alpha = 0.08f)),
+            LocalTextSelectionColors provides TextSelectionColors(colors.accent, colors.accent.copy(alpha = 0.18f)),
             content = content,
         )
     }

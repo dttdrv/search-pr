@@ -15,7 +15,7 @@ enum class LinkDecision {
 }
 
 object LinkPolicy {
-    private val engineSchemes = setOf("http", "https", "about", "data", "blob", "javascript", "moz-extension", "resource", "view-source", "ws", "wss")
+    private val engineSchemes = setOf("http", "https", "about", "data", "blob", "javascript", "view-source", "ws", "wss")
     private val alwaysBlocked = setOf("file", "content", "chrome", "jar", "vbscript")
 
     /**

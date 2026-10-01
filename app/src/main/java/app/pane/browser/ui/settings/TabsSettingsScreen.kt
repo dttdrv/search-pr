@@ -86,18 +86,6 @@ fun TabsSettingsScreen() {
                     }
                 }
             }
-
-            item(key = "start") {
-                GroupedSection(modifier = Modifier.arrive(2), header = "Start page") {
-                    row {
-                        SwitchRow(
-                            title = "Show favorites",
-                            checked = settings.showHomeFavorites,
-                            onCheckedChange = { on -> update { it.copy(showHomeFavorites = on) } },
-                        )
-                    }
-                }
-            }
         }
 
         ChoiceSheet(

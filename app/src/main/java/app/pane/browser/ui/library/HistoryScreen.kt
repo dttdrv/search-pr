@@ -1,12 +1,11 @@
 package app.pane.browser.ui.library
 
+import app.pane.browser.ui.components.ChromeButton
 import android.content.Context
 import android.text.format.DateUtils
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -38,6 +37,7 @@ import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.Spacing
 import app.pane.core.library.DaySection
 import app.pane.core.library.HistoryGrouping
 import app.pane.core.library.TimeRange
@@ -107,12 +107,12 @@ fun HistoryScreen() {
             onBack = navigator::pop,
             backLabel = backLabel,
             actions = {
-                TextButton(
+                ChromeButton(
+                    PaneIcons.Trash,
                     "Clear",
                     onClick = { clearVisible = true },
                     enabled = !items.isNullOrEmpty() || query.isNotBlank(),
-                    color = colors.destructive,
-                    modifier = Modifier.heightIn(min = 48.dp),
+                    tint = colors.destructive,
                 )
             },
             header = {
@@ -120,7 +120,7 @@ fun HistoryScreen() {
                     value = query,
                     onValueChange = { query = it },
                     placeholder = "Search history",
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = Spacing.gutter, vertical = 8.dp),
                 )
             },
         ) {
@@ -229,7 +229,6 @@ fun HistoryScreen() {
                     )
                 }
             }
-            Spacer(Modifier.height(24.dp))
         }
     }
 }

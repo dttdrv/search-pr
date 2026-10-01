@@ -52,6 +52,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -78,12 +79,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.browser.BrowserChrome
 import app.pane.browser.ui.browser.siteName
-import app.pane.browser.ui.components.AlertAction
-import app.pane.browser.ui.components.AlertStyle
-import app.pane.browser.ui.components.DotText
 import app.pane.browser.ui.components.FloatingCircle
 import app.pane.browser.ui.components.SiteIcon
-import app.pane.browser.ui.components.PaneAlert
 import app.pane.browser.ui.components.PrimaryButton
 import app.pane.browser.ui.components.SegmentedControl
 import app.pane.browser.ui.components.pressScale
@@ -92,9 +89,11 @@ import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.canScroll
 import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.floating
 import app.pane.browser.ui.theme.rememberHaptics
+import app.pane.browser.ui.theme.stretch
 import app.pane.core.tabs.TabState
 import app.pane.core.url.UrlDisplay
 import kotlinx.coroutines.launch
@@ -105,7 +104,7 @@ import kotlin.math.roundToInt
 private class Flight(val tabId: String?, val bitmap: Bitmap?, val card: Rect, val page: Rect, val isPrivate: Boolean)
 
 /** Corner radius shared by the cards and the flying snapshot, so the hand-off has no seam. */
-private val CardRadius = 16.dp
+private val CardRadius = 22.dp
 
 /** The floating control cluster: its height, the gap under it, and how far below the screen it waits. */
 private val ClusterHeight = 58.dp
@@ -115,8 +114,8 @@ private val ClusterRest = 140.dp
 /**
  * The tab overview. Opening zooms the live page down into its card (the snapshot literally flies
  * there on a spring); choosing a card zooms it back up. Cards are flat (a hairline, the open one in
- * ink) and swipe sideways to close. A floating cluster (New · Private/Tabs · Done) rises over the
- * grid, which scrolls beneath it. While [privateLocked], private tabs show only a line saying so
+ * ink) and swipe sideways to close. A floating cluster (Private/Tabs · New) rises over the grid,
+ * which scrolls beneath it; back or a card returns to the page. While [privateLocked], private tabs show only a line saying so
  * and never fly in or out.
  */
 @Composable
@@ -140,7 +139,6 @@ fun TabSwitcher(
     var shown by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
     var flight by remember { mutableStateOf<Flight?>(null) }
-    var confirmCloseAll by remember { mutableStateOf(false) }
     val cardRects = remember { mutableStateMapOf<String, Rect>() }
     val normalGrid = rememberLazyGridState()
     val privateGrid = rememberLazyGridState()
@@ -197,8 +195,8 @@ fun TabSwitcher(
             }
             progress.snapTo(0f)
             cluster.snapTo(0f)
-            launch { cluster.animateTo(1f, if (settings.reduceMotion) Motion.fade(0) else Motion.bouncy()) }
-            progress.animateTo(1f, if (settings.reduceMotion) Motion.fade(0) else Motion.bouncy())
+            launch { cluster.animateTo(1f, if (settings.reduceMotion) Motion.fade(0) else Motion.smooth()) }
+            progress.animateTo(1f, if (settings.reduceMotion) Motion.fade(0) else Motion.smooth())
             flight = null
         } else if (!visible) {
             flight = null
@@ -272,7 +270,7 @@ fun TabSwitcher(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth()
-                            ,
+                            .stretch(),
                     ) { privateMode ->
                         val modeTabs = state.tabsIn(privateMode)
                         when {
@@ -281,9 +279,11 @@ fun TabSwitcher(
                             else -> BoxWithConstraints(Modifier.fillMaxSize()) {
                                 val columns = if (maxWidth > 600.dp) 4 else if (maxWidth > 420.dp) 3 else 2
                                 val aspect = if (chrome.pageRect.width > 0f) (chrome.pageRect.height / chrome.pageRect.width).coerceIn(1f, 1.55f) else 1.4f
+                                val grid = if (privateMode) privateGrid else normalGrid
                                 LazyVerticalGrid(
                                     columns = GridCells.Fixed(columns),
-                                    state = if (privateMode) privateGrid else normalGrid,
+                                    state = grid,
+                                    userScrollEnabled = grid.canScroll,
                                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = clusterSpace),
                                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -360,10 +360,8 @@ fun TabSwitcher(
                     }
                 }
 
-                // The floating cluster, echoing the browser's own bar (circle · pill · circle): a plus for a
-                // new tab on the left, the Private / Tabs switch in the middle, and an ink check to go back
-                // to the page on the right. It rises from below on a bouncy spring and hovers clear of the
-                // screen edges; the grid scrolls beneath it.
+                // The floating cluster: the Private / Tabs switch, then a plus for a new tab on the right.
+                // It rises from below and hovers clear of the screen edges; the grid scrolls beneath it.
                 Row(
                     Modifier
                         .align(Alignment.BottomCenter)
@@ -374,6 +372,24 @@ fun TabSwitcher(
                         .graphicsLayer { translationY = (1f - cluster.value) * ClusterRest.toPx() },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                            .height(ClusterHeight - 4.dp)
+                            .floating(PaneShapes.pill)
+                            .padding(4.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        val normalCount = state.normalTabs.size
+                        SegmentedControl(
+                            options = listOf("Private", if (normalCount == 1) "1 Tab" else "$normalCount Tabs"),
+                            selectedIndex = if (showPrivate) 0 else 1,
+                            onSelect = { chrome.showPrivateTabs = it == 0 },
+                            modifier = Modifier.fillMaxWidth(),
+                            height = ClusterHeight - 12.dp,
+                        )
+                    }
                     FloatingCircle(
                         onClick = {
                             onNewTab(showPrivate)
@@ -389,64 +405,9 @@ fun TabSwitcher(
                     ) {
                         Icon(PaneIcons.Plus, null, tint = PaneTheme.colors.label, modifier = Modifier.size(24.dp))
                     }
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp)
-                            .height(ClusterHeight - 4.dp)
-                            .floating(PaneShapes.pill, shadow = 6.dp)
-                            .padding(4.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val normalCount = state.normalTabs.size
-                        SegmentedControl(
-                            options = listOf("Private", if (normalCount == 1) "1 Tab" else "$normalCount Tabs"),
-                            selectedIndex = if (showPrivate) 0 else 1,
-                            onSelect = { chrome.showPrivateTabs = it == 0 },
-                            modifier = Modifier.fillMaxWidth(),
-                            height = ClusterHeight - 12.dp,
-                        )
-                    }
-                    // Tap: back to the page. Long-press: close everything in this mode.
-                    DoneCircle(
-                        onClick = { closeInto(state.selectedTab?.takeIf { it.isPrivate == showPrivate } ?: tabs.lastOrNull()) },
-                        onLongClick = { if (tabs.isNotEmpty()) confirmCloseAll = true },
-                    )
                 }
-
-                PaneAlert(
-                    visible = confirmCloseAll,
-                    title = "Close all ${tabs.size} tabs?",
-                    message = null,
-                    actions = listOf(
-                        AlertAction("Cancel", AlertStyle.Cancel) { confirmCloseAll = false },
-                        AlertAction("Close All", AlertStyle.Destructive) {
-                            confirmCloseAll = false
-                            container.browser.closeAll(showPrivate)
-                            if (showPrivate) container.thumbnails.clearPrivate()
-                        },
-                    ),
-                    onDismissRequest = { confirmCloseAll = false },
-                )
             }
         }
-    }
-}
-
-/** The ink check that returns to the page. Long-press (haptic included) asks to close every tab in this mode. */
-@Composable
-private fun DoneCircle(onClick: () -> Unit, onLongClick: () -> Unit) {
-    val colors = PaneTheme.colors
-    Box(
-        Modifier
-            .size(ClusterHeight - 4.dp)
-            .semantics { contentDescription = "Done" }
-            .pressScale(pressedScale = 0.9f, haptic = true, onLongClick = onLongClick, onClick = onClick)
-            .floating(CircleShape)
-            .background(colors.accent),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(PaneIcons.Check, null, tint = colors.onAccent, modifier = Modifier.size(24.dp))
     }
 }
 
@@ -486,7 +447,7 @@ private fun TabCard(
                             swipe.animateTo(if (swipe.value + velocity * 0.1f > 0) width * 1.3f else -width * 1.3f, Motion.snappy(), initialVelocity = velocity)
                             onClose()
                         } else {
-                            swipe.animateTo(0f, Motion.bouncy(), initialVelocity = velocity)
+                            swipe.animateTo(0f, Motion.smooth(), initialVelocity = velocity)
                         }
                     },
                 ),
@@ -499,12 +460,15 @@ private fun TabCard(
                     .pressScale(pressedScale = 0.97f, onClick = onClick)
                     .graphicsLayer {
                         alpha = if (hidden) 0f else 1f
+                        shadowElevation = 6.dp.toPx()
                         this.shape = shape
                         clip = true
+                        ambientShadowColor = Color.Black.copy(alpha = 0.10f)
+                        spotShadowColor = Color.Black.copy(alpha = 0.18f)
                     }
                     .background(colors.background)
-                    // Flat: a hairline, and the open tab in ink. Drawn over the page image.
-                    .border(if (selected) 2.dp else 1.dp, if (selected) colors.label else colors.hairline, shape),
+                    // No outline: a soft shadow lifts the card, and the open tab wears the accent.
+                    .then(if (selected) Modifier.border(2.dp, colors.accent, shape) else Modifier),
             ) {
                 val bitmap = thumb
                 if (bitmap != null && tab.url.isNotEmpty()) {
@@ -543,9 +507,7 @@ private fun TabCard(
                     Box(
                         Modifier
                             .size(24.dp)
-                            .clip(CircleShape)
-                            .background(colors.background)
-                            .border(1.dp, colors.hairline, CircleShape),
+                            .floating(CircleShape),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(PaneIcons.Close, null, tint = colors.label, modifier = Modifier.size(11.dp))
@@ -561,7 +523,7 @@ private fun TabCard(
                 Text(
                     tab.title.ifBlank { if (tab.url.isEmpty()) "Start Page" else UrlDisplay.toolbarText(tab.url) },
                     style = PaneTheme.type.caption,
-                    color = colors.label,
+                    color = if (selected) colors.label else colors.secondaryLabel,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -570,7 +532,7 @@ private fun TabCard(
     }
 }
 
-/** Nothing open: a short dot-matrix line, and for private browsing one quiet sentence. */
+/** Nothing open: a plain title, and for private browsing one muted line. */
 @Composable
 private fun EmptyTabs(private: Boolean, bottomSpace: Dp) {
     val colors = PaneTheme.colors
@@ -579,9 +541,15 @@ private fun EmptyTabs(private: Boolean, bottomSpace: Dp) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        DotText(if (private) "PRIVATE" else "NO TABS", dot = 3.dp, modifier = Modifier.entrance(0))
+        Text(
+            if (private) "Private" else "No tabs",
+            style = PaneTheme.type.title2,
+            color = colors.label,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.entrance(0),
+        )
         if (private) {
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 "Nothing is saved.",
                 style = PaneTheme.type.subheadline,
@@ -593,7 +561,7 @@ private fun EmptyTabs(private: Boolean, bottomSpace: Dp) {
     }
 }
 
-/** Private tabs are locked: a short dot-matrix line and a solid Unlock. */
+/** Private tabs are locked: a plain title and the one black Unlock pill. */
 @Composable
 private fun LockedPrivate(bottomSpace: Dp, onUnlock: () -> Unit) {
     Column(
@@ -601,8 +569,14 @@ private fun LockedPrivate(bottomSpace: Dp, onUnlock: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        DotText("LOCKED", dot = 3.dp, modifier = Modifier.entrance(0))
-        Spacer(Modifier.height(28.dp))
-        PrimaryButton("Unlock", onClick = onUnlock, modifier = Modifier.width(200.dp).entrance(1))
+        Text(
+            "Locked",
+            style = PaneTheme.type.title2,
+            color = PaneTheme.colors.label,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.entrance(0),
+        )
+        Spacer(Modifier.height(24.dp))
+        PrimaryButton("Unlock", onClick = onUnlock, icon = PaneIcons.Fingerprint, modifier = Modifier.width(200.dp).entrance(1))
     }
 }

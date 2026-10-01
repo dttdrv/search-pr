@@ -10,15 +10,17 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.sqrt
-import kotlin.math.tan
 
 /**
- * Apple-style continuous ("squircle") corners: the curvature eases into the straight edge instead
- * of jumping, which is most of why iOS cards look softer than plain rounded rectangles.
+ * Corners whose curvature, and the rate it changes at, are continuous with the straight edge (G3):
+ * the curvature eases up along a smoothstep, holds, and eases down the same way, so there is no
+ * point where the edge ends and the corner begins. [smoothing] is how much of the curve is spent
+ * easing in and out: 0 is a plain circular arc, 1 is all ease.
  */
 class ContinuousRoundedShape(
     topStart: CornerSize,
@@ -30,6 +32,8 @@ class ContinuousRoundedShape(
 
     constructor(radius: Dp, smoothing: Float = 0.6f) :
         this(CornerSize(radius), CornerSize(radius), CornerSize(radius), CornerSize(radius), smoothing)
+
+    private val curve = Curve.of(smoothing)
 
     override fun copy(topStart: CornerSize, topEnd: CornerSize, bottomEnd: CornerSize, bottomStart: CornerSize) =
         ContinuousRoundedShape(topStart, topEnd, bottomEnd, bottomStart, smoothing)
@@ -44,86 +48,105 @@ class ContinuousRoundedShape(
     ): Outline {
         if (topStart + topEnd + bottomEnd + bottomStart == 0f) return Outline.Rectangle(Rect(Offset.Zero, size))
         val ltr = layoutDirection == LayoutDirection.Ltr
-        val tl = if (ltr) topStart else topEnd
-        val tr = if (ltr) topEnd else topStart
-        val br = if (ltr) bottomEnd else bottomStart
-        val bl = if (ltr) bottomStart else bottomEnd
-        return Outline.Generic(path(size, tl, tr, br, bl))
-    }
-
-    private data class Corner(val p: Float, val a: Float, val b: Float, val c: Float, val d: Float, val r: Float, val arc: Float)
-
-    private fun corner(radius: Float, maxP: Float): Corner {
-        if (radius <= 0f) return Corner(0f, 0f, 0f, 0f, 0f, 0f, 0f)
-        var smooth = smoothing
-        val r = min(radius, maxP)
-        var p = (1 + smooth) * r
-        if (p > maxP) {
-            smooth = (maxP / r - 1).coerceAtLeast(0f)
-            p = maxP
-        }
-        val arcMeasure = 90f * (1 - smooth)
-        val arcSection = sin(rad(arcMeasure / 2)) * r * sqrt(2f)
-        val angleAlpha = (90f - arcMeasure) / 2
-        val p3ToP4 = r * tan(rad(angleAlpha / 2))
-        val angleBeta = 45f * smooth
-        val c = p3ToP4 * cos(rad(angleBeta))
-        val d = c * tan(rad(angleBeta))
-        val b = (p - arcSection - c - d) / 3
-        val a = 2 * b
-        return Corner(p, a, b, c, d, r, arcMeasure)
-    }
-
-    private fun path(size: Size, tl: Float, tr: Float, br: Float, bl: Float): Path {
+        val maxExtent = min(size.width, size.height) / 2
+        fun extent(radius: Float) = min((1 + smoothing) * radius, maxExtent)
+        val tl = extent(if (ltr) topStart else topEnd)
+        val tr = extent(if (ltr) topEnd else topStart)
+        val br = extent(if (ltr) bottomEnd else bottomStart)
+        val bl = extent(if (ltr) bottomStart else bottomEnd)
         val w = size.width
         val h = size.height
-        val maxP = min(w, h) / 2
-        val cTL = corner(tl, maxP)
-        val cTR = corner(tr, maxP)
-        val cBR = corner(br, maxP)
-        val cBL = corner(bl, maxP)
-        return Path().apply {
-            moveTo(cTL.p, 0f)
-            // Top edge → top-right corner.
-            lineTo(w - cTR.p, 0f)
-            if (cTR.r > 0) {
-                cubicTo(w - cTR.p + cTR.a, 0f, w - cTR.p + cTR.a + cTR.b, 0f, w - cTR.p + cTR.a + cTR.b + cTR.c, cTR.d)
-                arcTo(Rect(Offset(w - 2 * cTR.r, 0f), Size(2 * cTR.r, 2 * cTR.r)), -45f - cTR.arc / 2, cTR.arc, false)
-                cubicTo(w, cTR.p - cTR.a - cTR.b, w, cTR.p - cTR.a, w, cTR.p)
-            }
-            lineTo(w, h - cBR.p)
-            if (cBR.r > 0) {
-                cubicTo(w, h - cBR.p + cBR.a, w, h - cBR.p + cBR.a + cBR.b, w - cBR.d, h - cBR.p + cBR.a + cBR.b + cBR.c)
-                arcTo(Rect(Offset(w - 2 * cBR.r, h - 2 * cBR.r), Size(2 * cBR.r, 2 * cBR.r)), 45f - cBR.arc / 2, cBR.arc, false)
-                cubicTo(w - cBR.p + cBR.a + cBR.b, h, w - cBR.p + cBR.a, h, w - cBR.p, h)
-            }
-            lineTo(cBL.p, h)
-            if (cBL.r > 0) {
-                cubicTo(cBL.p - cBL.a, h, cBL.p - cBL.a - cBL.b, h, cBL.p - cBL.a - cBL.b - cBL.c, h - cBL.d)
-                arcTo(Rect(Offset(0f, h - 2 * cBL.r), Size(2 * cBL.r, 2 * cBL.r)), 135f - cBL.arc / 2, cBL.arc, false)
-                cubicTo(0f, h - cBL.p + cBL.a + cBL.b, 0f, h - cBL.p + cBL.a, 0f, h - cBL.p)
-            }
-            lineTo(0f, cTL.p)
-            if (cTL.r > 0) {
-                cubicTo(0f, cTL.p - cTL.a, 0f, cTL.p - cTL.a - cTL.b, cTL.d, cTL.p - cTL.a - cTL.b - cTL.c)
-                arcTo(Rect(Offset.Zero, Size(2 * cTL.r, 2 * cTL.r)), 225f - cTL.arc / 2, cTL.arc, false)
-                cubicTo(cTL.p - cTL.a - cTL.b, 0f, cTL.p - cTL.a, 0f, cTL.p, 0f)
-            }
-            close()
+        return Outline.Generic(
+            Path().apply {
+                moveTo(tl, 0f)
+                lineTo(w - tr, 0f)
+                corner(tr, w - tr, 0f, Quarter.TopRight)
+                lineTo(w, h - br)
+                corner(br, w, h - br, Quarter.BottomRight)
+                lineTo(bl, h)
+                corner(bl, bl, h, Quarter.BottomLeft)
+                lineTo(0f, tl)
+                corner(tl, 0f, tl, Quarter.TopLeft)
+                close()
+            },
+        )
+    }
+
+    /** The unit corner turned to [quarter], scaled so it spans [extent] along each edge and starting at ([x], [y]). */
+    private fun Path.corner(extent: Float, x: Float, y: Float, quarter: Quarter) {
+        if (extent <= 0f) return
+        val scale = extent / curve.extent
+        for (i in 1..Curve.STEPS) {
+            val (u, v) = quarter.turn(curve.xs[i], curve.ys[i])
+            lineTo(x + scale * u, y + scale * v)
         }
     }
 
-    private fun rad(deg: Float) = (deg * Math.PI / 180.0).toFloat()
+    /** Which way the unit corner, which starts heading right and ends heading down, is turned. */
+    private enum class Quarter(val turn: (Float, Float) -> Pair<Float, Float>) {
+        TopRight({ x, y -> x to y }),
+        BottomRight({ x, y -> -y to x }),
+        BottomLeft({ x, y -> -x to -y }),
+        TopLeft({ x, y -> y to -x }),
+    }
+
+    /**
+     * One corner of unit length, heading right and turning a quarter to head down. Its curvature is
+     * a smoothstep ramp up over the first [q] of the length, flat, and the mirror ramp down, which
+     * makes the curvature and its slope continuous at both ends. Integrated once per [smoothing].
+     */
+    private class Curve(smoothing: Float) {
+        private val q = (smoothing / 2).coerceIn(0f, 0.5f).toDouble()
+        val xs = FloatArray(STEPS + 1)
+        val ys = FloatArray(STEPS + 1)
+        val extent: Float get() = xs[STEPS]
+
+        init {
+            val peak = PI / 2 / (1 - q)
+            var x = 0.0
+            var y = 0.0
+            var before = 0.0
+            for (i in 1..STEPS) {
+                val heading = peak * easedLength(i.toDouble() / STEPS)
+                val mid = (before + heading) / 2
+                x += cos(mid) / STEPS
+                y += sin(mid) / STEPS
+                xs[i] = x.toFloat()
+                ys[i] = y.toFloat()
+                before = heading
+            }
+        }
+
+        /** The integral of the curvature profile (1 on the plateau, a smoothstep on each ramp) up to length [s]. */
+        private fun easedLength(s: Double): Double {
+            if (q == 0.0) return s
+            fun ramp(t: Double): Double {
+                val u = t / q
+                return q * (u * u * u - u * u * u * u / 2)
+            }
+            return when {
+                s < q -> ramp(s)
+                s <= 1 - q -> q / 2 + (s - q)
+                else -> (1 - q) - ramp(1 - s)
+            }
+        }
+
+        companion object {
+            const val STEPS = 48
+            private val cache = ConcurrentHashMap<Float, Curve>()
+            fun of(smoothing: Float): Curve = cache.getOrPut(smoothing) { Curve(smoothing) }
+        }
+    }
 }
 
 object PaneShapes {
-    val small = ContinuousRoundedShape(10.dp)
-    val medium = ContinuousRoundedShape(16.dp)
-    val large = ContinuousRoundedShape(20.dp)
-    val card = ContinuousRoundedShape(26.dp)
-    val sheet = ContinuousRoundedShape(CornerSize(34.dp), CornerSize(34.dp), CornerSize(0.dp), CornerSize(0.dp))
+    val small = ContinuousRoundedShape(12.dp)
+    val medium = ContinuousRoundedShape(20.dp)
+    val large = ContinuousRoundedShape(24.dp)
+    val card = ContinuousRoundedShape(30.dp)
+    val sheet = ContinuousRoundedShape(CornerSize(38.dp), CornerSize(38.dp), CornerSize(0.dp), CornerSize(0.dp))
 
     /** A card that floats clear of the screen edges, as glass menus and sheets do. */
-    val floating = ContinuousRoundedShape(32.dp)
+    val floating = ContinuousRoundedShape(36.dp)
     val pill = ContinuousRoundedShape(100.dp, smoothing = 0f)
 }

@@ -1,5 +1,8 @@
 package app.pane.browser.ui.browser
 
+import app.pane.browser.ui.components.IconPill
+import app.pane.browser.ui.icons.PaneIcons
+import app.pane.browser.ui.components.ChromeButton
 import android.app.role.RoleManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -7,7 +10,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
@@ -35,6 +37,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,16 +52,16 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.pane.browser.LocalAppContainer
-import app.pane.browser.ui.components.DotText
 import app.pane.browser.ui.components.EngineIcon
 import app.pane.browser.ui.components.PaneSwitch
 import app.pane.browser.ui.components.PrimaryButton
@@ -68,15 +71,15 @@ import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.Spacing
 import app.pane.browser.ui.theme.entrance
-import app.pane.core.extensions.Amo
 import app.pane.core.search.SearchEngines
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
  * First launch, as a short carousel: what the bar is, then the two gestures worth knowing (swipe it
- * sideways, swipe it up), then the two choices that matter (search engine, content blocker). One
+ * sideways, swipe it up), then the two choices that matter (search engine, ad blocking). One
  * drawing and a few words a page, never a paragraph. Everything here can be changed in Settings.
  */
 @Composable
@@ -117,11 +120,7 @@ private fun OnboardingContent(onDone: () -> Unit) {
     val roleLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
 
     fun finish() {
-        container.settings.update { it.copy(searchEngineId = choices[engine].id, onboardingDone = true) }
-        if (blocker) {
-            // The add-on's permissions are confirmed through the normal install sheet.
-            container.extensions.install(Amo.latestXpiUrl("ublock-origin"), slug = "ublock-origin")
-        }
+        container.settings.update { it.copy(searchEngineId = choices[engine].id, blockAds = blocker, onboardingDone = true) }
         onDone()
     }
 
@@ -134,15 +133,15 @@ private fun OnboardingContent(onDone: () -> Unit) {
             .clickable(remember { MutableInteractionSource() }, indication = null) { },
     ) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            // The mark on the left; a way out on the right until there is nothing left to skip.
+            // The name on the left; a way out on the right until there is nothing left to skip.
             Row(
-                Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 24.dp),
+                Modifier.fillMaxWidth().height(56.dp).padding(horizontal = Spacing.gutter),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DotText("PANE", dot = 3.dp)
+                Text("Pane", style = PaneTheme.type.title3.copy(fontWeight = FontWeight.Medium), color = colors.label)
                 Spacer(Modifier.weight(1f))
                 AnimatedVisibility(visible = !onLast, enter = fadeIn(Motion.fade()), exit = fadeOut(Motion.fade())) {
-                    TextButton("Skip", onClick = { scope.launch { pager.animateScrollToPage(lastPage) } }, color = colors.secondaryLabel)
+                    ChromeButton(PaneIcons.Forward, "Skip", onClick = { scope.launch { pager.animateScrollToPage(lastPage) } }, tint = colors.secondaryLabel)
                 }
             }
 
@@ -160,21 +159,21 @@ private fun OnboardingContent(onDone: () -> Unit) {
                 }
             }
 
-            Indicator(pager, Modifier.align(Alignment.CenterHorizontally).padding(bottom = 20.dp))
+            Indicator(pager, Modifier.align(Alignment.CenterHorizontally).padding(bottom = Spacing.gutter))
 
             // The action stays put at the bottom; only its words change.
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                    .padding(horizontal = Spacing.gutter)
+                    .padding(bottom = Spacing.gutter / 2),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                PrimaryButton(
+                IconPill(
+                    if (onLast) PaneIcons.Check else PaneIcons.Forward,
                     if (onLast) "Start Browsing" else "Next",
                     onClick = { if (onLast) finish() else scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } },
-                    modifier = Modifier.widthIn(max = 480.dp),
+                    modifier = Modifier.fillMaxWidth().widthIn(max = 480.dp),
                 )
                 // Reserve the line so the button never jumps between pages.
                 Box(Modifier.height(48.dp), contentAlignment = Alignment.Center) {
@@ -185,6 +184,7 @@ private fun OnboardingContent(onDone: () -> Unit) {
                                 "Make Pane your default browser",
                                 onClick = { roleLauncher.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER)) },
                                 color = colors.secondaryLabel,
+                                icon = PaneIcons.Globe,
                             )
                         }
                     }
@@ -199,26 +199,26 @@ private fun OnboardingContent(onDone: () -> Unit) {
 private fun IntroPage(page: Intro, away: () -> Float) {
     val colors = PaneTheme.colors
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        Modifier.fillMaxSize().padding(horizontal = Spacing.gutter),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
+        // the drawing takes all the height the words leave
+        OnboardingArt(
+            page.scene,
             Modifier
                 .weight(1f)
                 .fillMaxWidth()
+                .padding(vertical = Spacing.gutter)
                 .graphicsLayer {
                     val a = away()
                     translationX = a * size.width * 0.35f
                     alpha = (1f - abs(a) * 1.1f).coerceIn(0f, 1f)
                 },
-            contentAlignment = Alignment.Center,
-        ) {
-            OnboardingArt(page.scene, Modifier.widthIn(max = 320.dp))
-        }
+        )
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(bottom = 28.dp)
+                .padding(bottom = Spacing.gutter)
                 .graphicsLayer {
                     val a = away()
                     translationX = a * size.width * 0.12f
@@ -227,13 +227,13 @@ private fun IntroPage(page: Intro, away: () -> Float) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(page.title, style = PaneTheme.type.largeTitle, color = colors.label, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(Spacing.gutter / 2))
             Text(page.line, style = PaneTheme.type.body, color = colors.secondaryLabel, textAlign = TextAlign.Center)
         }
     }
 }
 
-/** The last page: the two choices, as plain rows. */
+/** The last page: the search engine, as plain rows, and one switch. Nothing else. */
 @Composable
 private fun SetupPage(engine: Int, onEngine: (Int) -> Unit, blocker: Boolean, onBlocker: (Boolean) -> Unit) {
     val colors = PaneTheme.colors
@@ -241,11 +241,11 @@ private fun SetupPage(engine: Int, onEngine: (Int) -> Unit, blocker: Boolean, on
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = 24.dp)) {
-            Spacer(Modifier.height(20.dp))
+        Column(Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = Spacing.gutter)) {
+            Spacer(Modifier.height(Spacing.gutter))
             Text("Make it yours", style = PaneTheme.type.largeTitle, color = colors.label, modifier = Modifier.entrance(0))
-            Spacer(Modifier.height(36.dp))
-            SectionLabel("Search with", Modifier.entrance(1).padding(bottom = 10.dp))
+            Spacer(Modifier.height(Spacing.gutter * 2))
+            SectionLabel("Search with", Modifier.entrance(1).padding(bottom = Spacing.gutter / 2))
             Column(Modifier.entrance(2).selectableGroup()) {
                 Separator()
                 choices.forEachIndexed { i, c ->
@@ -253,18 +253,18 @@ private fun SetupPage(engine: Int, onEngine: (Int) -> Unit, blocker: Boolean, on
                     Separator()
                 }
             }
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(Spacing.gutter * 2))
             Column(Modifier.entrance(3)) {
                 Separator()
-                ToggleLine("Block ads with uBlock Origin", checked = blocker, onCheckedChange = onBlocker)
+                ToggleLine("Block ads", checked = blocker, onCheckedChange = onBlocker)
                 Separator()
             }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(Spacing.gutter))
         }
     }
 }
 
-/** Page dots: the one in view stretches into a pill, and hands over to the next as you swipe. */
+/** Page dots: faint grey, and the one in view stretches into an ink pill, handing over to the next as you swipe. */
 @Composable
 private fun Indicator(pager: androidx.compose.foundation.pager.PagerState, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
@@ -281,7 +281,7 @@ private fun Indicator(pager: androidx.compose.foundation.pager.PagerState, modif
                     val near = (1f - abs(position - i)).coerceIn(0f, 1f)
                     val w = dot.toPx() + (wide - dot).toPx() * near
                     drawRoundRect(
-                        colors.label.copy(alpha = 0.22f + 0.78f * near),
+                        lerp(colors.faint, colors.label, near),
                         Offset(x, 0f),
                         Size(w, dot.toPx()),
                         CornerRadius(dot.toPx() / 2f),
@@ -307,30 +307,8 @@ private fun EngineRow(id: String, name: String, selected: Boolean, onClick: () -
     ) {
         EngineIcon(id, 28.dp)
         Text(name, style = PaneTheme.type.body, color = colors.label, modifier = Modifier.weight(1f))
-        RadioDot(selected)
+        RadioButton(selected = selected, onClick = null)
     }
-}
-
-/** A hairline circle that fills with ink, from the middle out, when chosen. */
-@Composable
-private fun RadioDot(selected: Boolean) {
-    val colors = PaneTheme.colors
-    val fill by animateFloatAsState(if (selected) 1f else 0f, Motion.snappy(), label = "radio")
-    Box(
-        Modifier
-            .size(22.dp)
-            .drawBehind {
-                val stroke = 1.5.dp.toPx()
-                drawCircle(
-                    colors.label.copy(alpha = 0.3f + 0.7f * fill),
-                    radius = size.minDimension / 2f - stroke / 2f,
-                    style = Stroke(stroke),
-                )
-                if (fill > 0f) {
-                    drawCircle(colors.label, radius = (size.minDimension / 2f - 5.dp.toPx()) * fill)
-                }
-            },
-    )
 }
 
 /** A single setting row: the title and a switch, the whole row toggles. */
@@ -340,7 +318,7 @@ private fun ToggleLine(title: String, checked: Boolean, onCheckedChange: (Boolea
     Row(
         modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 64.dp)
+            .defaultMinSize(minHeight = 60.dp)
             .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Switch) { onCheckedChange(!checked) },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

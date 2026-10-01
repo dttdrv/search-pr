@@ -16,19 +16,19 @@ import app.pane.browser.engine.prompts.AlertRequest
 import app.pane.browser.engine.prompts.AuthRequest
 import app.pane.browser.engine.prompts.BeforeUnloadRequest
 import app.pane.browser.engine.prompts.ConfirmRequest
-import app.pane.browser.engine.prompts.RepostRequest
 import app.pane.browser.engine.prompts.ScriptDialogRequest
 import app.pane.browser.engine.prompts.TextInputRequest
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
 import app.pane.browser.ui.components.PaneAlert
+import app.pane.core.prompts.PromptText
 import kotlinx.coroutines.delay
 
 private const val FALLBACK_SOURCE = "This page"
 
 /** `alert()`, `confirm()` and `prompt()`, titled with the site that is asking. */
 @Composable
-internal fun ScriptDialog(request: ScriptDialogRequest<*>, visible: Boolean, onDone: () -> Unit) {
+internal fun ScriptDialog(request: ScriptDialogRequest, visible: Boolean, onDone: () -> Unit) {
     var optOut by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf((request as? TextInputRequest)?.defaultValue.orEmpty()) }
     val focus = remember { FocusRequester() }
@@ -90,15 +90,14 @@ internal fun ScriptDialog(request: ScriptDialogRequest<*>, visible: Boolean, onD
 /** HTTP authentication. Nothing typed here is remembered. */
 @Composable
 internal fun AuthDialog(request: AuthRequest, visible: Boolean, onDone: () -> Unit) {
-    var username by remember { mutableStateOf(request.defaultUsername) }
+    var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     val userFocus = remember { FocusRequester() }
     val passwordFocus = remember { FocusRequester() }
-    val host = request.host.ifEmpty { "This site" }
 
     val message = buildList<String> {
-        if (request.previousFailed) add("Incorrect name or password.")
-        add(if (request.isProxy) "Proxy: $host" else host)
+        add(request.host.ifEmpty { "This site" })
+        request.realm.takeIf { it.isNotBlank() }?.let { add("“${PromptText.shorten(it, 60)}”") }
         if (request.crossOrigin) add("Requested by a different site.")
         if (request.insecure) add("Password will be sent unencrypted.")
     }.joinToString("\n")
@@ -110,7 +109,7 @@ internal fun AuthDialog(request: AuthRequest, visible: Boolean, onDone: () -> Un
 
     PaneAlert(
         visible = visible,
-        title = if (request.isProxy) "Proxy Sign In" else "Sign In",
+        title = "Sign In",
         message = message,
         actions = listOf(
             AlertAction("Cancel", AlertStyle.Cancel) {
@@ -125,17 +124,15 @@ internal fun AuthDialog(request: AuthRequest, visible: Boolean, onDone: () -> Un
         },
         body = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!request.onlyPassword) {
-                    AlertTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        placeholder = "User Name",
-                        imeAction = ImeAction.Next,
-                        autofillType = ContentType.Username,
-                        onImeAction = { runCatching { passwordFocus.requestFocus() } },
-                        requester = userFocus,
-                    )
-                }
+                AlertTextField(
+                    value = username,
+                    onValueChange = { username = it },
+                    placeholder = "User Name",
+                    imeAction = ImeAction.Next,
+                    autofillType = ContentType.Username,
+                    onImeAction = { runCatching { passwordFocus.requestFocus() } },
+                    requester = userFocus,
+                )
                 AlertTextField(
                     value = password,
                     onValueChange = { password = it },
@@ -151,31 +148,8 @@ internal fun AuthDialog(request: AuthRequest, visible: Boolean, onDone: () -> Un
     )
     LaunchedEffect(Unit) {
         delay(FOCUS_DELAY_MS)
-        runCatching { if (request.onlyPassword || username.isNotEmpty()) passwordFocus.requestFocus() else userFocus.requestFocus() }
+        runCatching { userFocus.requestFocus() }
     }
-}
-
-@Composable
-internal fun RepostDialog(request: RepostRequest, visible: Boolean, onDone: () -> Unit) {
-    PaneAlert(
-        visible = visible,
-        title = "Resend Form?",
-        message = "Sending it again may repeat an action.",
-        actions = listOf(
-            AlertAction("Cancel", AlertStyle.Cancel) {
-                request.answer(false)
-                onDone()
-            },
-            AlertAction("Resend") {
-                request.answer(true)
-                onDone()
-            },
-        ),
-        onDismissRequest = {
-            request.answer(false)
-            onDone()
-        },
-    )
 }
 
 @Composable

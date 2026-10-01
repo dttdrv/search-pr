@@ -15,6 +15,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +40,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
@@ -62,11 +67,14 @@ import app.pane.browser.ui.prompts.SiteInfoSheet
 import app.pane.browser.ui.tabs.TabSwitcher
 import app.pane.browser.ui.theme.DarkColors
 import app.pane.browser.ui.theme.LightColors
+import app.pane.browser.ui.theme.LocalFrost
 import app.pane.browser.ui.theme.LocalPaneColors
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.EdgeFade
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.PrivateColors
+import app.pane.browser.ui.theme.frostSource
+import app.pane.browser.ui.theme.rememberFrost
 import app.pane.core.tabs.TabState
 import app.pane.core.url.UrlDisplay
 import kotlinx.coroutines.CancellationException
@@ -82,7 +90,7 @@ import kotlinx.coroutines.launch
  * The browser itself: page, start page, bottom chrome, and the overlays that grow out of it
  * (address editor, tab overview, menu, find bar, site info). Themed dark-violet in private mode.
  */
-@OptIn(FlowPreview::class)
+@OptIn(FlowPreview::class, ExperimentalLayoutApi::class)
 @Composable
 fun BrowserScreen() {
     val container = LocalAppContainer.current
@@ -123,7 +131,6 @@ fun BrowserScreen() {
         privateUnlocked = false
         // The editor may hold a private page's address, which mustn't be waiting once the tabs relock.
         if (private && settings.lockPrivateTabs) chrome.editing = false
-        container.privacyStats.flush()
     }
 
     // Locking hides everything about the page, including keyboard focus inside it.
@@ -135,7 +142,7 @@ fun BrowserScreen() {
             chrome.overlay = null
             chrome.findInPage = false
             chrome.siteInfo = false
-            chrome.geckoView?.clearFocus()
+            container.sessions.session(container.store.state.value.selectedTabId)?.clearFocus()
         }
     }
     LaunchedEffect(private) { chrome.overlay = null }
@@ -147,9 +154,10 @@ fun BrowserScreen() {
     }
 
     val swipeCapture = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
+    chrome.snapshotSource = { side -> container.sessions.capture(container.store.state.value.selectedTabId.orEmpty(), side) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    // The floating bar covers this much of the page; Gecko keeps fixed footers above it until it melts away.
+    // The floating bar takes this much of the screen; the page ends above it until the bar melts away.
     val dynamicPx = with(density) { (BarMetrics.zone + navBottom).toPx() }
     val fullscreen = tab?.fullscreen == true
 
@@ -188,18 +196,6 @@ fun BrowserScreen() {
     }
     LaunchedEffect(tab?.loading, tab?.url) { if (tab?.loading == true) chrome.expand() }
     LaunchedEffect(settings.hideToolbarOnScroll) { if (!settings.hideToolbarOnScroll) chrome.expand() }
-
-    // Gecko needs to know how much of the page the toolbar can cover, and how much it covers now.
-    LaunchedEffect(chrome.geckoView, fullscreen, dynamicPx) {
-        val view = chrome.geckoView ?: return@LaunchedEffect
-        view.setDynamicToolbarMaxHeight(dynamicPx.toInt())
-        snapshotFlow { chrome.collapse.value }.collect { c ->
-            // Gecko keeps the page's viewport (fixed footers, 100vh) clear of the toolbar by its full
-            // height, and the clipping says how much of that the toolbar has slid away: 0 with the
-            // bar out, minus its whole height once it has melted, so the page then fills the screen.
-            view.setVerticalClipping(if (fullscreen) -dynamicPx.toInt() else -(dynamicPx * c).toInt())
-        }
-    }
 
     // Snapshots for the tab overview and back gesture, and clearing covers on first paint.
     LaunchedEffect(dynamicPx) {
@@ -268,7 +264,7 @@ fun BrowserScreen() {
     }
 
     // Back swipe: slide the page away like iOS, revealing where you're going.
-    BackHandler(enabled = fullscreen && navigator.isEmpty) { tab?.id?.let { container.sessions.session(it)?.exitFullScreen() } }
+    BackHandler(enabled = fullscreen && navigator.isEmpty) { container.sessions.exitFullscreen() }
     val canGoBack = tab != null && (tab.canGoBack || tab.parentId != null) && !locked && !chrome.anyOverlay && navigator.isEmpty && !fullscreen
     PredictiveBackHandler(enabled = canGoBack) { events: Flow<BackEventCompat> ->
         val current = tab ?: return@PredictiveBackHandler
@@ -284,19 +280,23 @@ fun BrowserScreen() {
                 chrome.backFromRight = e.swipeEdge == BackEventCompat.EDGE_RIGHT
                 chrome.back.snapTo(e.progress)
             }
-            captureJob.join()
-            chrome.back.animateTo(1f, Motion.snappy())
-            if (current.canGoBack) container.browser.goBack() else container.browser.close(current.id)
-            chrome.overlay = behind?.let { PageOverlay(it, null, kind = PageOverlay.Kind.Cover) }
-            chrome.back.snapTo(0f)
         } catch (e: CancellationException) {
             captureJob.cancel()
             scope.launch {
-                chrome.back.animateTo(0f, Motion.bouncy())
+                chrome.back.animateTo(0f, Motion.smooth())
                 if (chrome.overlay?.kind == PageOverlay.Kind.Back) chrome.overlay = null
             }
             throw e
         }
+        try {
+            captureJob.join()
+            chrome.back.animateTo(1f, Motion.snappy())
+        } finally {
+            // the gesture is over: a back pressed during the slide cancels it, but must not undo it
+            if (current.canGoBack) container.browser.goBack() else container.browser.close(current.id)
+        }
+        chrome.overlay = behind?.let { PageOverlay(it, null, kind = PageOverlay.Kind.Cover) }
+        chrome.back.snapTo(0f)
     }
 
     PaneTheme(mode = settings.theme, private = private, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion) {
@@ -314,21 +314,23 @@ fun BrowserScreen() {
         val statusColorState = animateColorAsState(statusTarget, Motion.fade(280), label = "statusColor")
         val lightStatusIcons by remember { derivedStateOf { statusColorState.value.luminance() < 0.5f } }
 
-        // Glass reads best when its tone follows the page behind it: dark glass over dark pages.
+        // Glass reads best when its tone follows the page behind it: dark glass over dark pages. Over a
+        // page of luminance 0.18 a black and a white veil give their ink the same contrast; a margin
+        // either side keeps the bar from flickering.
         val behindLuma = chrome.edges?.bottomLuma?.takeIf { onPage }
         var barDark by remember { mutableStateOf(colors.isDark) }
         LaunchedEffect(behindLuma, colors.isDark) {
             barDark = when {
                 behindLuma == null -> colors.isDark
-                behindLuma < 0.40f -> true
-                behindLuma > 0.52f -> false
+                behindLuma < 0.15f -> true
+                behindLuma > 0.21f -> false
                 else -> barDark
             }
         }
         val barColors = when {
+            !barDark -> LightColors
             private -> PrivateColors
-            barDark -> DarkColors
-            else -> LightColors
+            else -> DarkColors
         }
         StatusBarAppearance(
             lightStatusIcons = if (navigator.isEmpty) lightStatusIcons else colors.isDark,
@@ -340,21 +342,28 @@ fun BrowserScreen() {
 
         run {
         Box(Modifier.fillMaxSize().background(colors.background)) {
-            // Page: truly edge to edge, under the status bar and the floating bar.
+            // The page runs under the floating bar, so its content shows through around the pill. Pages keep
+            // the bar's height clear after their last line and above fixed bottom ui (see setBarInset), and
+            // the inset drops to 0 once the bar has melted away on scroll. While the page itself has the
+            // keyboard (a form field), the page ends on top of it instead.
+            val barRoom by remember { derivedStateOf { chrome.collapse.value < 0.5f } }
+            val keyboardForPage = WindowInsets.isImeVisible && !chrome.editing
+            val barInset = if (barRoom && onPage && !fullscreen && !keyboardForPage) (BarMetrics.zone + navBottom).value.toInt() else 0
+            LaunchedEffect(barInset) { container.sessions.setBarInset(barInset) }
+            val frost = rememberFrost()
+            val abFrost = (context as? Activity)?.intent?.getStringExtra("frost") != "off" // TEMP A/B
             Box(
                 Modifier
                     .fillMaxSize()
-                    .onGloballyPositioned { chrome.pageRect = it.boundsInRoot() },
+                    .padding(top = if (fullscreen) 0.dp else statusTop)
+                    .then(if (keyboardForPage) Modifier.imePadding() else Modifier)
+                    .onGloballyPositioned { chrome.pageRect = it.boundsInRoot() }
+                    .then(if (abFrost) Modifier.frostSource(frost, BarMetrics.zone + navBottom) else Modifier),
             ) {
                 EngineView(
                     tab = tab,
                     modifier = Modifier.fillMaxSize(),
-                    coverColor = colors.background.toArgb(),
                     hidden = locked,
-                    onViewCreated = { view ->
-                        chrome.geckoView = view
-                        view.setDynamicToolbarMaxHeight(dynamicPx.toInt())
-                    },
                 )
                 if (tab == null || tab.url.isEmpty()) {
                     HomePage(
@@ -384,24 +393,22 @@ fun BrowserScreen() {
                 }
             }
 
-            // Status area: the page runs underneath it, and a soft veil of the page's own top colour
-            // (strongest at the very top, gone a little below the icons) keeps the clock and battery
-            // legible without a solid band or a shadow, as in the native apps.
+            // The status area wears the page's own top colour, so the clock and battery sit on the site's header.
             if (!fullscreen) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(statusTop + 16.dp)
-                        .drawBehind {
-                            val tint = statusColorState.value
-                            drawRect(
-                                Brush.verticalGradient(
-                                    0f to tint.copy(alpha = 0.9f),
-                                    (statusTop.toPx() / size.height).coerceIn(0.2f, 0.9f) to tint.copy(alpha = 0.55f),
-                                    1f to tint.copy(alpha = 0f),
-                                ),
-                            )
-                        },
+                Box(Modifier.fillMaxWidth().height(statusTop).drawBehind { drawRect(statusColorState.value) })
+            }
+
+            // A fullscreen video brings its own view; it goes above everything.
+            val customView by container.sessions.customView.collectAsStateWithLifecycle()
+            customView?.let { video ->
+                androidx.compose.ui.viewinterop.AndroidView(
+                    modifier = Modifier.fillMaxSize().background(Color.Black),
+                    factory = { ctx ->
+                        android.widget.FrameLayout(ctx).also { frame ->
+                            (video.parent as? android.view.ViewGroup)?.removeView(video)
+                            frame.addView(video)
+                        }
+                    },
                 )
             }
 
@@ -409,10 +416,10 @@ fun BrowserScreen() {
             AnimatedVisibility(
                 visible = !fullscreen && !chrome.findInPage && !chrome.editing,
                 modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically(Motion.bouncy()) { it } + fadeIn(Motion.fade()),
+                enter = slideInVertically(Motion.smooth()) { it } + fadeIn(Motion.fade()),
                 exit = slideOutVertically(Motion.smooth()) { it } + fadeOut(Motion.fade()),
             ) {
-                CompositionLocalProvider(LocalPaneColors provides barColors) {
+                CompositionLocalProvider(LocalPaneColors provides barColors, LocalFrost provides frost.takeIf { abFrost }) {
                     BottomBar(
                         tab = tab,
                         tabs = sameMode,
@@ -435,11 +442,6 @@ fun BrowserScreen() {
                             }
                         },
                         onTabs = { chrome.showTabs = true },
-                        onNewTab = {
-                            container.browser.newTab(private)
-                            editText = ""
-                            chrome.editing = true
-                        },
                         onMenu = { chrome.showMenu = true },
                         onReload = { container.browser.reload() },
                         onStop = { container.browser.stop() },
@@ -499,22 +501,20 @@ fun BrowserScreen() {
                 onDismiss = { chrome.editing = false },
             )
 
-            androidx.compose.runtime.CompositionLocalProvider(
-                app.pane.browser.ui.components.LocalSheetOrigin provides chrome.menuRect.takeIf { it.width > 1f }?.center,
-            ) {
             MenuSheet(
                 visible = chrome.showMenu,
                 tab = tab,
                 locked = locked,
                 onDismiss = { chrome.showMenu = false },
                 onFindInPage = { chrome.findInPage = true },
+                tabCount = sameMode.size,
+                onTabs = { chrome.showTabs = true },
                 onNewTab = { p ->
                     container.browser.newTab(p)
                     editText = ""
                     chrome.editing = true
                 },
             )
-            }
 
             SiteInfoSheet(visible = chrome.siteInfo && !locked, tabId = tab?.id, onDismiss = { chrome.siteInfo = false })
         }
@@ -573,6 +573,6 @@ private fun CrashedPage(onReload: () -> Unit) {
     ) {
         androidx.compose.material3.Text("This page stopped working", style = PaneTheme.type.title3, color = colors.label)
         androidx.compose.foundation.layout.Spacer(Modifier.height(16.dp))
-        app.pane.browser.ui.components.PrimaryButton("Reload", onClick = onReload, modifier = Modifier.fillMaxWidth(0.6f))
+        app.pane.browser.ui.components.PrimaryButton("Reload", onClick = onReload, icon = app.pane.browser.ui.icons.PaneIcons.Reload, modifier = Modifier.fillMaxWidth(0.6f))
     }
 }

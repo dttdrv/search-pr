@@ -1,5 +1,6 @@
 package app.pane.browser.ui.browser
 
+import app.pane.browser.ui.components.ChromeButton
 import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -86,9 +88,10 @@ import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.browser.ui.theme.entrance
+import app.pane.browser.ui.theme.canScroll
 import app.pane.browser.ui.theme.floating
 import app.pane.browser.ui.theme.rememberHaptics
+import app.pane.browser.ui.theme.stretch
 import app.pane.core.search.SearchEngines
 import app.pane.core.search.Suggestions
 import app.pane.core.suggest.Autocomplete
@@ -160,17 +163,21 @@ private fun EditorContent(
     val focus = remember { FocusRequester() }
     val reduceMotion = LocalReduceMotion.current
     val risePx = with(LocalDensity.current) { 56.dp.toPx() }
-    // The field grows out of the address pill (or rises from below if we don't know where it was),
-    // overshoots a touch, and settles on the keyboard. Closing runs it backwards, into the bar.
+    // The field grows out of the address pill (or rises from below if we don't know where it was)
+    // and settles without overshoot. Closing runs it backwards, into the bar.
     val rise = remember { Animatable(0f) }
     LaunchedEffect(open) {
         when {
             reduceMotion -> rise.animateTo(if (open) 1f else 0f, Motion.fade(160))
-            open -> rise.animateTo(1f, Motion.bouncy())
+            open -> rise.animateTo(1f, Motion.snappy())
             else -> rise.animateTo(0f, Motion.snappy())
         }
     }
     val hasOrigin = origin.width > 1f && origin.height > 1f
+    // Where the field first lands, measured once, before the keyboard moves it. The field rides the
+    // keyboard up by itself (imePadding); if the flight from the bar tracked that movement too, the
+    // two would add up and the pill would jump. So the flight only covers the gap that exists at
+    // the start, and the keyboard supplies the rest.
     var target by remember { mutableStateOf(Rect.Zero) }
 
     var field by remember { mutableStateOf(TextFieldValue(initialText, TextRange(0, initialText.length))) }
@@ -247,7 +254,9 @@ private fun EditorContent(
     }
     val engineId = SearchEngines.byId(settings.searchEngineId).id
 
-    Column(
+    // The list and the favourites run under the floating field (they scroll beneath it), so the pill
+    // is lifted off real content with its shadow all round instead of sitting on a blank band.
+    Box(
         Modifier
             .fillMaxSize()
             .windowInsetsPadding(WindowInsets.statusBars)
@@ -257,27 +266,25 @@ private fun EditorContent(
         // Tapping the empty space above the field closes the editor; rows and icons take their own taps first.
         Box(
             Modifier
-                .weight(1f)
-                .fillMaxWidth()
+                .fillMaxSize()
+                .stretch()
                 .clickable(interactionSource = null, indication = null, onClickLabel = "Close", onClick = onDismiss),
         ) {
             if (typed.isBlank() || typed == initialText) {
                 FavoritesPanel(
                     onOpen = onSubmit,
-                    // The clipboard is only read when the user asks, so Android never flags a silent paste.
-                    onPasteAndGo = {
-                        val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
-                        val text = clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context)?.toString()?.trim()
-                        if (!text.isNullOrEmpty() && text.length < 4000) onSubmit(text)
-                    },
+                    modifier = Modifier.padding(bottom = 80.dp),
                     recent = recent,
                     includeHistory = !private,
                 )
             } else {
+                val list = rememberLazyListState()
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
+                    state = list,
+                    userScrollEnabled = list.canScroll,
                     reverseLayout = true,
-                    contentPadding = PaddingValues(vertical = 8.dp),
+                    contentPadding = PaddingValues(top = 8.dp, bottom = 88.dp),
                 ) {
                     // Reverse layout keeps the best match right above the field, under the thumb.
                     itemsIndexed(suggestions, key = { _, s -> s.key }) { index, s ->
@@ -298,7 +305,7 @@ private fun EditorContent(
                                 typed = "$text "
                                 field = TextFieldValue("$text ", TextRange(text.length + 1))
                             },
-                            modifier = Modifier.animateItem().entrance(index, key = s.key),
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
@@ -308,6 +315,7 @@ private fun EditorContent(
         // The field: a floating pill docked on the keyboard, with a plain Cancel beside it.
         Row(
             Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .graphicsLayer {
                     val p = rise.value
@@ -321,7 +329,7 @@ private fun EditorContent(
                 Modifier
                     .weight(1f)
                     .height(56.dp)
-                    .onGloballyPositioned { target = it.boundsInRoot() }
+                    .onGloballyPositioned { if (target == Rect.Zero) target = it.boundsInRoot() }
                     .graphicsLayer {
                         if (hasOrigin && target.width > 1f) {
                             // Start as the bar's pill: same place, same size; end as the field.
@@ -334,7 +342,7 @@ private fun EditorContent(
                             scaleY = sy + (1f - sy) * p
                         }
                     }
-                    .floating(PaneShapes.pill, shadow = 6.dp),
+                    .floating(PaneShapes.pill),
             ) {
             Row(
                 Modifier
@@ -429,7 +437,7 @@ private fun EditorContent(
                 }
             }
             }
-            TextButton("Cancel", onClick = onDismiss)
+            ChromeButton(PaneIcons.Close, "Cancel", onClick = onDismiss)
         }
     }
 }
@@ -438,7 +446,8 @@ private fun EditorContent(
  * One suggestion, a plain row with a hairline above it when [line]. Places and open tabs lead with
  * the site's icon, then the title and the host beneath; a quiet label marks tabs and bookmarks.
  * Search suggestions are plain text with an arrow that copies them into the field. The [best]
- * match, the row nearest the field, is set larger and bolder so the eye lands on it.
+ * match, the row nearest the field, is set larger and in full ink so the eye lands on it; the
+ * others stay muted until the part you typed lights up.
  */
 @Composable
 private fun SuggestionRow(
@@ -529,6 +538,6 @@ private fun highlight(text: String, query: String, strong: androidx.compose.ui.g
         return@buildAnnotatedString
     }
     append(text.substring(0, index))
-    withStyle(SpanStyle(color = strong, fontWeight = FontWeight.SemiBold)) { append(text.substring(index, index + q.length)) }
+    withStyle(SpanStyle(color = strong, fontWeight = FontWeight.Medium)) { append(text.substring(index, index + q.length)) }
     append(text.substring(index + q.length))
 }

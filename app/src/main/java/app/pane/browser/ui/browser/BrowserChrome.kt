@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
-import org.mozilla.geckoview.GeckoView
 import kotlin.coroutines.resume
 
 /**
@@ -37,9 +36,6 @@ class BrowserChrome(private val scope: CoroutineScope) {
     /** Which tabs the tab overview lists: the private ones, or the normal ones. */
     var showPrivateTabs by mutableStateOf(false)
 
-    /** Where the menu button sits; the menu grows out of it. */
-    var menuRect by mutableStateOf(Rect.Zero)
-
     /** Where the address pill sits, in root coordinates; the address editor's field grows out of it. */
     var pillRect by mutableStateOf(Rect.Zero)
 
@@ -49,7 +45,8 @@ class BrowserChrome(private val scope: CoroutineScope) {
     /** Snapshot drawn over the page while a gesture or transition is in flight. */
     var overlay by mutableStateOf<PageOverlay?>(null)
 
-    var geckoView by mutableStateOf<GeckoView?>(null)
+    /** Draws the page on screen into a bitmap whose longer side is at most the given size; set by the screen. */
+    var snapshotSource: ((maxSide: Int) -> Bitmap?)? = null
 
     /** Whether the page has scrolled away from its top; the status area then dissolves into it. */
     var scrolled by mutableStateOf(false)
@@ -68,9 +65,9 @@ class BrowserChrome(private val scope: CoroutineScope) {
         edgeCache.remove(tabId)
     }
 
-    /** Reads the page's edge colours from what Gecko has drawn. */
+    /** Reads the page's edge colours from what is on screen. */
     suspend fun sampleEdges(tabId: String, bottomBandPx: Int, isCurrent: () -> Boolean) {
-        val bitmap = capture(220) ?: return
+        val bitmap = snapshotSource?.invoke(160) ?: return
         if (isCurrent()) applyEdges(tabId, bitmap, bottomBandPx)
     }
 
@@ -115,20 +112,9 @@ class BrowserChrome(private val scope: CoroutineScope) {
         settleJob = scope.launch { collapse.animateTo(target, Motion.snappy()) }
     }
 
-    /** Grabs the visible page. Returns null if Gecko has nothing drawn or takes too long. */
-    suspend fun capture(timeoutMs: Long = 250): Bitmap? {
-        val view = geckoView ?: return null
-        if (view.session == null) return null
-        return withTimeoutOrNull(timeoutMs) {
-            suspendCancellableCoroutine { cont ->
-                try {
-                    view.capturePixels().accept({ bmp -> if (cont.isActive) cont.resume(bmp) }, { _ -> if (cont.isActive) cont.resume(null) })
-                } catch (_: Exception) {
-                    if (cont.isActive) cont.resume(null)
-                }
-            }
-        }
-    }
+    /** Grabs the visible page; null if nothing is drawn. The timeout is kept for callers but a draw is immediate. */
+    @Suppress("UNUSED_PARAMETER")
+    fun capture(timeoutMs: Long = 250): Bitmap? = snapshotSource?.invoke(960)
 
     companion object {
         /**

@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.floating
+import app.pane.browser.ui.theme.frosted
 
 /** A 44dp-target icon button that dims when pressed. Reserved for glyphs everyone already knows. */
 @Composable
@@ -49,7 +50,7 @@ fun ChromeButton(
     }
 }
 
-/** Plain text button ("Done", "Cancel"). */
+/** Plain text button, with an optional glyph in front. Prefer [ChromeButton] where a glyph alone says it. */
 @Composable
 fun TextButton(
     text: String,
@@ -58,21 +59,27 @@ fun TextButton(
     enabled: Boolean = true,
     bold: Boolean = false,
     color: Color = PaneTheme.colors.label,
+    icon: ImageVector? = null,
 ) {
-    Box(
+    Row(
         modifier = modifier
             .defaultMinSize(minWidth = 44.dp, minHeight = 44.dp)
             .pressDim(enabled = enabled, onClick = onClick)
             .padding(horizontal = 10.dp),
-        contentAlignment = Alignment.Center,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null) {
+            Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
+            Box(Modifier.size(8.dp))
+        }
         Text(text, style = if (bold) PaneTheme.type.headline else PaneTheme.type.body, color = color)
     }
 }
 
 enum class ButtonStyle { Filled, Tinted, Plain, Destructive }
 
-/** Full-width pill action used in sheets and onboarding. Filled is solid ink (paper in dark). */
+/** Full-width pill action used in sheets and onboarding. Filled is the one accent-blue pill. */
 @Composable
 fun PrimaryButton(
     text: String,
@@ -87,13 +94,13 @@ fun PrimaryButton(
         ButtonStyle.Filled -> colors.accent to colors.onAccent
         ButtonStyle.Tinted -> colors.fill to colors.label
         ButtonStyle.Plain -> Color.Transparent to colors.label
-        ButtonStyle.Destructive -> colors.destructive.copy(alpha = 0.12f) to colors.destructive
+        ButtonStyle.Destructive -> colors.destructive to Color.White
     }
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(52.dp)
-            .pressScale(enabled = enabled, pressedScale = 0.97f, haptic = true, onClick = onClick)
+            .height(ButtonHeight)
+            .pressScale(enabled = enabled, pressedScale = 0.98f, haptic = true, onClick = onClick)
             .clip(PaneShapes.pill)
             .background(if (enabled) bg else colors.fill),
         horizontalArrangement = Arrangement.Center,
@@ -107,7 +114,73 @@ fun PrimaryButton(
     }
 }
 
-/** A round button that floats over the page: solid, hairline, short shadow. Its [content] is centred. */
+/**
+ * A secondary action under (or beside) the primary one: no fill, no outline, just a glyph and a few
+ * words in muted ink. It stays quiet so the one real choice reads first.
+ */
+@Composable
+fun QuietButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    icon: ImageVector? = null,
+) {
+    val colors = PaneTheme.colors
+    val tint = if (enabled) colors.secondaryLabel else colors.tertiaryLabel
+    Row(
+        modifier
+            .height(ButtonHeight)
+            .pressDim(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 24.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp))
+            Box(Modifier.size(8.dp))
+        }
+        Text(text, style = PaneTheme.type.headline, color = tint, maxLines = 1)
+    }
+}
+
+/**
+ * A pill that is only a glyph, for actions everyone already reads (next, done, close). [style]
+ * Filled is the solid accent pill; anything else is a soft wash.
+ */
+@Composable
+fun IconPill(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    style: ButtonStyle = ButtonStyle.Filled,
+    enabled: Boolean = true,
+) {
+    val colors = PaneTheme.colors
+    val filled = style == ButtonStyle.Filled
+    val tint = when {
+        !enabled -> colors.tertiaryLabel
+        filled -> colors.onAccent
+        else -> colors.label
+    }
+    Box(
+        modifier
+            .height(ButtonHeight)
+            .semantics { this.contentDescription = contentDescription }
+            .pressScale(enabled = enabled, pressedScale = 0.97f, haptic = true, onClick = onClick)
+            .clip(PaneShapes.pill)
+            .background(if (filled && enabled) colors.accent else colors.fill),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+    }
+}
+
+/** The height of a full-width pill action. */
+private val ButtonHeight = 48.dp
+
+/** A round button that floats over the page, [frosted] over it. Its [content] is centred. */
 @Composable
 fun FloatingCircle(
     onClick: () -> Unit,
@@ -123,7 +196,7 @@ fun FloatingCircle(
             .size(size)
             .then(if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier)
             .pressScale(enabled = enabled, pressedScale = 0.9f, haptic = true, onLongClick = onLongClick, onClick = onClick)
-            .floating(CircleShape),
+            .frosted(CircleShape),
         contentAlignment = Alignment.Center,
         content = content,
     )

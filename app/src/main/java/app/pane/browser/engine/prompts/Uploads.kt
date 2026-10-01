@@ -15,8 +15,9 @@ import java.util.UUID
 /**
  * Copies documents picked for an `<input type=file>` into app-private storage.
  *
- * The system picker hands out `content:` URIs that Gecko can't reliably open by path; a private
- * copy with the original name works everywhere and is pruned after a day.
+ * The system picker hands out `content:` URIs whose read grant dies with the activity that received
+ * them, while a page may hold on to the file for as long as it likes; a private copy with the
+ * original name stays readable, and is pruned after a day.
  */
 internal object Uploads {
     private const val DIR = "uploads"

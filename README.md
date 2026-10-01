@@ -1,126 +1,95 @@
 # Pane
 
-A minimal Android browser: black, white and quiet, with real Firefox extensions.
+A minimal Android browser built on the system WebView, with a small floating bar instead of a
+toolbar.
 
-Pane is built on **GeckoView** (Mozilla's engine) and **Jetpack Compose**. The chrome is designed
-around one idea: the page is the interface. A small floating pill holds the address, tabs and
-menu, and gets out of the way when you scroll. See [DESIGN.md](DESIGN.md).
+Pane is written in Kotlin with **Jetpack Compose**. Pages are rendered by the Android WebView that
+ships with the phone (through `androidx.webkit`), so there is no engine inside the APK. The chrome
+is designed around one idea: the page is the interface. A small floating pill holds the address,
+tabs and menu, and gets out of the way when you scroll. See [DESIGN.md](DESIGN.md).
 
-## Highlights
+## What it does
 
 **Look and motion**
-- Flat and black-and-white, after Nothing's design language: true black and white, hairlines
-  instead of boxes, a dot-matrix accent, one red used only as a status light, in your phone's own
-  system font. No blur, no glass: the page is a plain system surface, which is gentle on the
-  battery.
-- The page runs truly edge to edge, under the status bar; a soft veil in the page's own colour keeps
-  the status icons legible and lets scrolled content fade out beneath them. Fixed footers stay above
-  the floating pill and drop to the screen edge when it melts away.
+- Flat and black-and-white: true black and white, hairlines instead of boxes, one red used only as
+  a status light, in your phone's own system font. No blur, no glass, which is gentle on the battery.
+- The page runs truly edge to edge, under the status bar and the floating pill.
 - Everything moves on springs from one small set of tokens, so gestures hand off to animations
   without a seam: the address pill *becomes* the search field, the menu grows out of its button,
   a tab's page flies into its card.
-- Swipe the address pill sideways to move between tabs (past the last one opens a new tab); swipe
-  up for the tab overview.
-- The system back gesture slides the page away and reveals the previous one in parallax, and can
-  be cancelled halfway through.
-- Swipeable switches and segmented controls, Android's own overscroll stretch, and restrained
-  haptics.
+- Swipe the address pill sideways to move between tabs; swipe up for the tab overview.
+- The system back gesture slides the page away and reveals the previous one, and can be cancelled
+  halfway through.
 
-**Privacy & security** (all on by default)
-- Web content runs in Android *isolated processes*: no permissions and no access to app data,
-  even if a renderer is compromised.
-- Strict Enhanced Tracking Protection, Total Cookie Protection, bounce-tracking protection,
-  fingerprinting protection, query-parameter stripping and Safe Browsing.
-- HTTPS-Only mode, DNS over HTTPS (Quad9 by default), Global Privacy Control.
-- Private tabs: separate engine context, never written to disk, screenshots blocked, optional
-  biometric lock.
+**Browsing**
+- Tabs and private tabs, session restore, recently closed tabs, optional closing of tabs you
+  haven't looked at for a while.
+- Bookmarks with favourites, history grouped by day, a download manager, find in page, desktop
+  mode, add to home screen.
+- Search engines with `@keyword` shortcuts (`@w`, `@yt`, `@gh`, ...), suggestions, open-tab
+  suggestions.
+- Per-site permissions asked in plain language, with a Remember switch.
+- Launcher shortcuts for a new tab and a new private tab; "Search in Pane" in the text selection
+  menu; hardware keyboard shortcuts.
+
+**Privacy settings** (Settings > Privacy)
+- Block ads and trackers, block third-party cookies, upgrade to HTTPS, remove tracking parameters
+  from links you share or copy.
+- Remember history, clear data on exit, lock private tabs with the phone's screen lock.
 - No telemetry, no crash reporting, no accounts. Backups and device transfer exclude all browsing
-  data. Optional "clear everything on exit", finished at next launch if interrupted.
-- Site permissions (location, camera, microphone, notifications, DRM, local network, …) are asked
-  in plain language with a Remember switch; unremembered answers expire. Audible autoplay is
-  blocked. Pages that spam dialogs can be silenced.
-- `javascript:`, `data:`, `file:` and `content:` URLs are never run from the address bar or from
-  other apps; pages can't open other apps without asking you first.
-- Search suggestions and add-on store requests go through Gecko's own network stack
-  (same DoH/TLS settings), anonymously.
-- Site icons are fetched only for pages you open in normal tabs (never private ones), cached on
-  the device, and cleared with browsing data.
-- Links you share or copy have tracking parameters removed.
+  data.
+
+**Ad blocking** (Settings > Privacy > Filter lists). Pane reads the standard uBlock Origin and
+EasyList filter lists itself, with no extension runtime: request blocking (`||host^`, wildcards,
+`$third-party`, `$domain`, resource types, `@@` exceptions, `$important`, `$badfilter`) and
+element hiding, in a compact index that loads in milliseconds and stays within a few MB. The lists
+(uBlock filters, privacy, badware, unbreak and resource abuse, EasyList, EasyPrivacy and Peter
+Lowe's list) are GPL or CC BY-SA licensed, so they are not bundled: the app downloads them on the
+device and refreshes them every few days on an unmetered connection, or when you tap the update
+glyph. Scriptlets, HTML filtering, `$csp`, `$removeparam` and procedural cosmetic filters need
+an extension runtime and are skipped.
 
 **Passwords & passkeys**
-- Pane keeps no passwords itself and names no password manager. Login forms go to whichever
-  Android autofill service the phone has set up, with the site's address, so it matches logins by
-  website, fills them, and offers to save new ones after you sign in. Pane's own fields (address
-  bar, find, search) are kept out of autofill; the HTTP sign-in prompt is marked as
-  username/password.
-- Passkeys on Android 14+ go through Credential Manager on the site's behalf, like other
-  browsers, using whichever provider the phone has chosen.
-- **Settings › Passwords** shows which autofill service is active and opens its system picker.
-  Android 15+ also offers system settings for passkey providers.
-- CI checks this for real: the emulator test installs a stand-in autofill service (debug builds
-  only), opens github.com/login, and fails unless the form reaches it with its domain and
-  password field.
-
-**Edge to edge**
-- The page and bars draw under the status and navigation bars; in landscape the UI keeps clear
-  of a side navigation bar or camera cutout.
-
-**Features**
-- Firefox add-ons: an in-app store backed by addons.mozilla.org (search, ratings, one-tap
-  install), install from file, browser-action buttons with badges, popups, options pages,
-  per-extension private-browsing permission, daily update checks. Onboarding offers uBlock Origin.
-- Built-in reader view (Mozilla Readability; light, sepia and dark themes, text size, reading
-  time), find in page, desktop mode, add to home screen, site info sheet.
-- Context menus for links, images and media: open in (private) tab, copy clean link, share, save.
-- Native, iOS-style pickers for `<select>`, colours and date/time, plus sign-in, file upload
-  and share prompts.
-- Bookmarks with favourites, history grouped by day, a download manager.
-- Search engines with `@keyword` shortcuts (`@w`, `@yt`, `@gh`, …), inline autocomplete of known
-  sites, open-tab suggestions.
-- Session restore, recently closed tabs, per-site permissions, clear browsing data.
-- Launcher shortcuts for a new tab and a new private tab; "Search in Pane" in the text selection
-  menu; hardware keyboard shortcuts (Ctrl+T/W/L/R/F, Ctrl+Tab, Alt+←/→).
-- Optionally closes tabs you haven't looked at for a while (Settings › Tabs & toolbar).
-- Settings open on this week's blocked-tracker count and a search over every setting, then group
-  into Browsing, Look & feel and Privacy & data. Everything can be put back to its defaults from
-  About. Defaults follow Firefox's Standard profile; Strict tracking protection is one tap away.
+- Pane keeps no passwords itself. Login forms go to whichever Android autofill service the phone
+  has set up, and passkeys to its Credential Manager provider. Settings > Passwords shows which
+  autofill service is active and opens the system picker.
 
 ## Project layout
 
 ```
-core/   Engine-agnostic logic in plain Kotlin (URL fixup, search, tab store, privacy helpers,
-        AMO client…). Builds and tests without the Android SDK.
-app/    The Android app: GeckoView integration (engine/), storage (data/), extensions,
-        downloads and the Compose UI (ui/).
+core/   Engine-agnostic logic in plain Kotlin (URL fixup, search, tab store, settings model,
+        privacy helpers). Builds and tests without the Android SDK.
+app/    The Android app: WebView integration (engine/), storage (data/), downloads and the
+        Compose UI (ui/).
 ```
 
 ## Install
 
-Grab the APK from the [latest release](../../releases/latest): `Pane-<version>-arm64-v8a.apk`
-fits almost every phone. Android 8.0 or newer.
+Grab `Pane-<version>.apk` from the [latest release](../../releases/latest). It is one small APK for
+every phone (Pane uses the system's Android System WebView, so keep that updated). Android 8.0 or
+newer.
 
 ## Building
 
 Requirements: JDK 17+ and an Android SDK with platform 37.1.
 
 ```sh
-./gradlew :app:assembleDebug                    # all ABIs
-./gradlew :app:assembleDebug -Ppane.abis=arm64-v8a   # just one, much smaller
+./gradlew :app:assembleDebug
+./gradlew :app:assembleRelease                  # minified (R8), about 2 MB
 ./gradlew -p core test                          # core unit tests, no Android SDK needed
 ```
 
 CI (`.github/workflows/`) builds, lints and tests every push, builds a minified (R8) release,
 and runs a native UI walkthrough on Android 14 and Android 9 covering onboarding, a live page,
 Find/Back, external links, the menu, tabs, search, repeated appearance changes, bookmarks,
-history, extensions, private-history isolation, screenshot protection, landscape and autofill. It fails on
+history, private-history isolation, screenshot protection, landscape and autofill. It fails on
 assertion failures, crashes or Pane ANRs and uploads screenshots and diagnostics.
 
 ### Releases
 
 The version lives in `VERSION`. Bumping it on the default branch (or pushing a tag such as
-`v1.0.1`, or running `release.yml` by hand with a tag name) builds one APK per CPU type
-(arm64-v8a, armeabi-v7a, x86_64) and publishes them with checksums as a GitHub Release,
-creating the tag.
+`v1.0.1`, or running `release.yml` by hand with a tag name) builds one universal APK and
+publishes it with a checksum as a GitHub Release, creating the tag.
 
 Signing uses the repository secret `PANE_KEYSTORE_BASE64` (a base64-encoded PKCS12 keystore;
 optional `PANE_KEYSTORE_PASSWORD`, default `pane-release`, and `PANE_KEY_ALIAS`, default `pane`).
@@ -139,5 +108,5 @@ key.
 
 ## Licences
 
-Pane's dependencies: GeckoView (MPL-2.0), AndroidX and Jetpack Compose (Apache-2.0), Kotlin and
-kotlinx libraries (Apache-2.0), Mozilla Readability (Apache-2.0).
+Pane's dependencies: AndroidX and Jetpack Compose (Apache-2.0), Kotlin and kotlinx libraries
+(Apache-2.0). Pages are rendered by the Android WebView already on the phone.

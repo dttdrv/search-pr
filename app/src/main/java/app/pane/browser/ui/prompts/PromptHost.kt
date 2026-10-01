@@ -25,27 +25,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.engine.EngineEvent
-import app.pane.browser.extensions.ExtensionsManager
 import app.pane.browser.engine.PromptRequest
 import app.pane.browser.engine.prompts.AndroidPermissionRequest
 import app.pane.browser.engine.prompts.AuthRequest
 import app.pane.browser.engine.prompts.BeforeUnloadRequest
-import app.pane.browser.engine.prompts.ChoiceRequest
-import app.pane.browser.engine.prompts.ColorRequest
 import app.pane.browser.engine.prompts.ContentPermissionRequest
 import app.pane.browser.engine.prompts.ContextMenuRequest
-import app.pane.browser.engine.prompts.DateTimeRequest
 import app.pane.browser.engine.prompts.ExternalAppRequest
 import app.pane.browser.engine.prompts.ExternalApps
-import app.pane.browser.engine.prompts.FileRequest
-import app.pane.browser.engine.prompts.MediaPermissionRequest
 import app.pane.browser.engine.prompts.PopupRequest
-import app.pane.browser.engine.prompts.PromptEnvironment
-import app.pane.browser.engine.prompts.RedirectRequest
-import app.pane.browser.engine.prompts.RepostRequest
 import app.pane.browser.engine.prompts.ScriptDialogRequest
-import app.pane.browser.engine.prompts.ShareRequest
-import app.pane.browser.engine.prompts.Uploads
 import app.pane.browser.ui.browser.BrowserChrome
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
@@ -53,11 +42,10 @@ import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneAlert
 import app.pane.browser.ui.components.ToastState
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
- * Renders the page prompts waiting in the queue: dialogs, pickers, permission sheets, context
- * menus and blocked pop-up banners.
+ * Renders the page prompts waiting in the queue: dialogs, permission sheets, context menus and
+ * blocked pop-up banners.
  *
  * Only the first request for the selected tab (or for no tab) is shown; prompts from background
  * tabs wait until their tab comes forward. Consecutive prompts don't overlap: the current one
@@ -73,10 +61,6 @@ fun PromptHost() {
     val queue = container.prompts
 
     LaunchedEffect(container) {
-        // Idempotent; the container installs it too so callbacks before the first frame see real settings.
-        PromptEnvironment.install(container.runtime, container.settings, container.store)
-    }
-    LaunchedEffect(container) {
         container.sessions.events.collect { event -> onEngineEvent(container, context, toasts, event) }
     }
 
@@ -84,39 +68,25 @@ fun PromptHost() {
     val browserState by container.store.state.collectAsStateWithLifecycle()
     // Only the selected tab matters here; progress ticks on other tabs shouldn't recompose prompts.
     val selectedTabId by remember { derivedStateOf { browserState.selectedTabId } }
-    // Extension popups and options pages have no tab of their own.
     // A locked private tab's prompts wait behind the lock rather than showing its content over it.
     val pageLocked by BrowserChrome.pageLocked.collectAsStateWithLifecycle()
-    val foreground = requests.filter {
-        it.tabId == null || (it.tabId == selectedTabId && !pageLocked) || it.tabId == ExtensionsManager.AUX_PROMPT_OWNER
-    }
+    val foreground = requests.filter { it.tabId == null || (it.tabId == selectedTabId && !pageLocked) }
     // Blocked pop-up banners don't stop the page, so they get their own lane and never hold up a dialog.
     val banner = rememberPresentation(foreground.firstOrNull { it.isBanner })
     val modal = rememberPresentation(foreground.firstOrNull { !it.isBanner })
 
-    // System pickers and permission dialogs. Registered unconditionally so a result still finds
+    // The system's runtime-permission dialog. Registered unconditionally so a result still finds
     // its request after the activity is recreated.
     val appContext = context.applicationContext
-    var pendingFileId by rememberSaveable { mutableStateOf<Long?>(null) }
     var pendingPermissionId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     fun pending(id: Long?): PromptRequest? = id?.let { wanted -> requests.firstOrNull { it.id == wanted } }
 
-    val pickOne = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val request = pending(pendingFileId) as? FileRequest
-        pendingFileId = null
-        if (request != null) deliverFiles(container, appContext, request, listOfNotNull(uri))
-    }
-    val pickMany = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        val request = pending(pendingFileId) as? FileRequest
-        pendingFileId = null
-        if (request != null) deliverFiles(container, appContext, request, uris)
-    }
     val askPermissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
         val request = pending(pendingPermissionId) as? AndroidPermissionRequest
         pendingPermissionId = null
         if (request != null) {
-            val granted = request.permissions.all { isGranted(appContext, it) }
+            val granted = request.isSatisfied(appContext)
             request.complete(granted)
             queue.remove(request)
             // Only point to Settings when Android no longer shows its own dialog.
@@ -125,16 +95,11 @@ fun PromptHost() {
         }
     }
 
-    fun canShow(request: PromptRequest) = request.tabId == null ||
-        (request.tabId == selectedTabId && !pageLocked) || request.tabId == ExtensionsManager.AUX_PROMPT_OWNER
+    fun canShow(request: PromptRequest) = request.tabId == null || (request.tabId == selectedTabId && !pageLocked)
 
     banner.shown?.takeIf(::canShow)?.let { request ->
         key(request.id) {
-            when (request) {
-                is PopupRequest -> PopupBanner(request, banner.visible) { queue.remove(request) }
-                is RedirectRequest -> RedirectBanner(request, banner.visible) { queue.remove(request) }
-                else -> Unit
-            }
+            if (request is PopupRequest) PopupBanner(request, banner.visible) { queue.remove(request) }
         }
     }
 
@@ -143,34 +108,16 @@ fun PromptHost() {
     val onDone: () -> Unit = { queue.remove(request) }
     key(request.id) {
         when (request) {
-            is ScriptDialogRequest<*> -> ScriptDialog(request, visible, onDone)
+            is ScriptDialogRequest -> ScriptDialog(request, visible, onDone)
             is AuthRequest -> AuthDialog(request, visible, onDone)
-            is RepostRequest -> RepostDialog(request, visible, onDone)
             is BeforeUnloadRequest -> BeforeUnloadDialog(request, visible, onDone)
             is ExternalAppRequest -> ExternalAppDialog(request, visible, onDone)
-            is ChoiceRequest -> ChoiceSheet(request, visible, onDone)
-            is ColorRequest -> ColorSheet(request, visible, onDone)
-            is DateTimeRequest -> DateTimeSheet(request, visible, onDone)
             is ContentPermissionRequest -> ContentPermissionSheet(request, visible, onDone)
-            is MediaPermissionRequest -> MediaPermissionSheet(request, visible, onDone)
             is ContextMenuRequest -> ContextMenuSheet(request, visible, onDone)
-            is FileRequest -> LaunchedEffect(Unit) {
-                if (pendingFileId == request.id) return@LaunchedEffect
-                pendingFileId = request.id
-                val launched = runCatching {
-                    if (request.allowsMultiple) pickMany.launch(request.mimeTypes) else pickOne.launch(request.mimeTypes)
-                }.isSuccess
-                if (!launched) {
-                    pendingFileId = null
-                    request.dismiss()
-                    onDone()
-                    toasts.show("No app can choose files")
-                }
-            }
             is AndroidPermissionRequest -> LaunchedEffect(Unit) {
                 if (pendingPermissionId == request.id) return@LaunchedEffect
                 val missing = request.permissions.filterNot { isGranted(appContext, it) }
-                if (missing.isEmpty()) {
+                if (request.isSatisfied(appContext)) {
                     request.complete(true)
                     onDone()
                     return@LaunchedEffect
@@ -182,11 +129,6 @@ fun PromptHost() {
                     onDone()
                 }
             }
-            is ShareRequest -> LaunchedEffect(Unit) {
-                request.finish(share(context, request))
-                onDone()
-            }
-            // Other features render their own request types (extension prompts, for one).
             else -> Unit
         }
     }
@@ -214,20 +156,7 @@ private fun rememberPresentation(target: PromptRequest?): Presentation {
     return presentation
 }
 
-private val PromptRequest.isBanner: Boolean get() = this is PopupRequest || this is RedirectRequest
-
-/** Answers a file input with private copies of what was picked; nothing picked cancels it. */
-private fun deliverFiles(container: AppContainer, context: Context, request: FileRequest, uris: List<Uri>) {
-    if (uris.isEmpty()) {
-        request.dismiss()
-        container.prompts.remove(request)
-        return
-    }
-    container.scope.launch {
-        request.pick(context, Uploads.stage(context, uris))
-        container.prompts.remove(request)
-    }
-}
+private val PromptRequest.isBanner: Boolean get() = this is PopupRequest
 
 /** "Open in “Maps”?" before a page hands a link to another app. */
 @Composable
@@ -303,23 +232,16 @@ private fun fallBack(container: AppContainer, toasts: ToastState, tabId: String?
     }
 }
 
-/** `navigator.share()` through the Android share sheet. True if the sheet opened. */
-private fun share(context: Context, request: ShareRequest): Boolean {
-    val text = listOfNotNull(request.text, request.uri).map { it.trim() }.filter { it.isNotEmpty() }.distinct().joinToString("\n")
-    if (text.isEmpty()) return false
-    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
-    request.title?.takeIf { it.isNotBlank() }?.let { send.putExtra(Intent.EXTRA_SUBJECT, it) }
-    return runCatching { context.startActivity(Intent.createChooser(send, null)) }.isSuccess
-}
-
 /** How long a prompt takes to leave, so the next one doesn't land on top of it. */
 private fun exitDurationOf(request: PromptRequest): Long = when (request) {
-    is ScriptDialogRequest<*>, is AuthRequest, is RepostRequest, is BeforeUnloadRequest, is ExternalAppRequest -> 190L
-    is ChoiceRequest, is ColorRequest, is DateTimeRequest, is ContentPermissionRequest,
-    is MediaPermissionRequest, is ContextMenuRequest, is PopupRequest, is RedirectRequest,
-    -> 340L
+    is ScriptDialogRequest, is AuthRequest, is BeforeUnloadRequest, is ExternalAppRequest -> 190L
+    is ContentPermissionRequest, is ContextMenuRequest, is PopupRequest -> 340L
     else -> 0L
 }
+
+/** Everything the page's feature needs is held (or, for location, either precision). */
+private fun AndroidPermissionRequest.isSatisfied(context: Context): Boolean =
+    if (requireAll) permissions.all { isGranted(context, it) } else permissions.any { isGranted(context, it) }
 
 private fun isGranted(context: Context, permission: String) =
     ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED

@@ -1,6 +1,7 @@
 package app.pane.browser.ui.prompts
 
-import android.annotation.SuppressLint
+import app.pane.browser.ui.icons.PaneIcons
+import app.pane.browser.ui.components.ChromeButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,7 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
-import app.pane.browser.engine.prompts.SitePermissions
+import app.pane.browser.engine.WebData
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
 import app.pane.browser.ui.components.LocalToasts
@@ -38,22 +40,19 @@ import app.pane.core.prompts.PermissionText
 import app.pane.core.prompts.SitePermission
 import app.pane.core.tabs.SecurityState
 import app.pane.core.url.UrlInput
-import kotlinx.coroutines.suspendCancellableCoroutine
-import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
-import org.mozilla.geckoview.StorageController
-import kotlin.coroutines.resume
+import kotlinx.coroutines.launch
 
 /** How the connection reads: a plain line and its detail. [tone] is only coloured where it carries meaning. */
 private class Connection(val title: String, val detail: String?, val tone: Tone, val locked: Boolean)
 
 private enum class Tone { Normal, Caution, Danger }
 
-/** A stored site permission and the value the user may just have changed it to. */
-private class SiteGrant(val permission: ContentPermission, val kind: SitePermission, val value: Int)
+/** A stored site permission and the answer the user may just have changed it to. */
+private class SiteGrant(val kind: SitePermission, val allowed: Boolean)
 
 /**
  * The sheet behind the lock mark: the host as a plain title, one line on the connection (with a red
- * light only when it is unsafe), trackers blocked, the site's remembered permissions (tap one to
+ * light only when it is unsafe), the site's remembered permissions (tap one to
  * switch it in place) and a way to wipe its cookies and storage.
  */
 @Composable
@@ -70,8 +69,9 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
     var confirmClear by remember { mutableStateOf(false) }
 
     LaunchedEffect(visible, url) {
-        if (visible && isWeb) grants = loadGrants(container, url, tab?.isPrivate == true)
+        if (visible && isWeb) grants = loadGrants(container, url)
     }
+    val scope = rememberCoroutineScope()
 
     PaneSheet(visible = visible, onDismiss = onDismiss) {
         val connection = connectionFor(tab?.security ?: SecurityState.Unknown, url)
@@ -97,7 +97,7 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                         Text(connection.title, style = PaneTheme.type.subheadline, color = connectionColor)
                     }
                 }
-                TextButton("Done", onClick = onDismiss, bold = true)
+                ChromeButton(PaneIcons.Close, "Done", onClick = onDismiss)
             }
             if (connection.detail != null) {
                 Text(
@@ -111,32 +111,19 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
 
             if (isWeb) {
                 Separator(Modifier.padding(vertical = 4.dp))
-                FlatSection(entranceIndex = 3) {
-                    row { FlatRow("Trackers Blocked", value = (tab?.trackersBlocked ?: 0).toString()) }
-                }
-
-                Separator(Modifier.padding(vertical = 4.dp))
                 FlatSection(
                     header = "Permissions",
                     footer = if (grants.isEmpty()) "None saved yet." else "Tap to change.",
-                    entranceIndex = 4,
+                    entranceIndex = 3,
                 ) {
                     grants.forEach { grant ->
                         row {
-                            val allowed = grant.value == ContentPermission.VALUE_ALLOW
                             FlatRow(
-                                title = PermissionText.settingLabel(grant.kind, grant.permission.thirdPartyOrigin),
-                                value = if (allowed) "Allowed" else "Blocked",
+                                title = PermissionText.settingLabel(grant.kind),
+                                value = if (grant.allowed) "Allowed" else "Blocked",
                                 onClick = {
-                                    val allow = !allowed
-                                    setGrant(container, grant.permission, allow)
-                                    grants = grants.map {
-                                        if (it === grant) {
-                                            SiteGrant(it.permission, it.kind, if (allow) ContentPermission.VALUE_ALLOW else ContentPermission.VALUE_DENY)
-                                        } else {
-                                            it
-                                        }
-                                    }
+                                    container.sitePermissions.set(url, grant.kind, !grant.allowed)
+                                    grants = grants.map { if (it === grant) SiteGrant(it.kind, !it.allowed) else it }
                                 },
                             )
                         }
@@ -144,7 +131,7 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                     if (grants.isNotEmpty()) {
                         row {
                             FlatRow("Reset Permissions", onClick = {
-                                grants.forEach { resetGrant(container, it.permission) }
+                                container.sitePermissions.clear(url)
                                 grants = emptyList()
                                 toasts.show("Permissions reset for $host")
                             })
@@ -153,11 +140,10 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                 }
 
                 Separator(Modifier.padding(vertical = 4.dp))
-                FlatSection(entranceIndex = 5 + grants.size.coerceAtMost(3)) {
+                FlatSection(entranceIndex = 4 + grants.size.coerceAtMost(3)) {
                     row { FlatRow("Clear Site Data", titleColor = colors.destructive, onClick = { confirmClear = true }) }
                 }
             }
-            Spacer(Modifier.height(12.dp))
         }
     }
 
@@ -171,7 +157,7 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                 confirmClear = false
                 val siteHost = UrlInput.hostOf(url)
                 if (siteHost != null) {
-                    clearSiteData(container, siteHost)
+                    scope.launch { WebData.clearSite(siteHost) }
                     val id = tabId
                     val reload: (() -> Unit)? = if (id != null) ({ container.sessions.reload(id) }) else null
                     toasts.show("Cleared data for $host", null, if (reload != null) "Reload" else null, reload)
@@ -183,7 +169,7 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
 }
 
 private fun connectionFor(security: SecurityState, url: String): Connection = when {
-    url.isEmpty() || url.startsWith("about:") || url.startsWith("moz-extension:") ->
+    url.isEmpty() || url.startsWith("about:") ->
         Connection("Pane page", null, Tone.Normal, locked = false)
     security == SecurityState.Secure ->
         Connection("Connection secure", null, Tone.Normal, locked = true)
@@ -194,39 +180,7 @@ private fun connectionFor(security: SecurityState, url: String): Connection = wh
     else -> Connection("Checking…", null, Tone.Normal, locked = false)
 }
 
-/** The site's remembered permissions, most useful first; muted autoplay is always on, so it's left out. */
-private suspend fun loadGrants(container: AppContainer, url: String, private: Boolean): List<SiteGrant> {
-    val stored = suspendCancellableCoroutine<List<ContentPermission>> { cont ->
-        container.runtime.storageController.getPermissions(url, private).accept(
-            { list -> if (cont.isActive) cont.resume(list?.filterNotNull().orEmpty()) },
-            { _ -> if (cont.isActive) cont.resume(emptyList()) },
-        )
-    }
-    return stored.mapNotNull { permission ->
-        val kind = SitePermissions.fromGecko(permission.permission) ?: return@mapNotNull null
-        if (kind == SitePermission.AutoplayMuted || permission.value == ContentPermission.VALUE_PROMPT) return@mapNotNull null
-        SiteGrant(permission, kind, permission.value)
-    }.sortedBy { it.kind.ordinal }
-}
-
-private fun setGrant(container: AppContainer, permission: ContentPermission, allow: Boolean) {
-    container.runtime.storageController.setPermission(
-        permission,
-        if (allow) ContentPermission.VALUE_ALLOW else ContentPermission.VALUE_DENY,
-    )
-}
-
-private fun resetGrant(container: AppContainer, permission: ContentPermission) {
-    container.runtime.storageController.setPermission(permission, ContentPermission.VALUE_PROMPT)
-}
-
-// The flags parameter is a bit field; GeckoView's annotation just doesn't say so.
-@SuppressLint("WrongConstant")
-private fun clearSiteData(container: AppContainer, host: String) {
-    // Gecko widens the host to its registrable domain, so cookies set for the parent domain go too.
-    val flags = StorageController.ClearFlags.COOKIES or
-        StorageController.ClearFlags.DOM_STORAGES or
-        StorageController.ClearFlags.AUTH_SESSIONS or
-        StorageController.ClearFlags.ALL_CACHES
-    container.runtime.storageController.clearDataFromBaseDomain(host, flags)
-}
+/** The site's remembered permissions, in the order Site Settings lists them. */
+private fun loadGrants(container: AppContainer, url: String): List<SiteGrant> =
+    container.sitePermissions.forOrigin(url)
+        .map { (kind, allowed) -> SiteGrant(kind, allowed) }

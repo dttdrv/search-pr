@@ -7,9 +7,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,9 +29,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.components.ActionRow
 import app.pane.browser.ui.components.CheckRow
+import app.pane.browser.ui.components.GlyphSize
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.PaneSheet
+import app.pane.browser.ui.components.RowMargin
 import app.pane.browser.ui.components.SegmentedControl
 import app.pane.browser.ui.components.SheetHeader
 import app.pane.browser.ui.components.ToggleRow
@@ -52,24 +52,18 @@ internal fun rememberSettingsState(): State<BrowserSettings> =
 private val RowMin = 56.dp
 
 /**
- * Where a hairline starts in a section whose rows lead with a [SettingsIcon]: the 20dp screen
- * margin, the 22dp glyph and the 16dp gap, so separators line up under the titles, not the glyphs.
- */
-internal val IconSeparatorInset = 58.dp
-
-/**
- * The glyph that leads a navigation row on the settings home: a real line icon at 22dp in ink,
- * with nothing behind it. Sub-screens have no glyphs, only chevrons and checks.
+ * The glyph that leads a navigation row on the settings home: a real line icon in ink, with
+ * nothing behind it. Sub-screens have no glyphs, only chevrons and checks.
  */
 @Composable
 internal fun SettingsIcon(icon: ImageVector, modifier: Modifier = Modifier) {
-    Icon(icon, contentDescription = null, tint = PaneTheme.colors.label, modifier = modifier.size(22.dp))
+    Icon(icon, contentDescription = null, tint = PaneTheme.colors.label, modifier = modifier.size(GlyphSize))
 }
 
 /**
  * A row that opens something: title on the left, the current value on the right. Give it an [icon]
  * only on the settings home; inside a section, either every row has one or none does (and the
- * section passes [IconSeparatorInset]).
+ * section passes [GlyphInset]).
  */
 @Composable
 internal fun NavRow(
@@ -141,7 +135,8 @@ internal fun SegmentedRow(options: List<String>, selectedIndex: Int, onSelect: (
         options = options,
         selectedIndex = selectedIndex,
         onSelect = onSelect,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).height(48.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = RowMargin, vertical = 8.dp),
+        height = 48.dp,
     )
 }
 
@@ -214,7 +209,6 @@ internal fun ChoiceSheet(
                 row { ChoiceRow(option, selected = index == selectedIndex, onClick = { onSelect(index) }) }
             }
         }
-        Spacer(Modifier.height(24.dp))
     }
 }
 
@@ -232,19 +226,16 @@ internal data class SettingEntry(
  */
 internal val SettingsIndex: List<SettingEntry> = listOf(
     // Privacy
-    SettingEntry("Tracker protection", "Privacy", Route.PrivacySettings, "standard strict block trackers ads blocked"),
-    SettingEntry("Trackers blocked", "Privacy", Route.PrivacySettings, "count week statistics"),
+    SettingEntry("Block ads & trackers", "Privacy", Route.PrivacySettings, "ad blocker adblock trackers content blocking"),
+    SettingEntry("Filter lists", "Privacy", Route.FilterLists, "ublock easylist easyprivacy ad blocker update download rules"),
+    SettingEntry("Block third-party cookies", "Privacy", Route.PrivacySettings, "cookies cross-site"),
+    SettingEntry("Secure connections", "Privacy", Route.PrivacySettings, "https only prefer upgrade encrypted http"),
+    SettingEntry("Safe Browsing", "Privacy", Route.PrivacySettings, "phishing malware dangerous sites warning google"),
+    SettingEntry("Global Privacy Control", "Privacy", Route.PrivacySettings, "advanced gpc do not sell share sec-gpc"),
+    SettingEntry("Remove tracking parameters", "Privacy", Route.PrivacySettings, "utm fbclid query link strip"),
     SettingEntry("Remember history", "Privacy", Route.PrivacySettings, "browsing history save"),
     SettingEntry("Clear data on exit", "Privacy", Route.PrivacySettings, "quit close erase automatically"),
     SettingEntry("Lock private tabs", "Privacy", Route.PrivacySettings, "biometric fingerprint face pin screen lock"),
-    SettingEntry("Connections", "Privacy", Route.Connections, "servers hosts network contacts transparency"),
-    SettingEntry("Cookies", "Privacy", Route.PrivacySettings, "advanced third-party isolate block"),
-    SettingEntry("Secure connections", "Privacy", Route.PrivacySettings, "advanced https only first encrypted"),
-    SettingEntry("Secure DNS", "Privacy", Route.PrivacySettings, "advanced doh encrypted lookups quad9 cloudflare mullvad nextdns adguard provider"),
-    SettingEntry("Global Privacy Control", "Privacy", Route.PrivacySettings, "advanced gpc do not sell"),
-    SettingEntry("Fingerprinting protection", "Privacy", Route.PrivacySettings, "advanced"),
-    SettingEntry("Safe Browsing", "Privacy", Route.PrivacySettings, "advanced phishing malware dangerous sites warn"),
-    SettingEntry("Remove link tracking", "Privacy", Route.PrivacySettings, "advanced utm fbclid query parameters strip"),
     SettingEntry("JavaScript", "Privacy", Route.PrivacySettings, "advanced scripts"),
     SettingEntry("Block screenshots", "Privacy", Route.PrivacySettings, "advanced private tabs app switcher"),
     // Search
@@ -258,6 +249,7 @@ internal val SettingsIndex: List<SettingEntry> = listOf(
     // Appearance
     SettingEntry("Text size", "Appearance", Route.AppearanceSettings, "font larger bigger smaller zoom accessibility"),
     SettingEntry("Theme", "Appearance", Route.AppearanceSettings, "dark light automatic mode"),
+    SettingEntry("Dark pages", "Appearance", Route.AppearanceSettings, "dark mode websites darken night force"),
     SettingEntry("Reduce motion", "Appearance", Route.AppearanceSettings, "animations accessibility"),
     SettingEntry("Haptics", "Appearance", Route.AppearanceSettings, "haptic feedback vibration"),
     SettingEntry("Request desktop sites", "Appearance", Route.AppearanceSettings, "advanced desktop mode"),
@@ -267,21 +259,21 @@ internal val SettingsIndex: List<SettingEntry> = listOf(
     SettingEntry("Website tinting", "Tabs & toolbar", Route.TabsSettings, "toolbar color page tint"),
     SettingEntry("Reopen tabs on launch", "Tabs & toolbar", Route.TabsSettings, "restore session start"),
     SettingEntry("Close tabs after", "Tabs & toolbar", Route.TabsSettings, "days old unused stale automatically"),
-    SettingEntry("Show favorites", "Tabs & toolbar", Route.TabsSettings, "start page home bookmarks"),
+    // Start page
+    SettingEntry("Title", "Start page", Route.StartSettings, "start page home name clock time date heading"),
+    SettingEntry("Search field", "Start page", Route.StartSettings, "start page home pill address"),
+    SettingEntry("Favorites", "Start page", Route.StartSettings, "start page home tiles sites shortcuts bookmarks"),
+    SettingEntry("Number of favorites", "Start page", Route.StartSettings, "start page home tiles count how many"),
+    SettingEntry("Favorites from", "Start page", Route.StartSettings, "start page home most visited frequent bookmarks"),
     // Site permissions
     SettingEntry("Block pop-ups", "Site permissions", Route.SiteSettings, "windows"),
     SettingEntry("Block auto-play", "Site permissions", Route.SiteSettings, "video sound media"),
     SettingEntry("Site permissions", "Site permissions", Route.SiteSettings, "location camera microphone notifications sites"),
     SettingEntry("Reset all permissions", "Site permissions", Route.SiteSettings, "advanced"),
-    // Extensions
-    SettingEntry("Extensions", "Extensions", Route.Extensions, "add-ons addons installed"),
-    SettingEntry("Browse add-ons", "Extensions", Route.Extensions, "store addons.mozilla.org"),
-    SettingEntry("Install from file", "Extensions", Route.Extensions, "advanced xpi"),
-    SettingEntry("Check for updates", "Extensions", Route.Extensions, "advanced"),
     // Clear data
     SettingEntry("Clear browsing data", "Clear data", Route.ClearData, "history cookies cache erase delete"),
     // About
-    SettingEntry("Version", "About", Route.About, "build gecko engine"),
+    SettingEntry("Version", "About", Route.About, "build webview engine android"),
     SettingEntry("Reset settings", "About", Route.About, "defaults restore original"),
     SettingEntry("Open source licenses", "About", Route.About, "advanced"),
 )
@@ -289,13 +281,12 @@ internal val SettingsIndex: List<SettingEntry> = listOf(
 /** The glyph of the screen that holds a setting, for the rows in search results. */
 internal fun settingsIconFor(route: Route): ImageVector = when (route) {
     Route.PrivacySettings -> PaneIcons.Shield
-    Route.Connections -> PaneIcons.Transfer
     Route.SearchSettings -> PaneIcons.Magnifier
     Route.PasswordSettings -> PaneIcons.KeyRound
     Route.AppearanceSettings -> PaneIcons.Palette
     Route.TabsSettings -> PaneIcons.Tabs
+    Route.StartSettings -> PaneIcons.Home
     Route.SiteSettings -> PaneIcons.Globe
-    Route.Extensions -> PaneIcons.Puzzle
     Route.ClearData -> PaneIcons.Trash
     Route.About -> PaneIcons.Info
     else -> PaneIcons.Gear

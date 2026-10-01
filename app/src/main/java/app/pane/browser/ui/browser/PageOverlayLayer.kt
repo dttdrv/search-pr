@@ -27,7 +27,7 @@ import app.pane.browser.ui.theme.PaneTheme
 /**
  * Draws page snapshots over the live engine view while a gesture is in flight: the iOS-style
  * back swipe (current page slides away revealing the previous one with parallax), sideways tab
- * swipes, and a cover that holds the destination still until Gecko paints it.
+ * swipes, and a cover that holds the destination still until the page paints it.
  */
 @Composable
 fun PageOverlayLayer(

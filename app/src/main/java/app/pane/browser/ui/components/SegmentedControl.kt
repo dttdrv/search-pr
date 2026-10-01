@@ -2,7 +2,6 @@ package app.pane.browser.ui.components
 
 import androidx.compose.animation.core.animate
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.selection.selectable
@@ -30,7 +29,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
@@ -49,11 +47,9 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * A choice between a few options that you can tap or swipe. A hairline-outlined pill with no fill:
- * the ink thumb rides under your finger, ticks over each option as it passes, and springs into the
- * nearest one when let go — with the speed of the flick, so a quick swipe carries on to the next
- * option. Plain, high-contrast labels: the chosen one reads paper-on-ink, the others ink on
- * nothing.
+ * A choice between a few options that you can tap or swipe. A tonal pill: the thumb rides under
+ * your finger, ticks over each option as it passes, and settles into the nearest one when let go,
+ * with the speed of the flick, so a quick swipe carries on to the next option.
  */
 @Composable
 fun SegmentedControl(
@@ -72,14 +68,13 @@ fun SegmentedControl(
     val count = options.size.coerceAtLeast(1)
     val selection = selectedIndex.coerceIn(0, count - 1)
     val selectNow by rememberUpdatedState(onSelect)
-    // The 1dp outline plus a 3dp gap, so the thumb never touches the line.
-    val inset = 4.dp
+    val inset = 3.dp
 
     BoxWithConstraints(
         modifier = modifier
             .height(height)
             .clip(PaneShapes.pill)
-            .border(1.dp, colors.secondaryLabel, PaneShapes.pill)
+            .background(colors.fill)
             .padding(inset),
     ) {
         val segment = maxWidth / count
@@ -96,7 +91,7 @@ fun SegmentedControl(
         fun springTo(target: Float, velocity: Float = 0f) {
             settle?.cancel()
             settle = scope.launch {
-                animate(pos, target, initialVelocity = velocity, animationSpec = if (reduceMotion) Motion.fade(0) else Motion.bouncy()) { v, _ -> pos = v }
+                animate(pos, target, initialVelocity = velocity, animationSpec = if (reduceMotion) Motion.fade(0) else Motion.snappy()) { v, _ -> pos = v }
             }
         }
 
@@ -145,20 +140,13 @@ fun SegmentedControl(
                     )
                 },
         ) {
-            // The ink thumb.
             Box(
                 Modifier
                     .offset { IntOffset(pos.roundToInt(), 0) }
                     .width(segment)
                     .fillMaxHeight()
-                    .graphicsLayer {
-                        // It swells a little while held, like something you've picked up.
-                        val s = if (dragging) 1.04f else 1f
-                        scaleX = s
-                        scaleY = s
-                    }
                     .clip(PaneShapes.pill)
-                    .background(colors.accent),
+                    .background(colors.elevatedSurface),
             )
             Row(Modifier.fillMaxWidth().fillMaxHeight(), verticalAlignment = Alignment.CenterVertically) {
                 options.forEachIndexed { index, label ->
@@ -185,7 +173,7 @@ fun SegmentedControl(
                         Text(
                             label,
                             style = PaneTheme.type.callout.copy(fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Medium),
-                            color = if (chosen) colors.onAccent else colors.label,
+                            color = if (chosen) colors.label else colors.secondaryLabel,
                             textAlign = TextAlign.Center,
                             maxLines = 1,
                         )

@@ -13,16 +13,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -30,25 +24,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.BuildConfig
-import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.components.GlyphInset
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.LargeTitleScaffold
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PrimaryButton
-import app.pane.browser.ui.components.DotText
 import app.pane.browser.ui.components.SearchField
-import app.pane.browser.ui.components.rowPress
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.library.EmptyState
 import app.pane.browser.ui.library.arrive
@@ -56,30 +43,26 @@ import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.Motion
-import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.Spacing
 import app.pane.core.search.SearchEngines
 import app.pane.core.settings.ThemeMode
-import app.pane.core.settings.TrackingProtection
 
 /**
- * The settings root: a search over every
- * setting, then flat lists under small-caps headings. Nothing here is a control; each row opens the
- * screen that holds its settings, led by a bare line glyph.
+ * The settings root: a search over every setting, then flat lists under small-caps headings.
+ * Nothing here is a control; each row opens the screen that holds its settings, led by a bare line
+ * glyph.
  */
 @Composable
 fun SettingsScreen() {
-    val container = LocalAppContainer.current
     val navigator = LocalNavigator.current
     val settings by rememberSettingsState()
     val backLabel = rememberBackLabel(Route.Settings)
     val engine = SearchEngines.byId(settings.searchEngineId)
-    val installed by container.extensions.installed.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var autofill by remember { mutableStateOf(AutofillStatus.read(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { autofill = AutofillStatus.read(context) }
     var query by rememberSaveable { mutableStateOf("") }
     val results = remember(query) { searchSettings(query) }
-    val protection = if (settings.trackingProtection == TrackingProtection.Strict) "Strict" else "Standard"
 
     LargeTitleScaffold(
         title = "Settings",
@@ -91,7 +74,7 @@ fun SettingsScreen() {
                     value = query,
                     onValueChange = { query = it },
                     placeholder = "Search settings",
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = Spacing.gutter, vertical = 8.dp),
                 )
             }
         },
@@ -101,7 +84,7 @@ fun SettingsScreen() {
                 item(key = "none") { EmptyState(title = "No matches", message = "Try another word.") }
             } else {
                 item(key = "results") {
-                    GroupedSection(modifier = Modifier.arrive(0), separatorInset = IconSeparatorInset) {
+                    GroupedSection(modifier = Modifier.arrive(0), separatorInset = GlyphInset) {
                         results.forEach { entry ->
                             row {
                                 NavRow(
@@ -118,7 +101,7 @@ fun SettingsScreen() {
         } else {
             item(key = "default") { DefaultBrowserButton(Modifier.arrive(1)) }
             item(key = "browsing") {
-                GroupedSection(modifier = Modifier.arrive(2), header = "Browsing", separatorInset = IconSeparatorInset) {
+                GroupedSection(modifier = Modifier.arrive(2), header = "Browsing", separatorInset = GlyphInset) {
                     row {
                         NavRow(
                             "Search",
@@ -146,19 +129,10 @@ fun SettingsScreen() {
                             onClick = { navigator.push(Route.SiteSettings) },
                         )
                     }
-                    row {
-                        NavRow(
-                            "Extensions",
-                            large = true,
-                            icon = PaneIcons.Puzzle,
-                            value = installed.size.takeIf { it > 0 }?.toString(),
-                            onClick = { navigator.push(Route.Extensions) },
-                        )
-                    }
                 }
             }
             item(key = "look") {
-                GroupedSection(modifier = Modifier.arrive(3), header = "Look & feel", separatorInset = IconSeparatorInset) {
+                GroupedSection(modifier = Modifier.arrive(3), header = "Look & feel", separatorInset = GlyphInset) {
                     row {
                         NavRow(
                             "Appearance",
@@ -174,6 +148,14 @@ fun SettingsScreen() {
                     }
                     row {
                         NavRow(
+                            "Start page",
+                            large = true,
+                            icon = PaneIcons.Home,
+                            onClick = { navigator.push(Route.StartSettings) },
+                        )
+                    }
+                    row {
+                        NavRow(
                             "Tabs & toolbar",
                             large = true,
                             icon = PaneIcons.Tabs,
@@ -183,13 +165,12 @@ fun SettingsScreen() {
                 }
             }
             item(key = "privacy") {
-                GroupedSection(modifier = Modifier.arrive(4), header = "Privacy & data", separatorInset = IconSeparatorInset) {
+                GroupedSection(modifier = Modifier.arrive(4), header = "Privacy & data", separatorInset = GlyphInset) {
                     row {
                         NavRow(
                             "Privacy",
                             large = true,
                             icon = PaneIcons.Shield,
-                            value = protection,
                             onClick = { navigator.push(Route.PrivacySettings) },
                         )
                     }
@@ -204,7 +185,7 @@ fun SettingsScreen() {
                 }
             }
             item(key = "about") {
-                GroupedSection(modifier = Modifier.arrive(5), header = "About", separatorInset = IconSeparatorInset) {
+                GroupedSection(modifier = Modifier.arrive(5), header = "About", separatorInset = GlyphInset) {
                     row {
                         NavRow(
                             "Pane",
@@ -249,7 +230,8 @@ private fun DefaultBrowserButton(modifier: Modifier = Modifier) {
     AnimatedVisibility(visible = !isDefault, modifier = modifier, exit = shrinkVertically(Motion.sizeSpring) + fadeOut(Motion.fade())) {
         PrimaryButton(
             text = "Make Pane your default browser",
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
+            icon = PaneIcons.Globe,
+            modifier = Modifier.padding(start = Spacing.gutter, end = Spacing.gutter, top = 12.dp, bottom = 4.dp),
             onClick = {
                 val roleIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) DefaultBrowser.roleIntent(context) else null
                 launchedAt = SystemClock.elapsedRealtime()

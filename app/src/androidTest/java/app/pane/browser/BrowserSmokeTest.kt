@@ -21,7 +21,7 @@ import org.junit.runner.RunWith
 import java.io.File
 import java.util.regex.Pattern
 
-/** Real Compose chrome and Gecko pages, using fresh accessibility nodes for every action. */
+/** Real Compose chrome and WebView pages, using fresh accessibility nodes for every action. */
 @RunWith(AndroidJUnit4::class)
 class BrowserSmokeTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -30,7 +30,7 @@ class BrowserSmokeTest {
 
     @Test
     fun browserSurfacesRemainUsable() {
-        // Gecko can emit accessibility events continuously. Wait for each requested control,
+        // A page can emit accessibility events continuously. Wait for each requested control,
         // rather than requiring every window to be idle (the shell dump command's failure mode).
         val config = Configurator.getInstance()
         val oldIdleTimeout = config.waitForIdleTimeout
@@ -43,7 +43,7 @@ class BrowserSmokeTest {
             repeat(3) { tap(By.text("Next")) }
             node(By.text("Start Browsing"))
             shot("01b-onboarding-setup")
-            scrollTo(By.text("Block ads with uBlock Origin")).click()
+            scrollTo(By.text("Block ads")).click()
             tap(By.text("Start Browsing"))
             node(By.desc("Menu"))
             shot("02-start-page")
@@ -51,14 +51,6 @@ class BrowserSmokeTest {
             openPage()
             node(By.text("Example Domain"), 60_000)
             shot("03-page")
-            // Compare the live TextureView with/without glass and both screenshot paths.
-            // Accessibility text alone cannot prove that Gecko has actually painted the page.
-            for (quality in listOf("off", "full")) {
-                context.startActivity(Intent(context, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("glass", quality))
-                SystemClock.sleep(1_000)
-                shot("03-page-$quality")
-            }
             device.executeShellCommand("screencap -p ${File(shots, "03-page-shell.png").absolutePath}")
             tap(By.desc("Menu"))
             node(By.text("Find"))
@@ -115,10 +107,6 @@ class BrowserSmokeTest {
             menu("History")
             node(By.text("Example Domain"))
             shot("11-history")
-            device.pressBack()
-            menu("Extensions")
-            node(By.text("Browse add-ons"))
-            shot("12-extensions")
             device.pressBack()
 
             device.setOrientationLeft()

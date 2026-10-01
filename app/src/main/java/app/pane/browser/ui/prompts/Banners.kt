@@ -1,5 +1,7 @@
 package app.pane.browser.ui.prompts
 
+import app.pane.browser.ui.icons.PaneIcons
+import app.pane.browser.ui.components.ChromeButton
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.core.MutableTransitionState
@@ -24,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.pane.browser.engine.prompts.PopupRequest
-import app.pane.browser.engine.prompts.RedirectRequest
 import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
@@ -40,30 +41,11 @@ private const val BANNER_TIMEOUT_MS = 8_000L
 /** "Pop-up blocked" with Allow; the page keeps working while it's up. */
 @Composable
 internal fun PopupBanner(request: PopupRequest, visible: Boolean, onDone: () -> Unit) {
-    val target = request.targetUri?.let(PermissionText::displayHost)?.takeIf { it.isNotBlank() }
+    val target = request.targetUri?.takeIf { !it.startsWith("about:") }?.let(PermissionText::displayHost)?.takeIf { it.isNotBlank() }
     BlockedBanner(
         visible = visible,
         title = "Pop-up blocked",
         subtitle = target?.let { "Tried to open $it" } ?: "Tried to open a window",
-        onAllow = {
-            request.answer(true)
-            onDone()
-        },
-        onBlock = {
-            request.answer(false)
-            onDone()
-        },
-    )
-}
-
-/** An embedded frame tried to send the whole tab elsewhere without a tap. */
-@Composable
-internal fun RedirectBanner(request: RedirectRequest, visible: Boolean, onDone: () -> Unit) {
-    val target = request.targetUri?.let(PermissionText::displayHost)?.takeIf { it.isNotBlank() }
-    BlockedBanner(
-        visible = visible,
-        title = "Redirect blocked",
-        subtitle = target?.let { "Tried to go to $it" } ?: "Tried to leave this page",
         onAllow = {
             request.answer(true)
             onDone()
@@ -114,7 +96,7 @@ private fun BlockedBanner(
                     .dropIn()
                     .widthIn(max = 480.dp)
                     .fillMaxWidth()
-                    .floating(PaneShapes.pill, shadow = 8.dp)
+                    .floating(PaneShapes.pill)
                     .padding(start = 24.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -128,8 +110,8 @@ private fun BlockedBanner(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                TextButton("Dismiss", onClick = onBlock, color = colors.secondaryLabel)
-                TextButton("Allow", onClick = onAllow, bold = true)
+                ChromeButton(PaneIcons.Close, "Dismiss", onClick = onBlock, tint = colors.secondaryLabel)
+                ChromeButton(PaneIcons.Check, "Allow", onClick = onAllow)
             }
         }
     }

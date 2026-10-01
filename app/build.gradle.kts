@@ -5,7 +5,6 @@ plugins {
 
 android {
     namespace = "app.pane.browser"
-    // GeckoView requires the 37.1 minor SDK.
     compileSdk {
         version = release(37) { minorApiLevel = 1 }
     }
@@ -25,20 +24,6 @@ android {
             major * 10000 + minor * 100 + patch
         }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        val abis = providers.gradleProperty("pane.abis").orNull
-        if (abis != null) {
-            ndk { abiFilters += abis.split(",") }
-        }
-    }
-
-    // One APK per CPU type keeps downloads small: GeckoView's native code is most of the size.
-    splits {
-        abi {
-            isEnable = providers.gradleProperty("pane.splitAbis").isPresent
-            reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64")
-            isUniversalApk = false
-        }
     }
 
     signingConfigs {
@@ -76,8 +61,6 @@ android {
 
     packaging {
         resources.excludes += setOf("META-INF/{AL2.0,LGPL2.1}", "META-INF/*.kotlin_module", "DebugProbesKt.bin")
-        // GeckoView loads its libraries straight from the APK.
-        jniLibs.useLegacyPackaging = false
     }
 
     lint {
@@ -90,7 +73,7 @@ android {
 
 dependencies {
     implementation("app.pane:core")
-    implementation(libs.geckoview)
+    implementation(libs.androidx.webkit)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

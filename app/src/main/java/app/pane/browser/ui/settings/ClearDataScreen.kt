@@ -12,7 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.pane.browser.LocalAppContainer
-import app.pane.browser.downloads.await
+import app.pane.browser.engine.WebData
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
 import app.pane.browser.ui.components.ButtonStyle
@@ -26,15 +26,15 @@ import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
+import app.pane.browser.ui.theme.Spacing
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.library.TimeRange
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import org.mozilla.geckoview.StorageController
 
 /**
- * Pick a time range and what to erase, confirm, done. Engine data (cookies, caches) has no
- * timestamps Gecko can filter by, so those are always cleared in full; the footer says so.
+ * Pick a time range and what to erase, confirm, done. Web view data (cookies, caches) has no
+ * timestamps the system WebView can filter by, so those are always cleared in full; the footer says so.
  */
 @Composable
 fun ClearDataScreen() {
@@ -70,14 +70,12 @@ fun ClearDataScreen() {
                 if (history) {
                     if (allTime) container.history.clear() else container.history.deleteSince(since)
                 }
-                var flags = 0L
                 if (cookies) {
-                    flags = flags or StorageController.ClearFlags.COOKIES or
-                        StorageController.ClearFlags.DOM_STORAGES or
-                        StorageController.ClearFlags.AUTH_SESSIONS
+                    WebData.clearCookies()
+                    WebData.clearSiteData(container.app)
+                    container.sitePermissions.clearAll()
                 }
-                if (cache) flags = flags or StorageController.ClearFlags.ALL_CACHES
-                if (flags != 0L) container.runtime.storageController.clearData(flags).await()
+                if (cache) container.sessions.clearCache()
                 // Cached site icons are a list of visited hosts: they go with the cache or an all-time history clear.
                 if (cache || (history && allTime)) container.favicons.clear()
                 if (tabs) {
@@ -139,9 +137,10 @@ fun ClearDataScreen() {
                 PrimaryButton(
                     text = if (working) "Clearing…" else "Clear",
                     style = ButtonStyle.Destructive,
+                    icon = PaneIcons.Trash,
                     enabled = chosen.isNotEmpty() && !working,
                     onClick = { confirming = true },
-                    modifier = Modifier.arrive(2).padding(horizontal = 20.dp, vertical = 24.dp),
+                    modifier = Modifier.arrive(2).padding(horizontal = Spacing.gutter, vertical = 24.dp),
                 )
             }
             item(key = "advanced") {

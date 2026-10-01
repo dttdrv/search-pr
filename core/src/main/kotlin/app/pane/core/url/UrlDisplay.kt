@@ -9,7 +9,7 @@ object UrlDisplay {
     /** `https://www.example.co.uk/path?q=1` → `example.co.uk`. Falls back to the raw URL. */
     fun toolbarText(url: String): String {
         if (url.isBlank() || url == "about:blank") return ""
-        if (url.startsWith("about:") || url.startsWith("moz-extension:")) return url
+        if (url.startsWith("about:")) return url
         val host = UrlInput.hostOf(url) ?: return url
         var display = unicodeHost(host)
         for (prefix in strippedPrefixes) {
@@ -50,5 +50,5 @@ object UrlDisplay {
     /** Full URL for the edit field. Kept verbatim so that submitting it unchanged reloads the same page. */
     fun editableText(url: String): String = if (url == "about:blank") "" else url
 
-    fun isSecure(url: String): Boolean = url.startsWith("https://") || url.startsWith("about:") || url.startsWith("moz-extension://")
+    fun isSecure(url: String): Boolean = url.startsWith("https://") || url.startsWith("about:")
 }

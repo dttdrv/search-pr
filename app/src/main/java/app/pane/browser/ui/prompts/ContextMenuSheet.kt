@@ -1,6 +1,5 @@
 package app.pane.browser.ui.prompts
 
-import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -16,7 +15,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
@@ -39,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.getSystemService
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.engine.WebFetcher
 import app.pane.browser.engine.prompts.ContextMenuRequest
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneSheet
@@ -53,14 +52,7 @@ import app.pane.core.privacy.TrackingParams
 import app.pane.core.prompts.PermissionText
 import app.pane.core.prompts.PromptText
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import org.mozilla.geckoview.GeckoRuntime
-import org.mozilla.geckoview.GeckoWebExecutor
-import org.mozilla.geckoview.WebRequest
-import org.mozilla.geckoview.WebResponse
-import java.io.ByteArrayOutputStream
-import kotlin.coroutines.resume
 
 private class MenuItem(val label: String, val destructive: Boolean = false, val action: () -> Unit)
 
@@ -82,7 +74,7 @@ internal fun ContextMenuSheet(request: ContextMenuRequest, visible: Boolean, onD
     LaunchedEffect(request.id) { haptics.longPress() }
     val src = request.srcUri
     if (request.media == ContextMenuRequest.Media.Image && src != null) {
-        LaunchedEffect(src) { preview = loadPreview(container.runtime, src, request.isPrivate, previewPx) }
+        LaunchedEffect(src) { preview = loadPreview(container.fetcher, src, request.isPrivate, previewPx) }
     }
 
     val actions = remember(request) { MenuActions(container, context, toasts, request) }
@@ -155,7 +147,6 @@ internal fun ContextMenuSheet(request: ContextMenuRequest, visible: Boolean, onD
                     }
                 }
             }
-            Box(Modifier.height(8.dp))
         }
     }
 }
@@ -227,14 +218,14 @@ private const val MAX_INLINE_URI = 4096
 private const val MAX_PREVIEW_BYTES = 8 * 1024 * 1024
 
 /**
- * Loads the long-pressed image for the menu header. Fetched anonymously through Gecko (same
- * network settings as browsing, usually straight from its cache); inline `data:` images are decoded
+ * Loads the long-pressed image for the menu header. Fetched anonymously over plain HTTPS, no
+ * cookies; inline `data:` images are decoded
  * locally. Anything that fails to decode just means no preview.
  */
-private suspend fun loadPreview(runtime: GeckoRuntime, url: String, private: Boolean, maxPx: Int): ImageBitmap? {
+private suspend fun loadPreview(fetcher: WebFetcher, url: String, private: Boolean, maxPx: Int): ImageBitmap? {
     val bytes = when {
         url.startsWith("data:", ignoreCase = true) -> withContext(Dispatchers.Default) { decodeDataUri(url) }
-        url.startsWith("https://", ignoreCase = true) || url.startsWith("http://", ignoreCase = true) -> fetchBytes(runtime, url, private)
+        url.startsWith("https://", ignoreCase = true) || url.startsWith("http://", ignoreCase = true) -> fetcher.bytes(url, "image/avif,image/webp,image/png,image/*;q=0.8", MAX_PREVIEW_BYTES)
         else -> null
     } ?: return null
     return withContext(Dispatchers.Default) { decodeSampled(bytes, maxPx)?.asImageBitmap() }
@@ -247,42 +238,6 @@ private fun decodeDataUri(url: String): ByteArray? {
         Base64.decode(url.substring(comma + 1), Base64.DEFAULT)
     } catch (_: IllegalArgumentException) {
         null
-    }
-}
-
-// The flags parameter is a bit field; GeckoView's annotation just doesn't say so.
-@SuppressLint("WrongConstant")
-private suspend fun fetchBytes(runtime: GeckoRuntime, url: String, private: Boolean): ByteArray? {
-    val flags = GeckoWebExecutor.FETCH_FLAGS_ANONYMOUS or (if (private) GeckoWebExecutor.FETCH_FLAGS_PRIVATE else 0)
-    val request = WebRequest.Builder(url)
-        .header("Accept", "image/avif,image/webp,image/png,image/*;q=0.8")
-        .cacheMode(WebRequest.CACHE_MODE_DEFAULT)
-        .build()
-    val response = suspendCancellableCoroutine<WebResponse?> { cont ->
-        GeckoWebExecutor(runtime).fetch(request, flags).accept({ result ->
-            if (cont.isActive) cont.resume(result) else runCatching { result?.body?.close() }
-        }, { _ ->
-            if (cont.isActive) cont.resume(null)
-        })
-    } ?: return null
-    return withContext(Dispatchers.IO) {
-        val body = response.body ?: return@withContext null
-        try {
-            if (response.statusCode !in 200..299) return@withContext null
-            val out = ByteArrayOutputStream()
-            val buffer = ByteArray(16 * 1024)
-            while (true) {
-                val n = body.read(buffer)
-                if (n < 0) break
-                out.write(buffer, 0, n)
-                if (out.size() > MAX_PREVIEW_BYTES) return@withContext null
-            }
-            out.toByteArray()
-        } catch (_: java.io.IOException) {
-            null
-        } finally {
-            runCatching { body.close() }
-        }
     }
 }
 

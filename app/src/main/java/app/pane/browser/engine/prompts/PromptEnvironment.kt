@@ -1,35 +1,29 @@
 package app.pane.browser.engine.prompts
 
-import app.pane.browser.settings.SettingsStore
-import app.pane.core.settings.BrowserSettings
-import app.pane.core.tabs.BrowserStore
-import org.mozilla.geckoview.GeckoRuntime
+import android.content.Intent
 
 /**
- * The few app services prompt delegates need beyond their `(tabId, queue)` constructors: settings
- * (autoplay, pop-ups), the tab's current URL (dialog throttling) and the runtime (permission
- * storage).
+ * What [PromptBridge] needs from the activity: a way to start the system file picker for
+ * `<input type=file>` and hear back. `MainActivity` sets [launchFileChooser] while it is alive.
  *
- * Until [install] runs, the defaults are the conservative choices: autoplay and pop-ups blocked,
- * nothing persisted.
+ * The pending callback lives here, not in the activity, so a picker that outlives the activity
+ * (rotation, process pressure) still delivers its result to the page.
  */
 object PromptEnvironment {
+    /**
+     * Starts [Intent] for a result and calls back with `(resultCode, data)` once, when the picker
+     * closes. Null while there is no activity to launch from.
+     */
     @Volatile
-    var settings: () -> BrowserSettings = { BrowserSettings() }
-        private set
+    var launchFileChooser: ((Intent, (resultCode: Int, data: Intent?) -> Unit) -> Unit)? = null
 
     @Volatile
-    var pageUrl: (tabId: String) -> String? = { null }
-        private set
+    internal var pendingFileResult: ((Int, Intent?) -> Unit)? = null
 
-    @Volatile
-    var runtime: GeckoRuntime? = null
-        private set
-
-    /** Idempotent; called by the app container at start-up. */
-    fun install(runtime: GeckoRuntime, settings: SettingsStore, store: BrowserStore) {
-        this.runtime = runtime
-        this.settings = { settings.current }
-        this.pageUrl = { tabId -> store.state.value.tab(tabId)?.url }
+    /** Called by the activity's result launcher. */
+    internal fun deliverFileResult(resultCode: Int, data: Intent?) {
+        val callback = pendingFileResult
+        pendingFileResult = null
+        callback?.invoke(resultCode, data)
     }
 }

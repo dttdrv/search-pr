@@ -36,7 +36,7 @@ import app.pane.browser.ui.theme.PaneTheme
 
 /**
  * A search field: a hairline-outlined pill with no fill, a small magnifier and a clear button. The
- * outline darkens to ink while you type.
+ * outline deepens to ink while you type.
  */
 @Composable
 fun SearchField(
@@ -48,25 +48,17 @@ fun SearchField(
 ) {
     val colors = PaneTheme.colors
     var focused by remember { mutableStateOf(false) }
-    val outline = animateColorAsState(if (focused) colors.label else colors.tertiaryLabel, Motion.fade(), label = "searchOutline")
+    // No outline: a soft wash that deepens a touch while typing.
+    val wash = animateColorAsState(if (focused) colors.fill else colors.surface, Motion.fade(), label = "searchWash")
     Row(
         modifier = modifier
             .fillMaxWidth()
             .height(44.dp)
-            .drawBehind {
-                val stroke = 1.dp.toPx()
-                drawRoundRect(
-                    color = outline.value,
-                    topLeft = Offset(stroke / 2f, stroke / 2f),
-                    size = Size(size.width - stroke, size.height - stroke),
-                    cornerRadius = CornerRadius((size.height - stroke) / 2f),
-                    style = Stroke(stroke),
-                )
-            }
+            .drawBehind { drawRoundRect(wash.value, cornerRadius = CornerRadius(size.height / 2f)) }
             .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(PaneIcons.Magnifier, contentDescription = null, tint = colors.secondaryLabel, modifier = Modifier.size(18.dp))
+        Icon(PaneIcons.Magnifier, contentDescription = null, tint = colors.secondaryLabel, modifier = Modifier.size(17.dp))
         Box(Modifier.weight(1f).padding(start = 10.dp)) {
             if (value.isEmpty()) Text(placeholder, style = PaneTheme.type.body, color = colors.secondaryLabel, maxLines = 1)
             BasicTextField(

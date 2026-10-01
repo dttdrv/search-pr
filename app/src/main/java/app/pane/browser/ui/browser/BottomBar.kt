@@ -23,7 +23,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -77,7 +76,7 @@ import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.browser.ui.theme.floating
+import app.pane.browser.ui.theme.frosted
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.tabs.SecurityState
 import app.pane.core.tabs.TabState
@@ -114,7 +113,6 @@ fun BottomBar(
     onAddress: () -> Unit,
     onBack: () -> Unit,
     onTabs: () -> Unit,
-    onNewTab: () -> Unit,
     onMenu: () -> Unit,
     onReload: () -> Unit,
     onStop: () -> Unit,
@@ -181,7 +179,7 @@ fun BottomBar(
                         )
                     }
                     .pressScale(pressedScale = 0.94f) { chrome.expand() }
-                    .floating(PaneShapes.pill, shadow = 6.dp)
+                    .frosted(PaneShapes.pill)
                     .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -212,7 +210,7 @@ fun BottomBar(
             ) {
                 AnimatedVisibility(
                     visible = canGoBack,
-                    enter = expandHorizontally(Motion.snappy()) + scaleIn(Motion.bouncy(), initialScale = 0.5f) + fadeIn(Motion.fade(140)),
+                    enter = expandHorizontally(Motion.snappy()) + scaleIn(Motion.smooth(), initialScale = 0.5f) + fadeIn(Motion.fade(140)),
                     exit = shrinkHorizontally(Motion.snappy()) + scaleOut(Motion.snappy(), targetScale = 0.5f) + fadeOut(Motion.fade(120)),
                 ) {
                     Row {
@@ -283,7 +281,7 @@ fun BottomBar(
                                             currentCommit(target?.id)
                                             move(0f)
                                         } else {
-                                            animate(offset, 0f, vx, Motion.bouncy()) { v, _ -> move(v) }
+                                            animate(offset, 0f, vx, Motion.smooth()) { v, _ -> move(v) }
                                             currentCancel()
                                         }
                                     }
@@ -336,11 +334,11 @@ fun BottomBar(
                     ) {
                         // Neighbours slide in alongside the current pill.
                         if (showPrevious && previous != null) {
-                            AddressPill(previous, private, Modifier.offset { IntOffset((offset - stride).roundToInt(), 0) }, lifted = false)
+                            AddressPill(previous, private, Modifier.offset { IntOffset((offset - stride).roundToInt(), 0) })
                         }
                         if (showNext) {
                             if (next != null) {
-                                AddressPill(next, private, Modifier.offset { IntOffset((offset + stride).roundToInt(), 0) }, lifted = false)
+                                AddressPill(next, private, Modifier.offset { IntOffset((offset + stride).roundToInt(), 0) })
                             } else {
                                 NewTabPill(Modifier.offset { IntOffset((offset + stride).roundToInt(), 0) })
                             }
@@ -360,13 +358,10 @@ fun BottomBar(
                     }
                 }
                 Spacer(Modifier.width(8.dp))
-                TabsButton(count = tabs.size, onClick = onTabs, onLongClick = onNewTab)
-                Spacer(Modifier.width(8.dp))
                 FloatingCircle(
                     onClick = onMenu,
                     size = BarMetrics.pill,
                     contentDescription = "Menu",
-                    modifier = Modifier.onGloballyPositioned { chrome.menuRect = it.boundsInRoot() },
                 ) {
                     Icon(PaneIcons.More, null, tint = PaneTheme.colors.label, modifier = Modifier.size(22.dp))
                 }
@@ -389,7 +384,6 @@ fun AddressPill(
     private: Boolean,
     modifier: Modifier = Modifier,
     locked: Boolean = false,
-    lifted: Boolean = true,
     onClick: (() -> Unit)? = null,
     onReload: () -> Unit = {},
     onStop: () -> Unit = {},
@@ -416,7 +410,7 @@ fun AddressPill(
                     Modifier
                 },
             )
-            .floating(PaneShapes.pill, shadow = if (lifted) 8.dp else 0.dp)
+            .frosted(PaneShapes.pill)
             .semantics { contentDescription = if (locked) LOCKED_LABEL else "Address: $host" },
     ) {
         // Loading draws a thin ink line along the bottom of the pill, growing with the page.
@@ -447,7 +441,7 @@ fun AddressPill(
             // Leading: the security mark, only where it means something.
             Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
                 when {
-                    locked -> Icon(PaneIcons.LockFill, null, tint = colors.tertiaryLabel, modifier = Modifier.size(12.dp))
+                    locked -> Icon(PaneIcons.LockFill, null, tint = colors.label, modifier = Modifier.size(12.dp))
                     !loaded -> Unit
                     tab.loading -> StatusDot()
                     tab.security == SecurityState.Insecure || tab.security == SecurityState.Broken -> Box(
@@ -461,7 +455,7 @@ fun AddressPill(
                     else -> Icon(
                         PaneIcons.LockFill,
                         contentDescription = "Site information",
-                        tint = colors.tertiaryLabel,
+                        tint = colors.label,
                         modifier = Modifier.size(12.dp).pressDim(onClick = onSiteInfo),
                     )
                 }
@@ -497,9 +491,9 @@ fun AddressPill(
                         label = "reloadStop",
                     ) { loading ->
                         if (loading) {
-                            Icon(PaneIcons.Stop, "Stop", tint = colors.secondaryLabel, modifier = Modifier.size(16.dp).pressDim(onClick = onStop))
+                            Icon(PaneIcons.Stop, "Stop", tint = colors.label, modifier = Modifier.size(16.dp).pressDim(onClick = onStop))
                         } else {
-                            Icon(PaneIcons.Reload, "Reload", tint = colors.secondaryLabel, modifier = Modifier.size(17.dp).pressDim(onClick = onReload))
+                            Icon(PaneIcons.Reload, "Reload", tint = colors.label, modifier = Modifier.size(17.dp).pressDim(onClick = onReload))
                         }
                     }
                 }
@@ -515,39 +509,9 @@ private fun NewTabPill(modifier: Modifier) {
         modifier
             .fillMaxWidth()
             .height(BarMetrics.pill)
-            .floating(PaneShapes.pill, shadow = 0.dp),
+            .frosted(PaneShapes.pill),
         contentAlignment = Alignment.Center,
     ) {
         Text("New tab", style = PaneTheme.type.body.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium), color = colors.secondaryLabel)
-    }
-}
-
-/** The tab count in a rounded square, like a stack of pages. Long-press opens a new tab. */
-@Composable
-private fun TabsButton(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val colors = PaneTheme.colors
-    FloatingCircle(onClick = onClick, size = BarMetrics.pill, contentDescription = "$count tabs", onLongClick = onLongClick) {
-        Box(
-            Modifier
-                .size(24.dp)
-                .border(1.7.dp, colors.label, PaneShapes.small),
-            contentAlignment = Alignment.Center,
-        ) {
-            AnimatedContent(
-                targetState = count,
-                transitionSpec = {
-                    val up = targetState > initialState
-                    (slideInVertically(Motion.bouncy()) { if (up) it else -it } + fadeIn(Motion.fade(120)))
-                        .togetherWith(slideOutVertically(Motion.smooth()) { if (up) -it else it } + fadeOut(Motion.fade(100)))
-                },
-                label = "tabCount",
-            ) { n ->
-                Text(
-                    if (n > 99) ":)" else n.toString(),
-                    style = PaneTheme.type.caption2.copy(fontWeight = FontWeight.Bold, fontSize = 12.sp),
-                    color = colors.label,
-                )
-            }
-        }
     }
 }

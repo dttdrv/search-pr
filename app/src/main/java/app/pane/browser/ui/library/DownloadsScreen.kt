@@ -1,5 +1,7 @@
 package app.pane.browser.ui.library
 
+import androidx.compose.ui.graphics.vector.ImageVector
+import app.pane.browser.ui.components.ChromeButton
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -102,11 +104,11 @@ fun DownloadsScreen() {
             onBack = navigator::pop,
             backLabel = backLabel,
             actions = {
-                TextButton(
+                ChromeButton(
+                    PaneIcons.Trash,
                     "Clear",
                     enabled = hasFinished,
-                    color = colors.destructive,
-                    modifier = Modifier.heightIn(min = 48.dp),
+                    tint = colors.destructive,
                     onClick = {
                         container.scope.launch {
                             container.downloadsRepository.clearFinished()
@@ -260,7 +262,7 @@ private fun DownloadRow(
         subtitle = statusText(record),
         subtitleColor = when {
             record.status == DownloadStatus.Failed -> colors.destructive
-            dangerous -> colors.warning
+            dangerous -> colors.destructive
             else -> colors.secondaryLabel
         },
         onClick = onClick,
@@ -272,18 +274,18 @@ private fun DownloadRow(
         },
         trailing = {
             when {
-                record.isActive -> RowButton("Cancel", onCancel)
+                record.isActive -> RowButton(PaneIcons.Close, "Cancel", onCancel)
                 record.isFinished && record.status != DownloadStatus.Completed && record.url.isNotEmpty() ->
-                    RowButton("Retry", onRetry)
+                    RowButton(PaneIcons.Reload, "Retry", onRetry)
             }
         },
     )
 }
 
-/** A words-only action at the end of a row ("Cancel", "Retry"). */
+/** A glyph action at the end of a row (cancel, retry). */
 @Composable
-private fun RowButton(label: String, onClick: () -> Unit) {
-    TextButton(label, onClick = onClick, modifier = Modifier.heightIn(min = 48.dp), color = PaneTheme.colors.secondaryLabel)
+private fun RowButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+    ChromeButton(icon, label, onClick = onClick, tint = PaneTheme.colors.secondaryLabel)
 }
 
 @Composable

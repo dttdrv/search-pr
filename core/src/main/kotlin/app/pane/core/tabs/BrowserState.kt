@@ -20,13 +20,14 @@ data class TabState(
     val security: SecurityState = SecurityState.Unknown,
     /** Page-provided `theme-color`, as ARGB, used to tint the chrome. */
     val themeColor: Int? = null,
-    val readerable: Boolean = false,
-    val inReaderMode: Boolean = false,
     val desktopMode: Boolean = false,
     val fullscreen: Boolean = false,
     val mediaPlaying: Boolean = false,
+    /** The page looks like an article, so the menu can offer Reader. */
+    val readerable: Boolean = false,
+    /** The page is currently showing its article in place of itself. */
+    val inReaderMode: Boolean = false,
     /** Number of trackers blocked on the current page. */
-    val trackersBlocked: Int = 0,
     /** Bumped whenever a fresh thumbnail has been captured. */
     val thumbnailVersion: Int = 0,
     /** Set when the engine process for this tab crashed; the UI offers a reload. */

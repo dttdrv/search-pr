@@ -1,10 +1,5 @@
 package app.pane.core.library
 
-import app.pane.core.settings.BrowserSettings
-import app.pane.core.settings.CookiePolicy
-import app.pane.core.settings.DnsOverHttps
-import app.pane.core.settings.HttpsMode
-import app.pane.core.settings.TrackingProtection
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -62,41 +57,5 @@ class SiteOriginsTest {
         assertEquals("example.com:8443", SiteOrigins.displayName("https://example.com:8443"))
         assertEquals("example.com", SiteOrigins.hostOf("https://example.com:8443"))
         assertEquals("[::1]", SiteOrigins.hostOf("http://[::1]:8080"))
-    }
-}
-
-class ProtectionSummaryTest {
-    private val everythingOn = BrowserSettings(
-        trackingProtection = TrackingProtection.Strict,
-        httpsMode = HttpsMode.HttpsOnly,
-        fingerprintingProtection = true,
-    )
-
-    @Test fun everythingOnIsMaximum() {
-        val summary = ProtectionSummary.of(everythingOn)
-        assertEquals(ProtectionLevel.Maximum, summary.level)
-        assertEquals(summary.protections.size, summary.enabledCount)
-    }
-
-    /** The defaults follow a normal browser: sites and logins keep working, so they are not "Maximum". */
-    @Test fun defaultsAreModerate() {
-        assertEquals(ProtectionLevel.Moderate, ProtectionSummary.of(BrowserSettings()).level)
-    }
-
-    @Test fun weakeningLowersTheLevel() {
-        val high = ProtectionSummary.of(everythingOn.copy(dnsOverHttps = DnsOverHttps.Off))
-        assertEquals(ProtectionLevel.High, high.level)
-        assertEquals(listOf("Secure DNS"), high.disabled.map { it.name })
-
-        val low = ProtectionSummary.of(
-            BrowserSettings(
-                trackingProtection = TrackingProtection.Standard,
-                cookiePolicy = CookiePolicy.BlockCrossSiteTrackers,
-                httpsMode = HttpsMode.Off,
-                dnsOverHttps = DnsOverHttps.Off,
-                globalPrivacyControl = false,
-            ),
-        )
-        assertEquals(ProtectionLevel.Low, low.level)
     }
 }

@@ -1,10 +1,7 @@
 package app.pane.browser.ui.browser
 
 import android.content.Intent
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -26,12 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.components.GlyphInset
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneSheet
 import app.pane.browser.ui.components.PaneSwitch
@@ -42,8 +37,10 @@ import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.prompts.FadingColumn
 import app.pane.browser.ui.prompts.FlatRow
+import app.pane.browser.ui.theme.floating
 import app.pane.browser.ui.prompts.FlatSection
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.Spacing
 import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.privacy.TrackingParams
@@ -55,7 +52,7 @@ import kotlinx.coroutines.launch
 private class PageAction(val icon: ImageVector, val label: String, val haptic: Boolean = true, val onClick: () -> Unit)
 
 /**
- * The "…" menu: a row of page actions (glyph over name, no fill), extension buttons, then everything
+ * The "…" menu: a row of page actions (glyph over name, no fill), then everything
  * else as flat rows with hairlines between them. One sheet, no nested menus; its contents arrive
  * one after another a beat behind the card. A [locked] private page gets no page actions at all, so
  * nothing can share, copy or search it.
@@ -67,6 +64,8 @@ fun MenuSheet(
     locked: Boolean,
     onDismiss: () -> Unit,
     onFindInPage: () -> Unit,
+    tabCount: Int,
+    onTabs: () -> Unit,
     onNewTab: (private: Boolean) -> Unit,
 ) {
     val container = LocalAppContainer.current
@@ -75,13 +74,11 @@ fun MenuSheet(
     val context = LocalContext.current
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
-    val colors = PaneTheme.colors
     val url = if (locked) "" else tab?.url.orEmpty()
     val isPage = url.startsWith("http")
     val bookmarked by remember(url) {
         if (isPage) container.bookmarks.observeIsBookmarked(url) else flowOf(false)
     }.collectAsStateWithLifecycle(false)
-    val actions by container.extensions.actions.collectAsStateWithLifecycle()
 
     fun go(route: Route) {
         onDismiss()
@@ -141,23 +138,19 @@ fun MenuSheet(
             },
         )
     }
-    val showExtensions = actions.isNotEmpty() && !locked
-    val showReader = tab != null && (tab.readerable || tab.inReaderMode)
 
-    // Beats for the staggered arrival: page actions first, then the extension row, then each list in
-    // turn. entrance() caps its delay, so the tail of a long menu lands together.
+    // Beats for the staggered arrival: page actions first, then each list in turn. entrance() caps
+    // its delay, so the tail of a long menu lands together.
     val actionBeat = 1
-    val extensionBeat = actionBeat + pageActions.size
-    val pageBeat = extensionBeat + if (showExtensions) 1 else 0
-    val pageRows = (if (showReader) 1 else 0) + 3
-    val tabBeat = pageBeat + if (isPage) pageRows else 0
+    val pageBeat = actionBeat + pageActions.size
+    val tabBeat = pageBeat + if (isPage) 2 else 0
     val libraryBeat = tabBeat + 2
 
     PaneSheet(visible = visible, onDismiss = onDismiss, maxHeightFraction = 0.9f) {
         FadingColumn(Modifier.weight(1f, fill = false)) {
             if (pageActions.isNotEmpty()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp),
+                    Modifier.fillMaxWidth().padding(start = Spacing.gutter, end = Spacing.gutter, top = 4.dp),
                     verticalAlignment = Alignment.Top,
                 ) {
                     pageActions.forEachIndexed { i, action ->
@@ -166,101 +159,35 @@ fun MenuSheet(
                 }
             }
 
-            // Extension popups act on (and can show) the current page. Their icons are content, so they stay.
-            if (showExtensions) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .entrance(extensionBeat)
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 24.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    actions.forEach { action ->
-                        Column(
-                            Modifier.width(64.dp).pressScale(enabled = action.enabled, haptic = true) {
-                                onDismiss()
-                                container.extensions.clickAction(action.extensionId)
-                            },
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            // The extension's own icon is content and stays; with none, its name sits in the ring.
-                            val icon = action.icon
-                            Box(
-                                Modifier.size(52.dp).border(1.dp, colors.tertiaryLabel, CircleShape),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (icon != null) {
-                                    Image(icon, null, modifier = Modifier.size(28.dp))
-                                } else {
-                                    Text(
-                                        action.title,
-                                        style = PaneTheme.type.caption2,
-                                        color = colors.label,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(horizontal = 6.dp),
-                                    )
-                                }
-                            }
-                            if (icon != null) {
-                                Text(
-                                    action.title,
-                                    style = PaneTheme.type.caption2,
-                                    color = colors.secondaryLabel,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(top = 6.dp),
-                                )
-                            }
-                            if (!action.badgeText.isNullOrEmpty()) {
-                                Text(
-                                    action.badgeText,
-                                    style = PaneTheme.type.caption2,
-                                    color = colors.tertiaryLabel,
-                                    maxLines = 1,
-                                    textAlign = TextAlign.Center,
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
             if (isPage) {
                 MenuDivider()
-                FlatSection(entranceIndex = pageBeat) {
-                    if (showReader && tab != null) {
-                        row {
-                            FlatRow(
-                                "Reader View",
-                                onClick = {
-                                    onDismiss()
-                                    container.extensions.toggleReaderMode(tab.id)
-                                },
-                                trailing = {
-                                    PaneSwitch(checked = tab.inReaderMode, onCheckedChange = {
-                                        onDismiss()
-                                        container.extensions.toggleReaderMode(tab.id)
-                                    })
-                                },
-                            )
-                        }
-                    }
+                FlatSection(entranceIndex = pageBeat, separatorInset = GlyphInset) {
                     row {
                         FlatRow(
                             "Desktop Site",
+                            icon = PaneIcons.Desktop,
                             onClick = { container.browser.toggleDesktopMode() },
                             trailing = {
                                 PaneSwitch(checked = tab?.desktopMode == true, onCheckedChange = { container.browser.toggleDesktopMode() })
                             },
                         )
                     }
+                    if (tab != null && (tab.readerable || tab.inReaderMode)) {
+                        row {
+                            FlatRow(
+                                "Reader",
+                                icon = PaneIcons.Reader,
+                                onClick = { container.sessions.toggleReader(tab.id) },
+                                trailing = {
+                                    PaneSwitch(checked = tab.inReaderMode, onCheckedChange = { container.sessions.toggleReader(tab.id) })
+                                },
+                            )
+                        }
+                    }
                     row {
                         FlatRow(
                             "Add to Home",
+                            icon = PaneIcons.Home,
                             onClick = {
                                 onDismiss()
                                 if (tab != null) HomeShortcuts.pin(context, tab.url, tab.title)
@@ -270,31 +197,30 @@ fun MenuSheet(
                 }
             }
 
-            if (isPage || showExtensions) MenuDivider()
-            FlatSection(entranceIndex = tabBeat) {
-                row { FlatRow("New Tab", onClick = { onDismiss(); onNewTab(false) }) }
-                row { FlatRow("New Private Tab", onClick = { onDismiss(); onNewTab(true) }) }
+            if (isPage) MenuDivider()
+            FlatSection(entranceIndex = tabBeat, separatorInset = GlyphInset) {
+                row { FlatRow("Tabs", icon = PaneIcons.Tabs, value = tabCount.toString(), chevron = true, onClick = { onDismiss(); onTabs() }) }
+                row { FlatRow("New Tab", icon = PaneIcons.Plus, onClick = { onDismiss(); onNewTab(false) }) }
+                row { FlatRow("New Private Tab", icon = PaneIcons.Private, onClick = { onDismiss(); onNewTab(true) }) }
             }
             MenuDivider()
-            FlatSection(entranceIndex = libraryBeat) {
-                row { FlatRow("Bookmarks", chevron = true, onClick = { go(Route.Bookmarks) }) }
-                row { FlatRow("History", chevron = true, onClick = { go(Route.History) }) }
-                row { FlatRow("Downloads", chevron = true, onClick = { go(Route.Downloads) }) }
-                row { FlatRow("Extensions", chevron = true, onClick = { go(Route.Extensions) }) }
-                row { FlatRow("Settings", chevron = true, onClick = { go(Route.Settings) }) }
+            FlatSection(entranceIndex = libraryBeat, separatorInset = GlyphInset) {
+                row { FlatRow("Bookmarks", icon = PaneIcons.Bookmark, chevron = true, onClick = { go(Route.Bookmarks) }) }
+                row { FlatRow("History", icon = PaneIcons.Clock, chevron = true, onClick = { go(Route.History) }) }
+                row { FlatRow("Downloads", icon = PaneIcons.Download, chevron = true, onClick = { go(Route.Downloads) }) }
+                row { FlatRow("Settings", icon = PaneIcons.Gear, chevron = true, onClick = { go(Route.Settings) }) }
             }
-            Spacer(Modifier.height(8.dp))
         }
     }
 }
 
-/** A hairline between groups of rows, with a little air either side. */
+/** The air between two cards of rows. */
 @Composable
 private fun MenuDivider() {
-    Separator(Modifier.padding(vertical = 4.dp))
+    Spacer(Modifier.height(Spacing.gutter))
 }
 
-/** One page action: a glyph in a hairline circle with its name under it; it presses in. */
+/** One page action: a glyph on a soft raised circle with its name under it; it presses in. */
 @Composable
 private fun PageActionView(action: PageAction, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
@@ -303,7 +229,7 @@ private fun PageActionView(action: PageAction, modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(52.dp).border(1.dp, colors.tertiaryLabel, CircleShape),
+            Modifier.size(52.dp).floating(CircleShape, shadow = 0.dp),
             contentAlignment = Alignment.Center,
         ) {
             Icon(action.icon, null, tint = colors.label, modifier = Modifier.size(22.dp))

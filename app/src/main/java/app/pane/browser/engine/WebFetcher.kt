@@ -1,103 +1,134 @@
 package app.pane.browser.engine
 
-import android.annotation.SuppressLint
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.mozilla.geckoview.GeckoRuntime
-import org.mozilla.geckoview.GeckoWebExecutor
-import org.mozilla.geckoview.WebRequest
-import org.mozilla.geckoview.WebResponse
-import kotlin.coroutines.resume
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.charset.Charset
 
 /**
- * Small fetches (search suggestions, the add-on store, site icons) through Gecko's own network stack, so they
- * obey the same DNS-over-HTTPS, proxy and TLS settings as browsing, and never send cookies.
+ * Small text fetches (search suggestions) with a plain `HttpURLConnection`: https only (plain http
+ * just for localhost), short timeouts, a 256 KB cap, no cookies and nothing cached on disk. It
+ * stays out of the web view on purpose, so it never shares state with browsing.
  */
-class WebFetcher(runtime: GeckoRuntime) {
-    private val executor = GeckoWebExecutor(runtime)
-
+class WebFetcher {
     /**
-     * Starts a request and suspends until Gecko has the response head; null when the request failed.
-     * (The flags parameter is a bit field; GeckoView's annotation just doesn't say so.)
+     * The body of a successful response as text, or null if the request failed, was refused
+     * (not https) or the server answered with an error. Bodies beyond [MAX_BYTES] are cut off.
      */
-    @SuppressLint("WrongConstant")
-    private suspend fun fetch(url: String, accept: String, private: Boolean): WebResponse? {
-        val request = WebRequest.Builder(url)
-            .header("Accept", accept)
-            .cacheMode(WebRequest.CACHE_MODE_DEFAULT)
-            .build()
-        val flags = GeckoWebExecutor.FETCH_FLAGS_ANONYMOUS or (if (private) GeckoWebExecutor.FETCH_FLAGS_PRIVATE else 0)
-        // GeckoResult callbacks need a looper thread; callers on the main thread stay on it.
-        return withContext(Dispatchers.Main.immediate) {
-            suspendCancellableCoroutine<WebResponse?> { cont ->
-                executor.fetch(request, flags).accept({ result ->
-                    if (cont.isActive) cont.resume(result) else runCatching { result?.body?.close() }
-                }, { _ ->
-                    if (cont.isActive) cont.resume(null)
-                })
-            }
-        }
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun text(url: String, private: Boolean = false): String? {
+        val body = fetch(url, "application/json, text/plain;q=0.9, */*;q=0.1", MAX_BYTES, truncate = true) ?: return null
+        return String(body.bytes, charsetOf(body.contentType))
     }
 
-    suspend fun text(url: String, private: Boolean = false, maxBytes: Int = 2 shl 20): String? {
-        val response = fetch(url, "application/json, text/plain;q=0.9, */*;q=0.1", private) ?: return null
-        val body = response.body ?: return null
-        return try {
-            // Gecko answers on the main thread; reads block (up to the response's read timeout each).
-            withContext(Dispatchers.IO) {
-                if (response.statusCode !in 200..299) return@withContext null
-                val out = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(16 * 1024)
-                while (out.size() < maxBytes) {
-                    ensureActive()
-                    val n = body.read(buffer)
-                    if (n < 0) break
-                    out.write(buffer, 0, n)
-                }
-                out.toString(Charsets.UTF_8.name())
-            }
-        } catch (e: CancellationException) {
-            throw e
+    /** A response body of at most [limit] bytes (null if it is larger, or on any failure): image previews. */
+    suspend fun bytes(url: String, accept: String, limit: Int): ByteArray? =
+        fetch(url, accept, limit, truncate = false)?.bytes
+
+    private class Body(val bytes: ByteArray, val contentType: String?)
+
+    private suspend fun fetch(url: String, accept: String, limit: Int, truncate: Boolean): Body? {
+        val target = parse(url) ?: return null
+        val connection = try {
+            target.openConnection() as? HttpURLConnection
         } catch (_: Exception) {
             null
-        } finally {
-            // Also when cancelled; an unclosed body keeps the connection open until it's collected.
-            runCatching { body.close() }
+        } ?: return null
+        return coroutineScope {
+            // A read blocked on the network doesn't notice cancellation; closing the connection wakes it.
+            val closer = launch(Dispatchers.IO) {
+                try {
+                    awaitCancellation()
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            try {
+                withContext(Dispatchers.IO) { read(connection, accept, limit, truncate) }
+            } finally {
+                closer.cancel()
+            }
         }
     }
 
-    /**
-     * The raw body of a successful response, for images (site icons). Unlike [text], a body larger
-     * than [maxBytes] gives null rather than a truncated file that would not decode.
-     */
-    suspend fun bytes(url: String, private: Boolean = false, maxBytes: Int = 512 * 1024): ByteArray? {
-        val response = fetch(url, "image/png, image/webp, image/x-icon, image/*;q=0.8, */*;q=0.5", private) ?: return null
-        val body = response.body ?: return null
-        return try {
-            withContext(Dispatchers.IO) {
-                if (response.statusCode !in 200..299) return@withContext null
-                val out = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(16 * 1024)
+    /** Blocking. Null on any failure. */
+    private fun read(connection: HttpURLConnection, accept: String, limit: Int, truncate: Boolean): Body? = try {
+        connection.connectTimeout = CONNECT_TIMEOUT_MS
+        connection.readTimeout = READ_TIMEOUT_MS
+        connection.useCaches = false
+        connection.instanceFollowRedirects = true
+        connection.requestMethod = "GET"
+        // A generic user agent: the system's default one names the device model.
+        connection.setRequestProperty("User-Agent", USER_AGENT)
+        connection.setRequestProperty("Accept", accept)
+        if (connection.responseCode !in 200..299) {
+            null
+        } else {
+            val out = ByteArrayOutputStream()
+            var tooBig = false
+            connection.inputStream.use { input ->
+                val buffer = ByteArray(BUFFER_SIZE)
                 while (true) {
-                    ensureActive()
-                    val n = body.read(buffer)
+                    if (out.size() >= limit) {
+                        tooBig = !truncate
+                        break
+                    }
+                    val n = input.read(buffer, 0, minOf(buffer.size, limit - out.size()))
                     if (n < 0) break
-                    if (out.size() + n > maxBytes) return@withContext null
                     out.write(buffer, 0, n)
                 }
-                out.toByteArray().takeIf { it.isNotEmpty() }
             }
-        } catch (e: CancellationException) {
-            throw e
+            if (tooBig) null else Body(out.toByteArray(), connection.contentType)
+        }
+    } catch (_: Exception) {
+        null
+    } finally {
+        runCatching { connection.disconnect() }
+    }
+
+    private fun parse(url: String): URL? {
+        val parsed = try {
+            URL(url.trim())
         } catch (_: Exception) {
-            null
-        } finally {
-            runCatching { body.close() }
+            return null
+        }
+        val secure = parsed.protocol.equals("https", ignoreCase = true)
+        val local = parsed.protocol.equals("http", ignoreCase = true) && isLocalHost(parsed.host)
+        return parsed.takeIf { (secure || local) && parsed.host.isNotEmpty() }
+    }
+
+    private fun isLocalHost(host: String): Boolean {
+        val h = host.lowercase()
+        return h == "localhost" || h == "127.0.0.1" || h == "[::1]" || h.endsWith(".localhost")
+    }
+
+    /** The charset named in a `Content-Type` header; UTF-8 when absent or unknown. */
+    private fun charsetOf(contentType: String?): Charset {
+        val name = contentType
+            ?.split(';')
+            ?.map { it.trim() }
+            ?.firstOrNull { it.startsWith("charset=", ignoreCase = true) }
+            ?.substringAfter('=')
+            ?.trim()
+            ?.trim('"')
+            ?: return Charsets.UTF_8
+        return try {
+            Charset.forName(name)
+        } catch (_: Exception) {
+            Charsets.UTF_8
         }
     }
 
-    fun warmUp(url: String) = runCatching { executor.speculativeConnect(url) }
+    private companion object {
+        const val MAX_BYTES = 256 * 1024
+        const val BUFFER_SIZE = 16 * 1024
+        const val CONNECT_TIMEOUT_MS = 6_000
+        const val READ_TIMEOUT_MS = 6_000
+        const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36"
+    }
 }

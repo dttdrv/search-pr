@@ -1,11 +1,9 @@
 package app.pane.browser.ui.settings
 
+import android.webkit.WebView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,20 +25,19 @@ import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
-import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
-import org.mozilla.geckoview.BuildConfig as GeckoBuildConfig
 
 /**
- * Version, the engine underneath, and the promise that nothing leaves the device. Licenses sit
- * under Advanced; putting every setting back to its default is the last row.
+ * Version and the system WebView underneath. Licenses sit under Advanced; putting every setting back
+ * to its default is the last row.
  */
 @Composable
 fun AboutScreen() {
     val container = LocalAppContainer.current
     val navigator = LocalNavigator.current
-    val colors = PaneTheme.colors
     val backLabel = rememberBackLabel(Route.About)
+    // The WebView implementation the phone currently uses (Chrome, Android System WebView, ...).
+    val webView = remember { WebView.getCurrentWebViewPackage()?.versionName ?: "System" }
     val toasts = LocalToasts.current
     val haptics = rememberHaptics()
     var confirmReset by remember { mutableStateOf(false) }
@@ -63,32 +60,16 @@ fun AboutScreen() {
                     }
                     row {
                         ListRow(
-                            title = "Gecko",
+                            title = "Android WebView",
                             modifier = Modifier.heightIn(min = 56.dp),
-                            value = GeckoBuildConfig.MOZILLA_VERSION,
+                            value = webView,
                         )
                     }
                 }
             }
-            item(key = "promise") {
-                Text(
-                    "No telemetry. No accounts. Your data stays on this device.",
-                    style = PaneTheme.type.subheadline,
-                    color = colors.secondaryLabel,
-                    modifier = Modifier.arrive(1).fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp),
-                )
-            }
             item(key = "advanced") {
-                AdvancedSection(modifier = Modifier.arrive(2)) {
+                AdvancedSection(modifier = Modifier.arrive(1)) {
                     GroupedSection(header = "Open source licenses") {
-                        row {
-                            ListRow(
-                                title = "GeckoView",
-                                modifier = Modifier.heightIn(min = 56.dp),
-                                value = "MPL-2.0",
-                                onClick = { openLink("https://www.mozilla.org/MPL/2.0/") },
-                            )
-                        }
                         row {
                             ListRow(
                                 title = "AndroidX and Compose",
@@ -105,19 +86,11 @@ fun AboutScreen() {
                                 onClick = { openLink("https://www.apache.org/licenses/LICENSE-2.0") },
                             )
                         }
-                        row {
-                            ListRow(
-                                title = "Readability",
-                                modifier = Modifier.heightIn(min = 56.dp),
-                                value = "Apache-2.0",
-                                onClick = { openLink("https://github.com/mozilla/readability/blob/main/LICENSE.md") },
-                            )
-                        }
                     }
                 }
             }
             item(key = "reset") {
-                GroupedSection(modifier = Modifier.arrive(3)) {
+                GroupedSection(modifier = Modifier.arrive(2)) {
                     row { ActionButtonRow("Reset settings", onClick = { confirmReset = true }, destructive = true) }
                 }
             }

@@ -13,12 +13,13 @@ sealed interface Route {
     data object Settings : Route
     data object SearchSettings : Route
     data object PrivacySettings : Route
-    data object Connections : Route
+    data object FilterLists : Route
     data object PasswordSettings : Route
     data object SiteSettings : Route
     data class SitePermissions(val origin: String) : Route
     data object AppearanceSettings : Route
     data object TabsSettings : Route
+    data object StartSettings : Route
     data object ClearData : Route
     data object About : Route
 
@@ -26,12 +27,6 @@ sealed interface Route {
     data object Bookmarks : Route
     data object History : Route
     data object Downloads : Route
-
-    // Extensions
-    data object Extensions : Route
-    data object AddonStore : Route
-    data class ExtensionDetail(val extensionId: String) : Route
-    data class ExtensionOptions(val extensionId: String) : Route
 }
 
 @Stable
@@ -43,8 +38,9 @@ class Navigator {
     val isEmpty: Boolean get() = stack.isEmpty()
     val top: Route? get() = stack.lastOrNull()
 
+    // a double tap opens a screen once: each screen's saved state is keyed by its route
     fun push(route: Route) {
-        stack.add(route)
+        if (top != route) stack.add(route)
     }
 
     fun pop() {

@@ -1,11 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Pane's mark: a "P" in dots, the same dot grid as the wordmark. Ink on paper; the system tints it for themed icons. -->
+<!--
+    Pane's mark: a page (a rounded square, drawn as a line) with the floating pill resting near its
+    bottom edge. Ink on the white plate (pane_launcher_bg); the system tints this same drawable for
+    themed icons. Everything sits inside the 66dp safe zone: the page's outer edge is 52dp square
+    (28..80) with 14dp corners, so its farthest point is 31dp from the centre (the zone's radius is 33).
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- The page: a 3.6dp line; centre-line square 29.8..78.2 with 12.2dp corners. -->
     <path
-        android:fillColor="#FF111111"
-        android:pathData="M34.20,28.80a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM42.60,28.80a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM51.00,28.80a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM59.40,28.80a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM34.20,37.20a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM67.80,37.20a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM34.20,45.60a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM67.80,45.60a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM34.20,54.00a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM42.60,54.00a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM51.00,54.00a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM59.40,54.00a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM34.20,62.40a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM34.20,70.80a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0ZM34.20,79.20a3.0,3.0 0 1,0 6.0,0a3.0,3.0 0 1,0 -6.0,0Z" />
+        android:fillColor="#00000000"
+        android:strokeColor="#FF171717"
+        android:strokeWidth="3.6"
+        android:strokeLineJoin="round"
+        android:pathData="M42,29.8H66A12.2,12.2 0 0 1 78.2,42V66A12.2,12.2 0 0 1 66,78.2H42A12.2,12.2 0 0 1 29.8,66V42A12.2,12.2 0 0 1 42,29.8Z" />
+    <!-- The pill: 24 x 8.5dp, centred, floating a little above the page's bottom edge. -->
+    <path
+        android:fillColor="#FF171717"
+        android:pathData="M46.25,62.4H61.75A4.25,4.25 0 0 1 61.75,70.9H46.25A4.25,4.25 0 0 1 46.25,62.4Z" />
 </vector>

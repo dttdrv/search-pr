@@ -29,9 +29,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        // Sessions outlive this activity, so none is handed a selection delegate holding it. GeckoView
-        // lends its own (bound to the activity it was created in) to whichever session it shows.
-
+        container.sessions.attachHost(this)
         setContent { AppRoot(container, navigator) }
 
         lifecycleScope.launch {
@@ -44,7 +42,7 @@ class MainActivity : ComponentActivity() {
         observeWindowFlags()
     }
 
-    // Keyboard shortcuts must be seen before GeckoView swallows them. Calling super is the public
+    // Keyboard shortcuts must be seen before the page swallows them. Calling super is the public
     // Activity API; androidx merely annotates its own override as restricted.
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean =
@@ -55,12 +53,20 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
+    override fun onStart() {
+        super.onStart()
+        container.sessions.setForeground(this, true)
+    }
+
     override fun onStop() {
         super.onStop()
+        // Pages stop running with the app; the tabs are saved so a restart resumes where each one was.
+        container.sessions.setForeground(this, false)
         container.scope.launch { container.sessions.persistNow() }
     }
 
     override fun onDestroy() {
+        container.sessions.attachHost(null)
         // Leaving Pane with Back (or swiping it away) counts as exiting.
         if (isFinishing && container.settings.current.clearOnExit) {
             ClearOnExit.markPending(container)

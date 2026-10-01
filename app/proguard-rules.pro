@@ -1,6 +1,4 @@
-# GeckoView ships its own consumer rules.
 -keepattributes *Annotation*, InnerClasses, Signature
--dontwarn org.mozilla.**
 
 # kotlinx.serialization
 -keepclassmembers class app.pane.** {

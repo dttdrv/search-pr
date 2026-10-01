@@ -91,7 +91,7 @@ internal fun Modifier.arrive(index: Int): Modifier {
 private const val ARRIVE_LIMIT = 9
 
 /**
- * A date or group heading above library rows: small capitals, with 28dp of air before it. The
+ * A date or group heading above library rows: a few small muted words, with 28dp of air before it. The
  * rows under it are flat, separated by hairlines, with no card behind them.
  */
 @Composable
@@ -136,7 +136,7 @@ internal fun LibraryRow(
     Row(
         modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 64.dp)
+            .defaultMinSize(minHeight = 60.dp)
             .rowPress(onLongClick = onLongClick, onClick = onClick)
             .padding(start = RowMargin, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -253,7 +253,7 @@ internal fun SwipeToDelete(
                         when {
                             wasArmed || (velocity < -3000f && offset.value < -actionWidth * 0.5f) -> commit()
                             offset.value < -actionWidth * 0.5f || velocity < -900f ->
-                                offset.animateTo(-actionWidth, Motion.bouncy(), initialVelocity = velocity)
+                                offset.animateTo(-actionWidth, Motion.smooth(), initialVelocity = velocity)
                             else -> offset.animateTo(0f, Motion.snappy(), initialVelocity = velocity)
                         }
                     },
@@ -329,7 +329,6 @@ internal fun ActionSheet(
                 }
             }
         }
-        Spacer(Modifier.height(20.dp))
     }
 }
 
@@ -397,7 +396,7 @@ private fun backTitle(route: Route): String? = when (route) {
     Route.Settings -> "Settings"
     Route.SearchSettings -> "Search"
     Route.PrivacySettings -> "Privacy"
-    Route.Connections -> "Connections"
+    Route.FilterLists -> "Filter lists"
     Route.PasswordSettings -> "Passwords"
     Route.SiteSettings -> "Site permissions"
     Route.AppearanceSettings -> "Appearance"
@@ -406,7 +405,6 @@ private fun backTitle(route: Route): String? = when (route) {
     Route.Bookmarks -> "Bookmarks"
     Route.History -> "History"
     Route.Downloads -> "Downloads"
-    Route.Extensions -> "Extensions"
     else -> null
 }
 

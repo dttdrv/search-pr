@@ -37,11 +37,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.EdgeFade
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.canScroll
+import app.pane.browser.ui.theme.stretch
 
 private val BarHeight = 56.dp
 
@@ -81,12 +84,12 @@ fun LargeTitleScaffold(
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Box(modifier.fillMaxSize().background(colors.background)) {
-        // The list itself fills the screen and keeps the platform's stretch overscroll: nothing here
-        // sets `overscrollEffect`, clips it, or puts a pointer-consuming layer on top. The edges and
-        // the bar below only draw; touches fall through them to the list.
+        // The list itself fills the screen and keeps the platform's stretch overscroll, also when it
+        // is too short to scroll. The edges and the bar below only draw; touches fall through them.
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().stretch(),
+            userScrollEnabled = listState.canScroll,
             contentPadding = PaddingValues(top = statusTop + BarHeight, bottom = navBottom + 32.dp),
         ) {
             item(key = "__large_title") {
@@ -96,7 +99,9 @@ fun LargeTitleScaffold(
                     color = colors.label,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                     modifier = Modifier
+                        .fillMaxWidth()
                         .padding(start = RowMargin, end = RowMargin, top = 6.dp, bottom = 4.dp)
                         .graphicsLayer {
                             // Gone by the halfway point, before the small title starts to appear.
@@ -104,7 +109,7 @@ fun LargeTitleScaffold(
                             val s = 1f - 0.06f * collapse
                             scaleX = s
                             scaleY = s
-                            transformOrigin = TransformOrigin(0f, 0.5f)
+                            transformOrigin = TransformOrigin(0.5f, 0.5f)
                         },
                 )
             }

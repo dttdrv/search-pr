@@ -1,6 +1,8 @@
 package app.pane.browser.ui.browser
 
 import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -8,51 +10,39 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
 import app.pane.core.tabs.TabState
-import org.mozilla.geckoview.GeckoView
 
 /**
- * The single GeckoView that renders whichever tab is selected. Sessions are swapped in and out
- * rather than creating a view per tab, which keeps memory flat regardless of tab count.
+ * Shows whichever tab is selected. Each page is its own WebView, owned by the session manager;
+ * this is only the frame that the selected one is placed in, so switching tabs moves a view
+ * rather than building one.
  */
 @Composable
 fun EngineView(
     tab: TabState?,
     modifier: Modifier = Modifier,
-    coverColor: Int,
     hidden: Boolean = false,
-    onViewCreated: (GeckoView) -> Unit = {},
 ) {
     val container = LocalAppContainer.current
     val version by container.sessions.sessionsVersion.collectAsStateWithLifecycle()
     AndroidView(
         modifier = modifier,
-        factory = { context ->
-            GeckoView(context).also {
-                // The default SurfaceView: the page is composited by the system straight to the screen,
-                // not copied through the app's own drawing every frame (far cheaper on the battery).
-                it.setAutofillEnabled(true)
-                onViewCreated(it)
-            }
-        },
-        update = { view ->
+        factory = { context -> FrameLayout(context).apply { clipChildren = true } },
+        update = { frame ->
             @Suppress("UNUSED_EXPRESSION") version
-            view.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+            frame.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
             // A locked private page is covered on screen; screen readers mustn't walk into it either.
-            view.importantForAccessibility =
+            frame.importantForAccessibility =
                 if (hidden) View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
-            // Password managers only see views marked important: on AUTO, Android drops GeckoView (no id,
-            // no hints) from the autofill structure, and with it every login form on the page.
-            view.importantForAutofill =
-                if (hidden) View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS else View.IMPORTANT_FOR_AUTOFILL_YES
-            val session = container.sessions.session(tab?.id)?.takeIf { it.isOpen }
-            if (view.session !== session) {
-                if (view.session != null) view.releaseSession()
-                if (session != null) {
-                    view.coverUntilFirstPaint(coverColor)
-                    view.setSession(session)
+            val page = container.sessions.session(tab?.id)
+            val current = frame.getChildAt(0)
+            if (current !== page) {
+                frame.removeAllViews()
+                if (page != null) {
+                    (page.parent as? ViewGroup)?.removeView(page)
+                    frame.addView(page, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
                 }
             }
         },
-        onRelease = { view -> if (view.session != null) view.releaseSession() },
+        onRelease = { frame -> frame.removeAllViews() },
     )
 }

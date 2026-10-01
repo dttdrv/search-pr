@@ -1,20 +1,32 @@
 package app.pane.browser.debug
 
+import android.app.Activity
+import android.app.PendingIntent
 import android.app.assist.AssistStructure
+import android.app.slice.Slice
+import android.app.slice.SliceSpec
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import android.os.CancellationSignal
 import android.service.autofill.AutofillService
 import android.service.autofill.Dataset
 import android.service.autofill.FillCallback
 import android.service.autofill.FillRequest
 import android.service.autofill.FillResponse
+import android.service.autofill.InlinePresentation
 import android.service.autofill.SaveCallback
 import android.service.autofill.SaveInfo
 import android.service.autofill.SaveRequest
 import android.util.Log
 import android.view.View
 import android.view.autofill.AutofillId
+import android.view.autofill.AutofillManager
 import android.view.autofill.AutofillValue
 import android.widget.RemoteViews
+import androidx.annotation.RequiresApi
 
 /**
  * Logs what a password manager is given for each fill and save request, and offers one dataset
@@ -44,14 +56,14 @@ class ProbeAutofillService : AutofillService() {
             callback.onSuccess(null)
             return
         }
-        val presentation = RemoteViews(packageName, android.R.layout.simple_list_item_1).apply {
-            setTextViewText(android.R.id.text1, PROBE_USER)
-        }
-        @Suppress("DEPRECATION")
-        val dataset = Dataset.Builder(presentation).apply {
-            user?.let { setValue(it.id, AutofillValue.forText(PROBE_USER)) }
-            pass?.let { setValue(it.id, AutofillValue.forText(PROBE_PASSWORD)) }
-        }.build()
+        // like Bitwarden, which puts every dataset (and a locked vault) behind authentication: the values
+        // only arrive through the host activity's authentication result.
+        val unlockIntent = Intent(this, ProbeUnlockActivity::class.java).putExtra(USER, user?.id).putExtra(PASS, pass?.id)
+        val unlock = PendingIntent.getActivity(this, 0, unlockIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val dataset = probeDataset(user?.id, null, pass?.id, null)
+            .setAuthentication(unlock.intentSender)
+            .apply { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) inline(request, unlock) }
+            .build()
         val ids = listOfNotNull(user?.id, pass?.id).toTypedArray()
         val response = FillResponse.Builder()
             .addDataset(dataset)
@@ -114,10 +126,50 @@ class ProbeAutofillService : AutofillService() {
         }
         for (i in 0 until windowNodeCount) walk(getWindowNodeAt(i).rootViewNode)
     }
+}
 
-    private companion object {
-        const val TAG = "PaneAutofillProbe"
-        const val PROBE_USER = "pane-probe-user"
-        const val PROBE_PASSWORD = "pane-probe-pass"
+/** The probe's unlock screen: hands the values back at once, as an unlocked password manager does. */
+class ProbeUnlockActivity : Activity() {
+    @Suppress("DEPRECATION")
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val user = intent.getParcelableExtra<AutofillId>(USER)
+        val pass = intent.getParcelableExtra<AutofillId>(PASS)
+        Log.i(TAG, "UNLOCK user=$user pass=$pass")
+        val dataset = probeDataset(user, PROBE_USER, pass, PROBE_PASSWORD).build()
+        setResult(RESULT_OK, Intent().putExtra(AutofillManager.EXTRA_AUTHENTICATION_RESULT, dataset))
+        finish()
     }
 }
+
+/** One dataset for the probe's fields; a null value leaves that field to the unlock screen. */
+@Suppress("DEPRECATION")
+private fun Context.probeDataset(user: AutofillId?, userValue: String?, pass: AutofillId?, passValue: String?): Dataset.Builder {
+    val presentation = RemoteViews(packageName, android.R.layout.simple_list_item_1).apply {
+        setTextViewText(android.R.id.text1, PROBE_USER)
+    }
+    return Dataset.Builder(presentation).apply {
+        user?.let { setValue(it, userValue?.let(AutofillValue::forText)) }
+        pass?.let { setValue(it, passValue?.let(AutofillValue::forText)) }
+    }
+}
+
+/**
+ * Shows the dataset in the keyboard's suggestion strip when the keyboard asks for one (Gboard does), as
+ * Bitwarden's inline suggestions do. The slice is the one androidx.autofill's InlineSuggestionUi v1 builds.
+ */
+@RequiresApi(Build.VERSION_CODES.R)
+@Suppress("DEPRECATION")
+private fun Dataset.Builder.inline(request: FillRequest, attribution: PendingIntent) {
+    val spec = request.inlineSuggestionsRequest?.inlinePresentationSpecs?.firstOrNull() ?: return
+    val slice = Slice.Builder(Uri.parse("inline.slice"), SliceSpec("androidx.autofill.inline.ui.version:v1", 1))
+    slice.addText(PROBE_USER, null, listOf("inline_title"))
+    slice.addAction(attribution, Slice.Builder(slice).addHints(listOf("inline_attribution")).build(), null)
+    setInlinePresentation(InlinePresentation(slice.build(), spec, false))
+}
+
+private const val TAG = "PaneAutofillProbe"
+private const val PROBE_USER = "pane-probe-user"
+private const val PROBE_PASSWORD = "pane-probe-pass"
+private const val USER = "user"
+private const val PASS = "pass"

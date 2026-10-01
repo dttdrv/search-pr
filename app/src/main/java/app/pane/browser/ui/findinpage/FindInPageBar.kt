@@ -1,5 +1,6 @@
 package app.pane.browser.ui.findinpage
 
+import app.pane.browser.ui.components.ChromeButton
 import android.annotation.SuppressLint
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -60,9 +61,6 @@ import app.pane.core.prompts.PromptText
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
-import org.mozilla.geckoview.GeckoResult
-import org.mozilla.geckoview.GeckoSession
-import org.mozilla.geckoview.SessionFinder
 import kotlin.coroutines.resume
 import app.pane.browser.ui.components.excludeFromAutofill
 
@@ -90,41 +88,34 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
     val risePx = with(LocalDensity.current) { 48.dp.toPx() }
     val rise = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
-        if (reduceMotion) rise.animateTo(1f, Motion.fade(160)) else rise.animateTo(1f, Motion.bouncy())
+        if (reduceMotion) rise.animateTo(1f, Motion.fade(160)) else rise.animateTo(1f, Motion.smooth())
     }
 
-    fun finder(): SessionFinder? = container.sessions.session(tabId)?.finder
-
     LaunchedEffect(tabId) {
-        finder()?.let(::highlightAll)
         delay(60)
         runCatching { focus.requestFocus() }
         keyboard?.show()
     }
     DisposableEffect(tabId) {
-        onDispose { container.sessions.session(tabId)?.finder?.clear() }
+        onDispose { container.sessions.clearFind(tabId) }
     }
     LaunchedEffect(tabId, query) {
-        val finder = finder() ?: return@LaunchedEffect
         if (query.isEmpty()) {
-            finder.clear()
+            container.sessions.clearFind(tabId)
             match = null
             return@LaunchedEffect
         }
         delay(DEBOUNCE_MS)
-        match = finder.find(query, GeckoSession.FINDER_FIND_FORWARD).awaitMatch()
+        container.sessions.find(tabId, query) { active, total -> match = Match(total > 0, active, total) }
     }
 
     val step: (backwards: Boolean) -> Unit = step@{ backwards ->
-        val finder = finder()
-        if (finder == null || query.isEmpty()) return@step
+        if (query.isEmpty()) return@step
         haptics.tick()
-        // Same string as the last search, so Gecko moves on from the current match rather than restarting.
-        val result = finder.find(query, if (backwards) GeckoSession.FINDER_FIND_BACKWARDS else GeckoSession.FINDER_FIND_FORWARD)
-        scope.launch { match = result.awaitMatch() ?: match }
+        container.sessions.findNext(tabId, forward = !backwards)
     }
     val close: () -> Unit = {
-        finder()?.clear()
+        container.sessions.clearFind(tabId)
         keyboard?.hide()
         onClose()
     }
@@ -146,7 +137,7 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
             Modifier
                 .fillMaxWidth()
                 .height(52.dp)
-                .floating(PaneShapes.pill, shadow = 6.dp)
+                .floating(PaneShapes.pill)
                 .padding(start = 20.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -183,7 +174,7 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
             }
             StepButton(PaneIcons.ChevronUp, "Previous match", enabled = hasMatches) { step(true) }
             StepButton(PaneIcons.ChevronDown, "Next match", enabled = hasMatches) { step(false) }
-            TextButton("Done", onClick = close, bold = true)
+            ChromeButton(PaneIcons.Close, "Done", onClick = close)
         }
     }
 }
@@ -200,18 +191,4 @@ private fun StepButton(icon: ImageVector, description: String, enabled: Boolean,
     ) {
         Icon(icon, contentDescription = null, tint = PaneTheme.colors.label, modifier = Modifier.size(20.dp))
     }
-}
-
-// The display flags are a bit field; GeckoView's annotation just doesn't say so.
-@SuppressLint("WrongConstant")
-private fun highlightAll(finder: SessionFinder) {
-    finder.displayFlags = GeckoSession.FINDER_DISPLAY_HIGHLIGHT_ALL or GeckoSession.FINDER_DISPLAY_DRAW_LINK_OUTLINE
-}
-
-private suspend fun GeckoResult<GeckoSession.FinderResult>.awaitMatch(): Match? = suspendCancellableCoroutine { cont ->
-    accept({ result ->
-        if (cont.isActive) cont.resume(result?.let { Match(it.found, it.current, it.total) })
-    }, { _ ->
-        if (cont.isActive) cont.resume(null)
-    })
 }

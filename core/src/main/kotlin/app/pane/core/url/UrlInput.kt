@@ -28,7 +28,7 @@ object UrlInput {
 
     /** Schemes Pane renders itself. */
     val webSchemes = setOf("http", "https")
-    private val internalSchemes = setOf("about", "view-source", "moz-extension", "resource")
+    private val internalSchemes = setOf("about", "view-source")
 
     /** Schemes that are opened by other apps. */
     val externalSchemes = setOf("mailto", "tel", "sms", "smsto", "mms", "geo", "intent", "market", "whatsapp", "tg", "spotify", "zoommtg", "maps")

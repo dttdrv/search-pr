@@ -34,9 +34,12 @@ import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.Spacing
+import app.pane.browser.ui.theme.floating
 
-/** The screen margin: where text starts, and where hairlines and trailing controls stop. */
-internal val RowMargin = 20.dp
+/** A row's side padding (in its card, or from the screen edge): where text starts, and where hairlines and trailing controls stop. */
+internal val RowMargin = Spacing.gutter
 
 /** Every row is at least this tall, so it is easy to hit. */
 internal val RowMinHeight = 56.dp
@@ -44,11 +47,13 @@ internal val RowMinHeight = 56.dp
 /** The gap between a row's glyph (or icon) and its title. */
 internal val LeadingGap = 16.dp
 
-/** The space above a section that has no heading of its own. */
-private val HeadlessGap = 20.dp
+/** A row's leading glyph. */
+internal val GlyphSize = 22.dp
 
-/** The space above a section heading. */
-private val HeadingGap = 28.dp
+/** Where a hairline starts under rows that lead with a glyph: under the titles, not the glyphs. */
+internal val GlyphInset = RowMargin + GlyphSize + LeadingGap
+
+private val CardShape = ContinuousRoundedShape(SheetCardRadius)
 
 /** Collects the rows of a [GroupedSection] so separators can be drawn between them. */
 class SectionBuilder internal constructor() {
@@ -59,9 +64,9 @@ class SectionBuilder internal constructor() {
 }
 
 /**
- * A flat list section: an optional small-caps heading, full-width rows with a hairline between them
- * (starting at [separatorInset], where the text starts), and an optional footnote. No card, no fill:
- * the rows sit directly on the page.
+ * A group of rows as one flat card on the grey ground: an optional small muted heading above it, a
+ * short hairline between rows (starting at [separatorInset], where the text starts), and an optional
+ * footnote below.
  */
 @Composable
 fun GroupedSection(
@@ -73,26 +78,31 @@ fun GroupedSection(
 ) {
     val colors = PaneTheme.colors
     val built = SectionBuilder().apply(rows).rows
-    Column(modifier.fillMaxWidth()) {
+    // one gutter to the screen edge, between cards and inside them; headings and footnotes line up with the rows' text.
+    Column(modifier.fillMaxWidth().padding(horizontal = Spacing.gutter)) {
         if (header != null) {
             SectionLabel(
                 header,
                 color = colors.secondaryLabel,
-                modifier = Modifier.padding(start = RowMargin, end = RowMargin, top = HeadingGap, bottom = 4.dp),
+                modifier = Modifier.padding(start = RowMargin, end = RowMargin, top = Spacing.gutter, bottom = Spacing.gutter / 2),
             )
         } else {
-            Spacer(Modifier.height(HeadlessGap))
+            Spacer(Modifier.height(Spacing.gutter))
         }
-        built.forEachIndexed { index, row ->
-            row()
-            if (index < built.lastIndex) Separator(Modifier.padding(start = separatorInset, end = RowMargin))
+        // One flat card per group on the grey ground, like the quick menu: rows are told apart by a
+        // short hairline inside it and groups by the space between cards.
+        Column(Modifier.floating(CardShape, shadow = 0.dp, fill = colors.elevatedSurface)) {
+            built.forEachIndexed { index, row ->
+                row()
+                if (index < built.lastIndex) Separator(Modifier.padding(start = separatorInset, end = RowMargin))
+            }
         }
         if (footer != null) {
             Text(
                 footer,
                 style = PaneTheme.type.footnote,
                 color = colors.secondaryLabel,
-                modifier = Modifier.padding(start = RowMargin, end = RowMargin, top = 10.dp),
+                modifier = Modifier.padding(start = RowMargin, end = RowMargin, top = Spacing.gutter / 2),
             )
         }
     }

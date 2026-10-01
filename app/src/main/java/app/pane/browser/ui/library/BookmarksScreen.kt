@@ -35,6 +35,7 @@ import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.Spacing
 import app.pane.core.url.InputAction
 import app.pane.core.url.UrlDisplay
 import app.pane.core.url.UrlInput
@@ -94,7 +95,7 @@ fun BookmarksScreen() {
                     value = query,
                     onValueChange = { query = it },
                     placeholder = "Search bookmarks",
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = Spacing.gutter, vertical = 8.dp),
                 )
             },
         ) {
@@ -249,6 +250,5 @@ private fun EditBookmarkSheet(
         GroupedSection {
             row { ActionRow("Delete bookmark", onClick = { bookmark?.let(onDelete) }, destructive = true) }
         }
-        Spacer(Modifier.height(24.dp))
     }
 }

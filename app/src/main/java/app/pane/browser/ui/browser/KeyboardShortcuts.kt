@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 enum class Shortcut { NewTab, NewPrivateTab, CloseTab, FocusAddress, Reload, Find, NextTab, PreviousTab, Back, Forward, ShowTabs }
 
 /**
- * Translates key presses at the activity level (before GeckoView sees them) into [Shortcut]s the
+ * Translates key presses at the activity level (before the page sees them) into [Shortcut]s the
  * browser screen acts on.
  */
 object KeyboardShortcuts {

@@ -11,10 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,8 +20,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
-import app.pane.browser.downloads.await
+import app.pane.browser.engine.WebData
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
 import app.pane.browser.ui.components.GroupedSection
@@ -44,125 +42,32 @@ import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.Spacing
 import app.pane.core.library.SiteOrigins
-import kotlinx.coroutines.CancellationException
+import app.pane.core.prompts.PermissionText
+import app.pane.core.prompts.SitePermission
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import org.json.JSONObject
-import org.mozilla.geckoview.GeckoRuntime
-import org.mozilla.geckoview.GeckoSession.PermissionDelegate
-import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
-import org.mozilla.geckoview.StorageController
 
-/** A per-site permission Gecko keeps in its permission store, with its store key. */
-internal enum class SitePermission(
-    val type: Int,
-    val key: String,
-    val title: String,
-    /** Shown up front; the rest sit under Advanced. */
-    val common: Boolean = false,
-) {
-    Location(PermissionDelegate.PERMISSION_GEOLOCATION, "geolocation", "Location", common = true),
-    Notifications(PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION, "desktop-notification", "Notifications", common = true),
-    ProtectedContent(PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS, "media-key-system-access", "Protected content"),
-    PersistentStorage(PermissionDelegate.PERMISSION_PERSISTENT_STORAGE, "persistent-storage", "Persistent storage"),
-    LocalNetwork(PermissionDelegate.PERMISSION_LOCAL_NETWORK_ACCESS, "local-network", "Local network"),
-    LocalApps(PermissionDelegate.PERMISSION_LOCAL_DEVICE_ACCESS, "loopback-network", "Apps on this device"),
-    VirtualReality(PermissionDelegate.PERMISSION_XR, "xr", "Virtual reality"),
+/** Shown up front; the rest sit under Advanced. */
+private val CommonKinds = listOf(SitePermission.Location, SitePermission.Camera, SitePermission.Microphone)
+private val AdvancedKinds = SitePermission.entries - CommonKinds.toSet()
+
+/** The answers a site can have, in the order the picker lists them: null asks every time. */
+private val Answers = listOf<Boolean?>(null, true, false)
+
+private fun answerLabel(answer: Boolean?) = when (answer) {
+    true -> "Allow"
+    false -> "Block"
+    null -> "Ask"
 }
 
-/** Autoplay is two Gecko permissions (with and without sound) shown as one choice, as in Safari. */
-private enum class AutoplayChoice(val label: String, val audible: Int, val inaudible: Int) {
-    Default("Use default", ContentPermission.VALUE_PROMPT, ContentPermission.VALUE_PROMPT),
-    AllowAll("Allow all", ContentPermission.VALUE_ALLOW, ContentPermission.VALUE_ALLOW),
-    StopSound("Stop media with sound", ContentPermission.VALUE_DENY, ContentPermission.VALUE_ALLOW),
-    Never("Never", ContentPermission.VALUE_DENY, ContentPermission.VALUE_DENY),
-    ;
-
-    companion object {
-        fun of(audible: Int, inaudible: Int): AutoplayChoice = when {
-            audible == ContentPermission.VALUE_ALLOW -> AllowAll
-            inaudible == ContentPermission.VALUE_DENY -> Never
-            audible == ContentPermission.VALUE_DENY -> StopSound
-            else -> Default
-        }
-    }
-}
-
-private const val AUTOPLAY_AUDIBLE_KEY = "autoplay-media-audible"
-private const val AUTOPLAY_INAUDIBLE_KEY = "autoplay-media-inaudible"
-private const val TRACKING_KEY = "trackingprotection"
-
-/** Values in the order the pickers list them. */
-private val PermissionValues = listOf(ContentPermission.VALUE_PROMPT, ContentPermission.VALUE_ALLOW, ContentPermission.VALUE_DENY)
-
-private fun valueLabel(value: Int) = when (value) {
-    ContentPermission.VALUE_ALLOW -> "Allow"
-    ContentPermission.VALUE_DENY -> "Block"
-    else -> "Ask"
-}
-
-/** Cookies, storage and caches: what "Clear Site Data" removes. Permissions are reset separately. */
-private val SITE_DATA_FLAGS: Long =
-    StorageController.ClearFlags.COOKIES or
-        StorageController.ClearFlags.DOM_STORAGES or
-        StorageController.ClearFlags.ALL_CACHES or
-        StorageController.ClearFlags.AUTH_SESSIONS
-
-internal data class SiteEntry(val origin: String, val permissions: List<ContentPermission>)
-
-/**
- * Every stored permission that Pane shows. Private-mode entries vanish with the session anyway,
- * and storage-access grants are made by Gecko's heuristics for most sites a person logs into,
- * so listing them would bury the choices people actually made.
- */
-internal suspend fun loadPermissions(runtime: GeckoRuntime): List<ContentPermission> = try {
-    runtime.storageController.getAllPermissions().await().orEmpty()
-        .filter { !it.privateMode && it.permission != PermissionDelegate.PERMISSION_STORAGE_ACCESS }
-} catch (e: CancellationException) {
-    throw e
-} catch (_: Exception) {
-    emptyList()
-}
-
-internal fun groupSites(permissions: List<ContentPermission>): List<SiteEntry> =
-    permissions
-        .groupBy { SiteOrigins.originOf(it.uri) }
-        .mapNotNull { (origin, list) -> origin?.let { SiteEntry(it, list) } }
-        .filter { it.origin.startsWith("https://") || it.origin.startsWith("http://") }
-        .sortedBy { SiteOrigins.displayName(it.origin) }
-
-/** "Location allowed, notifications blocked" — only what differs from asking. */
-private fun summarize(permissions: List<ContentPermission>): String {
-    val parts = mutableListOf<String>()
-    fun describe(title: String, value: Int?) {
-        when (value) {
-            ContentPermission.VALUE_ALLOW -> parts += "$title allowed"
-            ContentPermission.VALUE_DENY -> parts += "$title blocked"
-        }
-    }
-    SitePermission.entries.forEach { kind -> describe(kind.title, permissions.firstOrNull { it.permission == kind.type }?.value) }
-    describe("Auto-play", permissions.firstOrNull { it.permission == PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE }?.value)
-    if (permissions.any { it.permission == PermissionDelegate.PERMISSION_TRACKING && it.value == ContentPermission.VALUE_ALLOW }) {
-        parts += "Tracking protection off"
-    }
-    if (parts.isEmpty()) return "Asks first"
-    return parts.mapIndexed { i, p -> if (i == 0) p else p.lowercase() }.joinToString(", ")
-}
-
-/**
- * A permission for [key] on the same site as [templateJson]. Gecko only hands out permissions it
- * already stores, but they all carry the site's serialized principal, so a stored one can be
- * re-targeted to set a permission the site has never asked for.
- */
-private fun derivePermission(templateJson: String, key: String, value: Int): ContentPermission? = try {
-    val json = JSONObject(templateJson)
-    json.put("perm", key)
-    json.put("value", value)
-    json.remove("thirdPartyOrigin")
-    ContentPermission.fromJson(json)
-} catch (_: Exception) {
-    null
+/** "Location allowed, camera blocked": only what differs from asking. */
+private fun summarize(answers: Map<SitePermission, Boolean>): String {
+    if (answers.isEmpty()) return "Asks first"
+    return answers.entries.mapIndexed { i, (kind, allowed) ->
+        val label = PermissionText.settingLabel(kind).let { if (i == 0) it else it.lowercase() }
+        "$label ${if (allowed) "allowed" else "blocked"}"
+    }.joinToString(", ")
 }
 
 /** Sites with remembered permissions, plus the defaults that apply everywhere. */
@@ -174,19 +79,14 @@ fun SiteSettingsScreen() {
     val settings by rememberSettingsState()
     val backLabel = rememberBackLabel(Route.SiteSettings)
 
-    var sites by remember { mutableStateOf<List<SiteEntry>?>(null) }
+    val permissions = container.sitePermissions
+    val version by permissions.changes.collectAsStateWithLifecycle()
+    val sites = remember(version) { permissions.origins().filter { it.startsWith("https://") || it.startsWith("http://") } }
     var query by rememberSaveable { mutableStateOf("") }
-    var reloads by remember { mutableIntStateOf(0) }
     var confirmReset by remember { mutableStateOf(false) }
-    // Reload whenever this screen is back on top, e.g. after changing a site.
-    val onTop = navigator.top == Route.SiteSettings
-    LaunchedEffect(onTop, reloads) {
-        if (onTop) sites = groupSites(loadPermissions(container.runtime))
-    }
     val shown = remember(sites, query) {
         val q = query.trim()
-        val all = sites.orEmpty()
-        if (q.isEmpty()) all else all.filter { SiteOrigins.displayName(it.origin).contains(q, ignoreCase = true) }
+        if (q.isEmpty()) sites else sites.filter { SiteOrigins.displayName(it).contains(q, ignoreCase = true) }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -194,13 +94,13 @@ fun SiteSettingsScreen() {
             title = "Site permissions",
             onBack = navigator::pop,
             backLabel = backLabel,
-            header = if (!sites.isNullOrEmpty()) {
+            header = if (sites.isNotEmpty()) {
                 {
                     SearchField(
                         value = query,
                         onValueChange = { query = it },
                         placeholder = "Search sites",
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = Spacing.gutter, vertical = 8.dp),
                     )
                 }
             } else {
@@ -225,10 +125,8 @@ fun SiteSettingsScreen() {
                     }
                 }
             }
-            val loaded = sites
             when {
-                loaded == null -> Unit
-                loaded.isEmpty() -> item(key = "empty") {
+                sites.isEmpty() -> item(key = "empty") {
                     EmptyState(
                         title = "No site permissions",
                         message = "Answers you give to sites appear here.",
@@ -244,15 +142,15 @@ fun SiteSettingsScreen() {
                 }
                 else -> {
                     item(key = "sites-title") { SectionTitle("Sites", Modifier.animateItem()) }
-                    itemsIndexed(shown, key = { _, site -> "site:${site.origin}" }) { index, site ->
+                    itemsIndexed(shown, key = { _, origin -> "site:$origin" }) { index, origin ->
                         Column(Modifier.animateItem().arrive(index)) {
                             if (index > 0) RowSeparator(SiteRowInset)
                             ListRow(
-                                title = SiteOrigins.displayName(site.origin),
+                                title = SiteOrigins.displayName(origin),
                                 modifier = Modifier.heightIn(min = 64.dp),
-                                subtitle = summarize(site.permissions),
-                                leading = { SiteIcon(site.origin, 28.dp) },
-                                onClick = { navigator.push(Route.SitePermissions(site.origin)) },
+                                subtitle = summarize(permissions.forOrigin(origin)),
+                                leading = { SiteIcon(origin, 28.dp) },
+                                onClick = { navigator.push(Route.SitePermissions(origin)) },
                             )
                         }
                     }
@@ -275,11 +173,8 @@ fun SiteSettingsScreen() {
                 AlertAction("Cancel", AlertStyle.Cancel) { confirmReset = false },
                 AlertAction("Reset", AlertStyle.Destructive) {
                     confirmReset = false
-                    container.scope.launch {
-                        runCatching { container.runtime.storageController.clearData(StorageController.ClearFlags.PERMISSIONS).await() }
-                        reloads++
-                        toasts.show("Site permissions reset", PaneIcons.Check)
-                    }
+                    permissions.clearAll()
+                    toasts.show("Site permissions reset", PaneIcons.Check)
                 },
             ),
             onDismissRequest = { confirmReset = false },
@@ -294,56 +189,25 @@ fun SitePermissionsScreen(origin: String) {
     val navigator = LocalNavigator.current
     val toasts = LocalToasts.current
     val colors = PaneTheme.colors
-    val controller = container.runtime.storageController
+    val permissions = container.sitePermissions
     val backLabel = rememberBackLabel(Route.SitePermissions(origin))
     val name = SiteOrigins.displayName(origin)
     val host = SiteOrigins.hostOf(origin)
 
-    var stored by remember { mutableStateOf<List<ContentPermission>?>(null) }
-    var template by remember { mutableStateOf<String?>(null) }
-    // Values changed on this screen; Gecko applies them asynchronously, so show them right away.
-    val overrides = remember { mutableStateMapOf<String, Int>() }
-    var reloads by remember { mutableIntStateOf(0) }
-    LaunchedEffect(reloads) {
-        val mine = loadPermissions(container.runtime).filter { SiteOrigins.originOf(it.uri) == origin }
-        stored = mine
-        if (template == null) template = mine.firstNotNullOfOrNull { p -> runCatching { p.toJson().toString() }.getOrNull() }
-        overrides.clear()
-    }
+    val version by permissions.changes.collectAsStateWithLifecycle()
+    val stored = remember(version) { permissions.forOrigin(origin) }
 
     var pickerKind by remember { mutableStateOf<SitePermission?>(null) }
     var pickerVisible by remember { mutableStateOf(false) }
-    var autoplayVisible by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }
-
-    fun storedFor(type: Int): ContentPermission? = stored.orEmpty().firstOrNull { it.permission == type }
-
-    fun current(key: String, type: Int, default: Int = ContentPermission.VALUE_PROMPT): Int =
-        overrides[key] ?: storedFor(type)?.value ?: default
-
-    fun assign(key: String, type: Int, value: Int) {
-        val permission = storedFor(type) ?: template?.let { derivePermission(it, key, value) }
-        if (permission == null) {
-            toasts.show("Visit $name once to change its permissions", PaneIcons.Info)
-            return
-        }
-        controller.setPermission(permission, value)
-        overrides[key] = value
-    }
-
-    val trackingProtected = current(TRACKING_KEY, PermissionDelegate.PERMISSION_TRACKING, ContentPermission.VALUE_DENY) != ContentPermission.VALUE_ALLOW
-    val autoplay = AutoplayChoice.of(
-        current(AUTOPLAY_AUDIBLE_KEY, PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE),
-        current(AUTOPLAY_INAUDIBLE_KEY, PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE),
-    )
 
     Box(Modifier.fillMaxSize()) {
         LargeTitleScaffold(title = name, onBack = navigator::pop, backLabel = backLabel) {
             item(key = "origin") {
                 // Which exact address these answers belong to (http or https matters).
                 Row(
-                    Modifier.fillMaxWidth().arrive(0).padding(horizontal = 20.dp, vertical = 12.dp),
+                    Modifier.fillMaxWidth().arrive(0).padding(horizontal = Spacing.gutter, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
@@ -353,39 +217,17 @@ fun SitePermissionsScreen(origin: String) {
             }
             item(key = "essentials") {
                 GroupedSection(modifier = Modifier.arrive(1)) {
-                    SitePermission.entries.filter { it.common }.forEach { kind ->
+                    CommonKinds.forEach { kind ->
                         row {
                             NavRow(
-                                title = kind.title,
-                                value = valueLabel(current(kind.key, kind.type)),
+                                title = PermissionText.settingLabel(kind),
+                                value = answerLabel(stored[kind]),
                                 onClick = {
                                     pickerKind = kind
                                     pickerVisible = true
                                 },
                             )
                         }
-                    }
-                    row {
-                        NavRow(
-                            title = "Auto-play",
-                            value = when (autoplay) {
-                                AutoplayChoice.Default -> "Default"
-                                AutoplayChoice.AllowAll -> "Allow"
-                                AutoplayChoice.StopSound -> "No sound"
-                                AutoplayChoice.Never -> "Never"
-                            },
-                            onClick = { autoplayVisible = true },
-                        )
-                    }
-                    row {
-                        SwitchRow(
-                            title = "Tracking protection",
-                            checked = trackingProtected,
-                            onCheckedChange = { on ->
-                                val value = if (on) ContentPermission.VALUE_DENY else ContentPermission.VALUE_ALLOW
-                                assign(TRACKING_KEY, PermissionDelegate.PERMISSION_TRACKING, value)
-                            },
-                        )
                     }
                 }
             }
@@ -397,11 +239,11 @@ fun SitePermissionsScreen(origin: String) {
             item(key = "advanced") {
                 AdvancedSection(modifier = Modifier.arrive(3)) {
                     GroupedSection {
-                        SitePermission.entries.filterNot { it.common }.forEach { kind ->
+                        AdvancedKinds.forEach { kind ->
                             row {
                                 NavRow(
-                                    title = kind.title,
-                                    value = valueLabel(current(kind.key, kind.type)),
+                                    title = PermissionText.settingLabel(kind),
+                                    value = answerLabel(stored[kind]),
                                     onClick = {
                                         pickerKind = kind
                                         pickerVisible = true
@@ -420,30 +262,15 @@ fun SitePermissionsScreen(origin: String) {
         val kind = pickerKind
         ChoiceSheet(
             visible = pickerVisible,
-            title = kind?.title.orEmpty(),
+            title = kind?.let(PermissionText::settingLabel).orEmpty(),
             message = null,
-            options = PermissionValues.map(::valueLabel),
-            selectedIndex = if (kind == null) 0 else PermissionValues.indexOf(current(kind.key, kind.type)),
+            options = Answers.map(::answerLabel),
+            selectedIndex = if (kind == null) 0 else Answers.indexOf(stored[kind]),
             onSelect = { i ->
-                if (kind != null) assign(kind.key, kind.type, PermissionValues[i])
+                if (kind != null) permissions.set(origin, kind, Answers[i])
                 pickerVisible = false
             },
             onDismiss = { pickerVisible = false },
-        )
-
-        ChoiceSheet(
-            visible = autoplayVisible,
-            title = "Auto-play",
-            message = null,
-            options = AutoplayChoice.entries.map { it.label },
-            selectedIndex = autoplay.ordinal,
-            onSelect = { i ->
-                val choice = AutoplayChoice.entries[i]
-                assign(AUTOPLAY_AUDIBLE_KEY, PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE, choice.audible)
-                assign(AUTOPLAY_INAUDIBLE_KEY, PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE, choice.inaudible)
-                autoplayVisible = false
-            },
-            onDismiss = { autoplayVisible = false },
         )
 
         PaneAlert(
@@ -455,22 +282,8 @@ fun SitePermissionsScreen(origin: String) {
                 AlertAction("Clear", AlertStyle.Destructive) {
                     confirmClear = false
                     container.scope.launch {
-                        // IP addresses and single-label hosts have no base domain to widen to.
-                        val byHost = host.startsWith("[") || host.none { it.isLetter() } || !host.contains('.')
-                        val done = withTimeoutOrNull(CLEAR_TIMEOUT_MS) {
-                            runCatching {
-                                if (byHost) {
-                                    controller.clearDataFromHost(host, SITE_DATA_FLAGS).await()
-                                } else {
-                                    controller.clearDataFromBaseDomain(host, SITE_DATA_FLAGS).await()
-                                }
-                            }.isSuccess
-                        } == true
-                        if (done) {
-                            toasts.show("Website data removed", PaneIcons.Check)
-                        } else {
-                            toasts.show("Couldn't clear all data for $host", PaneIcons.Warning)
-                        }
+                        WebData.clearSite(host)
+                        toasts.show("Website data removed", PaneIcons.Check)
                     }
                 },
             ),
@@ -485,17 +298,10 @@ fun SitePermissionsScreen(origin: String) {
                 AlertAction("Cancel", AlertStyle.Cancel) { confirmReset = false },
                 AlertAction("Reset", AlertStyle.Destructive) {
                     confirmReset = false
-                    container.scope.launch {
-                        withTimeoutOrNull(CLEAR_TIMEOUT_MS) {
-                            runCatching { controller.clearDataFromHost(host, StorageController.ClearFlags.PERMISSIONS).await() }
-                        }
-                        reloads++
-                    }
+                    permissions.clear(origin)
                 },
             ),
             onDismissRequest = { confirmReset = false },
         )
     }
 }
-
-private const val CLEAR_TIMEOUT_MS = 15_000L

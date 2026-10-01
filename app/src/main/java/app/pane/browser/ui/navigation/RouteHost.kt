@@ -17,6 +17,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import app.pane.browser.ui.theme.LocalEntranceMemory
+import app.pane.browser.ui.theme.EntranceMemory
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -50,6 +53,8 @@ fun RouteHost(navigator: Navigator, underlay: MutableFloatState? = null, content
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val holder = rememberSaveableStateHolder()
+    // One memory of finished entrance animations per screen on the stack.
+    val memories = remember { HashMap<Route, EntranceMemory>() }
     val reduce = LocalReduceMotion.current
     val reduceNow by rememberUpdatedState(reduce)
 
@@ -68,7 +73,10 @@ fun RouteHost(navigator: Navigator, underlay: MutableFloatState? = null, content
                     // Pop one or many: slide the top away, reveal the new top.
                     displayed = target + current.last()
                     progress.animateTo(1f, pushSpec())
-                    current.drop(target.size).forEach { holder.removeState(it.toString()) }
+                    current.drop(target.size).forEach {
+                        holder.removeState(it.toString())
+                        memories.remove(it)
+                    }
                     displayed = target
                     progress.snapTo(0f)
                 }
@@ -97,7 +105,7 @@ fun RouteHost(navigator: Navigator, underlay: MutableFloatState? = null, content
             events.collect { progress.snapTo(it.progress * 0.85f) }
             navigator.pop()
         } catch (e: CancellationException) {
-            scope.launch { progress.animateTo(0f, Motion.bouncy()) }
+            scope.launch { progress.animateTo(0f, Motion.smooth()) }
             throw e
         }
     }
@@ -133,7 +141,9 @@ fun RouteHost(navigator: Navigator, underlay: MutableFloatState? = null, content
                             }
                         },
                 ) {
-                    holder.SaveableStateProvider(route.toString()) { content(route) }
+                    holder.SaveableStateProvider(route.toString()) {
+                        CompositionLocalProvider(LocalEntranceMemory provides memories.getOrPut(route) { EntranceMemory() }) { content(route) }
+                    }
                     if (!isTop) {
                         Box(Modifier.fillMaxSize().graphicsLayer { alpha = (1f - progress.value) * 0.12f }.background(Color.Black))
                     }

@@ -7,12 +7,32 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Pane's own line icons: 24pt grid, 1.75pt round strokes, in the spirit of SF Symbols. Drawn in
  * black and tinted by `Icon`, so they follow the theme.
  */
 object PaneIcons {
+    /** A gear's outline, one tooth per equal step round the circle, so every tooth is the same. */
+    private fun gearOutline(teeth: Int = 8, outer: Float = 9.6f, root: Float = 7.6f): String {
+        val pitch = 2 * PI / teeth
+        fun point(radius: Float, angle: Double) = String.format(Locale.US, "%.2f %.2f", 12 + radius * cos(angle), 12 + radius * sin(angle))
+        return buildString {
+            for (i in 0 until teeth) {
+                val centre = i * pitch - PI / 2
+                append(if (i == 0) "M" else "A$root $root 0 0 1 ").append(point(root, centre - 0.36 * pitch))
+                append(" L").append(point(outer, centre - 0.2 * pitch))
+                append(" L").append(point(outer, centre + 0.2 * pitch))
+                append(" L").append(point(root, centre + 0.36 * pitch)).append(' ')
+            }
+            append("A$root $root 0 0 1 ").append(point(root, -PI / 2 - 0.36 * pitch)).append('z')
+        }
+    }
+
     private fun icon(name: String, vararg paths: String, stroke: Float = 1.75f, filled: Boolean = false): ImageVector =
         ImageVector.Builder(name = name, defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
             .apply {
@@ -65,10 +85,7 @@ object PaneIcons {
         icon("puzzle", "M10 4.5a2 2 0 0 1 4 0V6h3.5A1.5 1.5 0 0 1 19 7.5V11h-1.5a2 2 0 0 0 0 4H19v3.5a1.5 1.5 0 0 1-1.5 1.5H14v-1.5a2 2 0 0 0-4 0V20H6.5A1.5 1.5 0 0 1 5 18.5V15h1.5a2 2 0 0 0 0-4H5V7.5A1.5 1.5 0 0 1 6.5 6H10z")
     }
     val Sliders by lazy { icon("sliders", "M4 7h9", "M17 7h3", "M15 5v4", "M4 17h3", "M11 17h9", "M9 15v4", stroke = 1.9f) }
-    val Gear by lazy {
-        icon("gear", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
-            "M19.4 13.5l1.6 1.2-2 3.5-1.9-.7a7.5 7.5 0 0 1-2.1 1.2L14.7 21h-4l-.4-2.3a7.5 7.5 0 0 1-2.1-1.2l-1.9.7-2-3.5 1.6-1.2a7.6 7.6 0 0 1 0-2.4L4.3 9.8l2-3.5 1.9.7a7.5 7.5 0 0 1 2.1-1.2L10.7 3h4l.4 2.3a7.5 7.5 0 0 1 2.1 1.2l1.9-.7 2 3.5-1.6 1.2a7.6 7.6 0 0 1 0 2.4z")
-    }
+    val Gear by lazy { icon("gear", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z", gearOutline()) }
     val Private by lazy {
         icon("private", "M3.5 3.5l17 17",
             "M10.6 5.1A9.7 9.7 0 0 1 12 5c5 0 8.5 4.5 9.5 7a13 13 0 0 1-2.7 3.9",

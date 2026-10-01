@@ -1,32 +1,54 @@
 # Pane design language
 
-Pane is black, white and quiet, after Nothing's design language. There is no glass, no blur, no
-gradients, no cards-inside-cards. The page is the interface; everything else is a thin, flat,
-confident layer around it.
+Pane is a white page, a few quiet greys and one blue. Small calm type, flat tones instead of
+outlines, centred layouts, generous space, glyphs instead of words where a glyph is enough, and one
+floating pill that is the product. There is no glass, no blur, no gradient, no card inside a card. The page is the interface; everything else is a thin, flat,
+confident layer around it. The reference is the Mac browser *Search* (Drice Roland / Office
+Commun): take its restraint and polish, not its logo.
 
 ## Principles
 
-1. **True black and white.** `PaneTheme.colors` roles only. Light is white on black ink; dark is
-   true black (OLED, so it also saves battery). Greys come from the `surface`/`fill` roles, never
-   invented. The accent is the label colour: a primary button is solid ink.
-2. **One red.** `signal` (Nothing's red) is a status light or a destructive action, nothing else:
-   the loading dot in the address pill, a private-tab marker, "Clear" / "Delete". Never decoration.
-3. **Lines, not boxes.** Group with hairlines (`separator`) and space, not with filled cards.
-   Settings and lists are flat full-width rows with a hairline between them. A filled `surface` is
-   for a control (search field, segmented control), not for containing content. No shadows except
-   on things that hover over the page (see 5).
-4. **Dots.** The signature is the dot: `DotText` for the wordmark and one big number per screen,
-   `StatusDot` for state, round favicon/engine marks, a dot row for progress. Use it sparingly;
-   it is an accent, not a font.
-5. **The floating pill stays.** The address pill, its round buttons, menus and sheets float over
-   the page as solid surfaces (`Modifier.floating(shape, shadow)`): one fill, a hairline, a short
-   soft shadow. They are the only things with a shadow.
+1. **A white ground and quiet greys.** `PaneTheme.colors` roles only; nothing is tinted. The ground
+   is white (dark: a soft #1C1C1C, not black), the ink is near-black (dark: off-white). Every other
+   colour is a grey of the same neutral ramp:
+
+   | Role | Light | Dark | For |
+   | --- | --- | --- | --- |
+   | `background` | 1.00 | 0.11 | the ground |
+   | `label` | 0.09 | 0.93 | ink: titles, body, the primary pill |
+   | `secondaryLabel` | 0.55 | 0.58 | muted: every second line, section labels |
+   | `faint` | 0.83 | 0.32 | idle outlines, unselected marks |
+   | `hairline` / `separator` | 0.91 | 0.20 | lines between list rows |
+   | `fill` | 0.937 | 0.175 | the wash behind a selected or live row |
+   | `surface` | 0.965 | 0.15 | a quiet control resting on the ground |
+
+   `tertiaryLabel` sits between muted and faint (placeholders, chevrons, timestamps). The accent is
+   a clear blue (`#0285FF`, dark `#2A8BF2`): the primary button, the switch, the cursor, the open
+   tab. Nothing else is tinted.
+2. **Colour means little.** The accent blue marks the one action or selection that matters. An
+   amber is for "this connection is not secure" (`warning` / `signal`, never decoration) and a
+   restrained red (`destructive`) is for Clear / Delete. A secure padlock stays quiet grey. There is no green. Loading, progress and
+   "working" are plain ink (`StatusDot` defaults to `label`).
+3. **Lines, not boxes.** Group with hairlines and space, not filled cards. Settings and lists are
+   flat full-width rows with a hairline between them. A filled `surface` or `fill` is for a control
+   or a selected row, not for containing content. Controls have no outline: a resting control is
+   a soft `fill` or a shadow, never a border.
+4. **Tiny muted labels.** A heading is a few small words in the muted grey, in sentence case:
+   `SectionLabel("Privacy")`. No capitals, no letter-spacing. Secondary text is smaller and muted,
+   never lighter or heavier.
+5. **The floating pill stays.** The address pill, its round buttons, menus and sheets float over the
+   page as flat solid surfaces (`Modifier.floating(shape)`): one fill, no outline, no glow. Over web
+   content they keep one standard platform elevation shadow (`FloatingElevation`, Material's menu
+   elevation) so a white pill still shows on a white page. They are the only things with a shadow:
+   cards, tiles and the start page sit flat on the grey ground, told apart by tone. The blue pill is
+   the only solid fill on a screen.
 6. **Icons, or nothing.** Real, well-drawn glyphs from `PaneIcons`, all one weight, in the label
-   colour, with no tile behind them. A row has either a glyph or none; never a letter standing in
-   for a logo. Sites are shown by their own favicon (`SiteIcon`), search engines by their logo
-   (`EngineIcon`).
-7. **Words are few.** Titles of one to three words; a subtitle only when it changes a decision.
-   Section headings are `SectionLabel` ("PRIVACY"): small capitals, open tracking.
+   colour, with no tile behind them, and only where everyone already knows them. A row has either
+   a glyph or none; never a letter standing in for a logo. Sites are shown by their own favicon
+   (`SiteIcon`), search engines by their logo (`EngineIcon`). The start page and the empty states
+   have no artwork at all.
+7. **Words are few.** Titles of one to three words ("Private", "No tabs", "Locked"); a subtitle
+   only when it changes a decision. No taglines.
 8. **Easy for everyone, deep for experts.** The top level of every screen is the five things most
    people need, in plain words, 56dp rows. The rest sits under an "Advanced" row that expands in
    place. Nothing is removed, only tiered.
@@ -40,6 +62,32 @@ confident layer around it.
 11. **Passwords and passkeys belong to the phone.** Android autofill and Credential Manager do it;
     Pane names no password manager.
 
+## Type
+
+The phone's own system font; sizes follow the system font-size setting. Calm and small.
+
+| Style | Size / line | Weight | Used for |
+| --- | --- | --- | --- |
+| `largeTitle` | 30 / 36 | semibold, -0.01em | screen titles, the start page's "Pane" |
+| `title1` | 26 / 32 | semibold, -0.01em | one big number |
+| `title2` | 21 / 27 | semibold, -0.01em | empty states |
+| `title3` | 17 / 23 | semibold, -0.01em | sheet and alert titles |
+| `headline` | 15 / 21 | medium | buttons, emphasis |
+| `body` | 15 / 21 | regular | rows, fields |
+| `callout` | 15 / 20 | regular | segmented control |
+| `subheadline` | 14 / 19 | regular | messages |
+| `footnote` | 12.5 / 17 | regular | second lines, section labels (medium) |
+| `caption` / `caption2` | 12 / 16, 11 / 14 | regular | tiny labels |
+
+Emphasis is medium weight, never bold.
+
+## The mark
+
+A page (a rounded-square outline) with a solid ink pill floating near its bottom edge: the product
+in one picture. Ink `#171717` on a white plate; the monochrome layer is the same drawable. It lives
+inside the 66dp safe zone of the 108dp adaptive canvas. Shortcut icons are black discs with white
+glyphs. The wordmark is just the word "Pane" in `largeTitle` (or `title3` medium in a header).
+
 ## Motion
 
 `Motion.snappy/smooth/bouncy/push/interactive/fade` are the only animation specs (see the table in
@@ -50,8 +98,7 @@ bouncy for its own sake. Honour `LocalReduceMotion`.
 
 ## Performance rules
 
-- The page is a plain `SurfaceView` (GeckoView's default): never put anything that has to read the
-  page's pixels (blur, glass) over it.
+- Never put anything that has to read the page's pixels (blur, glass) over the page.
 - No per-frame work in composition; nothing that redraws the whole window while the page scrolls.
 - No animated gradients, no blurs, no `graphicsLayer` with `renderEffect`.
 
@@ -61,13 +108,14 @@ bouncy for its own sake. Honour `LocalReduceMotion`.
 | --- | --- |
 | Solid floating surface (pill, round button, sheet) | `Modifier.floating(shape, shadow)` |
 | Round floating button / text pill | `FloatingCircle` / `FloatingTextButton` |
-| Primary / secondary action | `PrimaryButton` (solid ink) / `OutlineButton` (hairline) |
-| Section heading | `SectionLabel("PRIVACY")` |
-| Wordmark, one big number | `DotText` |
-| Status light | `StatusDot` |
+| Primary / secondary action | `PrimaryButton` (solid blue, red if it destroys; glyph + label) / `QuietButton` (no fill, no outline, glyph + muted label) / `IconPill` (glyph only) |
+| Glyph button | `ChromeButton` (check, close, forward, trash: no word needed) |
+| Section heading | `SectionLabel("Privacy")` (small, muted, sentence case) |
+| Status light (loading, on) | `StatusDot` (ink; amber only for an unsafe connection) |
 | Site / engine mark | `SiteIcon` / `EngineIcon` |
 | Fade where content meets an edge | `EdgeFade` |
-| Arrive animation | `Modifier.entrance(index)` |
+| Arrive animation | `Modifier.entrance(index)` (plays once per screen: a screen's `EntranceMemory` survives a back navigation) |
 | Press feedback | `Modifier.pressScale`, `Modifier.pressDim` |
 | Sheet / menu | `PaneSheet` (a flat floating sheet) |
 | Settings lists | `GroupedSection`, `ListRow`, `ToggleRow` (flat rows, hairlines) |
+| Search field | `SearchField` (soft pill, no outline) |

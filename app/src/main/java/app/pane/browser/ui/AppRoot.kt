@@ -23,7 +23,6 @@ import app.pane.browser.ui.browser.BrowserScreen
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.ToastHost
 import app.pane.browser.ui.components.ToastState
-import app.pane.browser.ui.extensions.ExtensionOverlays
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Navigator
@@ -33,7 +32,7 @@ import app.pane.browser.ui.prompts.PromptHost
 import app.pane.browser.ui.theme.PaneTheme
 
 /**
- * Layering, bottom to top: browser, pushed screens, extension overlays, page prompts, toasts.
+ * Layering, bottom to top: browser, pushed screens, page prompts, toasts.
  * Pushed screens arrive on springs (`Motion.push()`); the browser beneath eases back as they do.
  */
 @Composable
@@ -70,7 +69,6 @@ fun AppRoot(container: AppContainer, navigator: Navigator) {
                     BrowserScreen()
                 }
                 RouteHost(navigator, underlay = pushed) { RouteContent(it) }
-                ExtensionOverlays()
                 PromptHost()
                 ToastHost(toasts)
             }

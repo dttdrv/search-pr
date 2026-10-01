@@ -1,5 +1,11 @@
 package app.pane.browser.ui.components
 
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.vector.ImageVector
+import app.pane.browser.ui.icons.PaneIcons
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -8,7 +14,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -44,11 +49,19 @@ enum class AlertStyle { Default, Cancel, Destructive }
 
 data class AlertAction(val label: String, val style: AlertStyle = AlertStyle.Default, val onClick: () -> Unit)
 
+/** The glyph in front of an alert's button: close to back out, a check to go ahead. */
+private fun AlertAction.glyph(): ImageVector = when (style) {
+    AlertStyle.Cancel -> PaneIcons.Close
+    AlertStyle.Default -> PaneIcons.Check
+    AlertStyle.Destructive -> PaneIcons.Check
+}
+
 /**
  * A centred flat floating card that springs in from a touch under full size: a title, an optional
- * short message, an optional [body] (fields for text and auth prompts) and the actions as stacked
- * pills. The primary action is solid ink, Cancel is a hairline outline, Destructive is red text in a
- * red outline; a lone action is always solid. Cancel sits last however the caller ordered it.
+ * short message, an optional [body] (fields for text and auth prompts) and the actions stacked: the
+ * one real choice is a solid pill (accent blue, or red when it destroys something) and Cancel is a
+ * quiet glyph-and-word line under it, never a second pill. A destructive alert opens with a small
+ * red glyph. Cancel sits last however the caller ordered it.
  */
 @Composable
 fun PaneAlert(
@@ -82,7 +95,7 @@ fun PaneAlert(
             enter = if (reduce) {
                 fadeIn(Motion.fade(160))
             } else {
-                scaleIn(Motion.bouncy(), initialScale = 0.92f) + fadeIn(Motion.fade(140))
+                scaleIn(Motion.smooth(), initialScale = 0.92f) + fadeIn(Motion.fade(140))
             },
             exit = if (reduce) {
                 fadeOut(Motion.fade(140))
@@ -95,7 +108,7 @@ fun PaneAlert(
                     .padding(horizontal = 24.dp)
                     .widthIn(max = 340.dp)
                     .fillMaxWidth()
-                    .floating(AlertShape, shadow = 16.dp)
+                    .floating(AlertShape)
                     .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -103,6 +116,14 @@ fun PaneAlert(
                     Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    if (actions.any { it.style == AlertStyle.Destructive }) {
+                        Box(
+                            Modifier.padding(bottom = 14.dp).size(48.dp).clip(CircleShape).background(colors.destructive.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(PaneIcons.Trash, null, tint = colors.destructive, modifier = Modifier.size(22.dp))
+                        }
+                    }
                     if (title != null) {
                         Text(title, style = PaneTheme.type.title3, color = colors.label, textAlign = TextAlign.Center)
                     }
@@ -122,9 +143,9 @@ fun PaneAlert(
                     // Cancel goes last; sortedBy is stable, so the caller's order holds otherwise.
                     actions.sortedBy { it.style == AlertStyle.Cancel }.forEach { action ->
                         when {
-                            lone || action.style == AlertStyle.Default -> PrimaryButton(text = action.label, onClick = action.onClick)
-                            action.style == AlertStyle.Cancel -> OutlineButton(action.label, action.onClick, Modifier.fillMaxWidth())
-                            else -> DestructiveButton(action.label, action.onClick)
+                            lone || action.style == AlertStyle.Default -> PrimaryButton(text = action.label, onClick = action.onClick, icon = action.glyph())
+                            action.style == AlertStyle.Cancel -> QuietButton(action.label, action.onClick, Modifier.fillMaxWidth(), icon = action.glyph())
+                            else -> PrimaryButton(action.label, action.onClick, style = ButtonStyle.Destructive, icon = action.glyph())
                         }
                     }
                 }
@@ -133,22 +154,4 @@ fun PaneAlert(
     }
 }
 
-/** A destructive choice: red text in a red hairline pill, never a fill. */
-@Composable
-private fun DestructiveButton(text: String, onClick: () -> Unit) {
-    val colors = PaneTheme.colors
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(52.dp)
-            .pressScale(pressedScale = 0.97f, haptic = true, onClick = onClick)
-            .clip(PaneShapes.pill)
-            .border(1.dp, colors.destructive, PaneShapes.pill)
-            .padding(horizontal = 24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text, style = PaneTheme.type.headline, color = colors.destructive, maxLines = 1)
-    }
-}
-
-private val AlertShape = ContinuousRoundedShape(24.dp)
+private val AlertShape = ContinuousRoundedShape(32.dp)
