@@ -3,6 +3,9 @@ package app.pane.browser.ui.navigation
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -66,23 +69,23 @@ fun RouteHost(navigator: Navigator, underlay: MutableFloatState? = null, content
             when {
                 target.size > current.size && target.take(current.size) == current -> {
                     displayed = target
-                    progress.snapTo(1f)
-                    progress.animateTo(0f, pushSpec())
+                    progress.takeOver { snapTo(1f) }
+                    progress.takeOver { animateTo(0f, pushSpec()) }
                 }
                 target.size < current.size && current.take(target.size) == target -> {
                     // Pop one or many: slide the top away, reveal the new top.
                     displayed = target + current.last()
-                    progress.animateTo(1f, pushSpec())
+                    progress.takeOver { animateTo(1f, pushSpec()) }
                     current.drop(target.size).forEach {
                         holder.removeState(it.toString())
                         memories.remove(it)
                     }
                     displayed = target
-                    progress.snapTo(0f)
+                    progress.takeOver { snapTo(0f) }
                 }
                 else -> {
                     displayed = target
-                    progress.snapTo(0f)
+                    progress.takeOver { snapTo(0f) }
                 }
             }
         }
@@ -165,5 +168,18 @@ fun RouteHost(navigator: Navigator, underlay: MutableFloatState? = null, content
                 }
             }
         }
+    }
+}
+
+/**
+ * Runs [block] on [this], which a back gesture can take over at any moment. The takeover cancels the
+ * block, not the coroutine that called it, so the caller carries on: if it were cancelled too, the
+ * screen stack would stop following the navigator for good.
+ */
+private suspend fun Animatable<Float, AnimationVector1D>.takeOver(block: suspend Animatable<Float, AnimationVector1D>.() -> Unit) {
+    try {
+        block()
+    } catch (_: CancellationException) {
+        currentCoroutineContext().ensureActive()
     }
 }

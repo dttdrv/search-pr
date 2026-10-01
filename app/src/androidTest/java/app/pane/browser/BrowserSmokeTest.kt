@@ -40,11 +40,11 @@ class BrowserSmokeTest {
             // The carousel: three pages of drawings, then the choices.
             node(By.text("Just the page"))
             shot("01-onboarding")
-            repeat(3) { tap(By.text("Next")) }
-            node(By.text("Start Browsing"))
+            repeat(3) { tap(By.desc("Next")) }
+            node(By.desc("Start Browsing"))
             shot("01b-onboarding-setup")
             scrollTo(By.text("Block ads")).click()
-            tap(By.text("Start Browsing"))
+            tap(By.desc("Start Browsing"))
             node(By.desc("Menu"))
             shot("02-start-page")
 
@@ -66,22 +66,22 @@ class BrowserSmokeTest {
 
             // A new intent must reveal its page even while the previous address is being edited.
             tap(By.descContains("Address:"))
-            node(By.text("Cancel"))
+            node(By.desc("Cancel"))
             openPage()
             node(By.desc("Menu"))
-            assertTrue("External link retained the old editor", device.wait(Until.gone(By.text("Cancel")), 5_000))
+            assertTrue("External link retained the old editor", device.wait(Until.gone(By.desc("Cancel")), 5_000))
             tap(By.descContains("Address:"))
             node(By.clazz("android.widget.EditText").pkg(context.packageName)).text = "privacy"
             node(By.text("privacy").clazz("android.widget.EditText").pkg(context.packageName))
             shot("06-search")
-            tap(By.text("Cancel"))
+            tap(By.desc("Cancel"))
 
-            tap(By.descContains(" tabs"))
-            node(By.desc("Done"))
+            menu("Tabs")
+            node(By.text("Private"))
             shot("07-tabs")
             openPage()
             node(By.desc("Menu"))
-            assertTrue("External link retained the tab overview", device.wait(Until.gone(By.desc("Done")), 5_000))
+            assertTrue("External link retained the tab overview", device.wait(Until.gone(By.text("Private")), 5_000))
 
             menu("Settings")
             shot("08-settings")
@@ -116,14 +116,14 @@ class BrowserSmokeTest {
             device.setOrientationNatural()
             node(By.desc("Menu"))
             menu("New Private Tab")
-            if (device.wait(Until.hasObject(By.text("Cancel")), 2_000)) {
+            if (device.wait(Until.hasObject(By.desc("Cancel")), 2_000)) {
                 assertTrue("Private editor exposed normal browsing history", device.wait(Until.gone(By.text("Recent")), 5_000))
-                tap(By.text("Cancel"))
+                tap(By.desc("Cancel"))
             }
-            tap(By.descContains(" tabs"))
-            node(By.desc("Done"))
+            menu("Tabs")
+            node(By.text("Private"))
             assertSecureWindow(true)
-            tap(By.desc("Done"))
+            device.pressBack()
             openPage()
             node(By.desc("Menu"))
             node(By.text("Example Domain"))
