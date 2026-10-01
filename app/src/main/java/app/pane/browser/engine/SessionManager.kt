@@ -553,8 +553,10 @@ class SessionManager(
      * every site Pane's package name), Safe Browsing, and Global Privacy Control in script.
      */
     private fun applyPrivacy(page: PaneWebView, s: BrowserSettings) {
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
-            runCatching { WebSettingsCompat.setRequestedWithHeaderOriginAllowList(page.settings, emptySet()) }
+        // its feature constant is restricted API, so support is read from the call itself
+        try {
+            WebSettingsCompat.setRequestedWithHeaderOriginAllowList(page.settings, emptySet())
+        } catch (_: UnsupportedOperationException) {
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
             runCatching { WebSettingsCompat.setSafeBrowsingEnabled(page.settings, s.safeBrowsing) }
