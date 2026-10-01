@@ -50,12 +50,11 @@ import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.GlassStrength
 import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.browser.ui.theme.glass
+import app.pane.browser.ui.theme.floating
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.prompts.PromptText
 import kotlinx.coroutines.delay
@@ -73,9 +72,9 @@ private class Match(val found: Boolean, val current: Int, val total: Int)
 private const val DEBOUNCE_MS = 120L
 
 /**
- * Find-in-page as a glass pill floating above the keyboard: the field, a live "3 of 12" counter,
- * previous/next chevrons and Done. The pill rises into place when it appears (the caller shows and
- * hides it). Every match is highlighted; highlights are cleared when the bar goes away.
+ * Find-in-page as a flat floating pill above the keyboard: the field, a live "3 of 12" counter,
+ * previous/next chevrons and a text "Done". The pill rises into place when it appears (the caller
+ * shows and hides it). Every match is highlighted; highlights are cleared when the bar goes away.
  */
 @Composable
 fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modifier) {
@@ -147,7 +146,7 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
             Modifier
                 .fillMaxWidth()
                 .height(52.dp)
-                .glass(PaneShapes.pill, GlassStrength.Regular)
+                .floating(PaneShapes.pill, shadow = 6.dp)
                 .padding(start = 20.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -175,7 +174,7 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
                 if (current != null) {
                     Text(
                         PromptText.findCounter(current.found, current.current, current.total),
-                        style = PaneTheme.type.footnote,
+                        style = PaneTheme.type.caption,
                         color = colors.secondaryLabel,
                         maxLines = 1,
                         modifier = Modifier.padding(horizontal = 8.dp),

@@ -1,21 +1,21 @@
 # Pane
 
-A minimal, private Android browser in monochrome and liquid glass, with real Firefox extensions.
+A minimal Android browser: black, white and quiet, with real Firefox extensions.
 
 Pane is built on **GeckoView** (Mozilla's engine) and **Jetpack Compose**. The chrome is designed
-around one idea: the page is the interface. The address bar, tabs and menu float over the page as
-frosted glass, and get out of the way when you scroll. See [DESIGN.md](DESIGN.md).
+around one idea: the page is the interface. A small floating pill holds the address, tabs and
+menu, and gets out of the way when you scroll. See [DESIGN.md](DESIGN.md).
 
 ## Highlights
 
 **Look and motion**
-- Ink on paper: black and white with no accent colour, in your phone's own system font.
-- Liquid glass bars, menus and sheets: the page behind them is bent along the rim, softly blurred
-  and frosted, with a specular highlight that wakes when you press. One setting (Appearance ›
-  Glass effects) chooses Full, Light or Off, and Pane drops to Light on its own in battery saver.
-- The page runs edge to edge. The status area takes the colour of the page's own top edge and
-  dissolves into it as you scroll; the glass tone follows the page behind the bar. Fixed footers
-  stay above the floating bar and drop to the screen edge when it melts away.
+- Flat and black-and-white, after Nothing's design language: true black and white, hairlines
+  instead of boxes, a dot-matrix accent, one red used only as a status light, in your phone's own
+  system font. No blur, no glass: the page is a plain system surface, which is gentle on the
+  battery.
+- The page runs truly edge to edge, under the status bar; a soft veil in the page's own colour keeps
+  the status icons legible and lets scrolled content fade out beneath them. Fixed footers stay above
+  the floating pill and drop to the screen edge when it melts away.
 - Everything moves on springs from one small set of tokens, so gestures hand off to animations
   without a seam: the address pill *becomes* the search field, the menu grows out of its button,
   a tab's page flies into its card.
@@ -82,8 +82,8 @@ frosted glass, and get out of the way when you scroll. See [DESIGN.md](DESIGN.md
   menu; hardware keyboard shortcuts (Ctrl+T/W/L/R/F, Ctrl+Tab, Alt+←/→).
 - Optionally closes tabs you haven't looked at for a while (Settings › Tabs & toolbar).
 - Settings open on this week's blocked-tracker count and a search over every setting, then group
-  into Browsing, Look & feel and Privacy & data. Glass effects can be dialled to Full, Light or
-  Off, and everything can be put back to its defaults from About.
+  into Browsing, Look & feel and Privacy & data. Everything can be put back to its defaults from
+  About. Defaults follow Firefox's Standard profile; Strict tracking protection is one tap away.
 
 ## Project layout
 

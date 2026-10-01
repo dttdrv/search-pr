@@ -141,7 +141,7 @@ fun ClearDataScreen() {
                     style = ButtonStyle.Destructive,
                     enabled = chosen.isNotEmpty() && !working,
                     onClick = { confirming = true },
-                    modifier = Modifier.arrive(2).padding(horizontal = 16.dp, vertical = 20.dp),
+                    modifier = Modifier.arrive(2).padding(horizontal = 20.dp, vertical = 24.dp),
                 )
             }
             item(key = "advanced") {

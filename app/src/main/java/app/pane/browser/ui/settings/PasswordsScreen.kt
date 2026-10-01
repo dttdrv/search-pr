@@ -62,7 +62,7 @@ fun PasswordsScreen() {
         item(key = "system") {
             GroupedSection(
                 modifier = Modifier.arrive(0),
-                footer = "Pane never stores your passwords.",
+                footer = "If your password manager asks to trust Pane, allow it.",
             ) {
                 row {
                     NavRow(

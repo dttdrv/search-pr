@@ -46,7 +46,7 @@ fun AppRoot(container: AppContainer, navigator: Navigator) {
         LocalNavigator provides navigator,
         LocalToasts provides toasts,
     ) {
-        PaneTheme(mode = settings.theme, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion, glassQuality = settings.glassQuality) {
+        PaneTheme(mode = settings.theme, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion) {
             // Edge to edge: everything draws under the status and navigation bars, and each screen
             // pads itself vertically. Sideways, in landscape, a navigation bar or camera cutout would
             // cover controls, so the whole UI keeps clear of them and the strips show the background.

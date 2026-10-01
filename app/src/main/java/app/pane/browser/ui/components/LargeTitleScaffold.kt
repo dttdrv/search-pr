@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -25,7 +26,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -34,25 +34,24 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.GlassStrength
-import app.pane.browser.ui.theme.LocalHazeState
+import app.pane.browser.ui.theme.EdgeFade
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.browser.ui.theme.ProgressiveEdge
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 
 private val BarHeight = 56.dp
-private val BackSize = 48.dp
 
 /**
- * A pushed screen with a large title that collapses as content scrolls. There is no bar: content
- * dissolves into the background through a progressive blur at the top and bottom edges, back is a
- * small frosted circle floating over that blur, and the small title takes over from the large one
- * once it has scrolled away. Exactly one of the two titles shows at any scroll position. Everything
- * that moves is read in draw-phase lambdas, so scrolling never recomposes the bar.
+ * A pushed screen with a large title that collapses as content scrolls. There is no bar and no
+ * button chrome: the page is plain, content dissolves into the top and bottom edges, back is a
+ * bare chevron (with the previous screen's name beside it), and a small centred title takes over
+ * from the large one once it has scrolled away. Exactly one of the two titles shows at any scroll
+ * position. Everything that moves is read in draw-phase lambdas, so scrolling never recomposes
+ * the bar.
  */
 @Composable
 fun LargeTitleScaffold(
@@ -67,7 +66,6 @@ fun LargeTitleScaffold(
 ) {
     val colors = PaneTheme.colors
     val density = LocalDensity.current
-    val haze = rememberHazeState()
     val collapseDistance = with(density) { 44.dp.toPx() }
     // 0 while the large title shows, 1 once it has folded into the bar.
     val collapse by remember(listState, collapseDistance) {
@@ -82,24 +80,24 @@ fun LargeTitleScaffold(
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
-    Box(modifier.fillMaxSize().background(colors.groupedBackground)) {
+    Box(modifier.fillMaxSize().background(colors.background)) {
         // The list itself fills the screen and keeps the platform's stretch overscroll: nothing here
         // sets `overscrollEffect`, clips it, or puts a pointer-consuming layer on top. The edges and
         // the bar below only draw; touches fall through them to the list.
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().hazeSource(haze),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = statusTop + BarHeight, bottom = navBottom + 32.dp),
         ) {
             item(key = "__large_title") {
                 Text(
                     title,
-                    style = PaneTheme.type.largeTitle,
+                    style = PaneTheme.type.largeTitle.copy(fontWeight = FontWeight.SemiBold),
                     color = colors.label,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier
-                        .padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 4.dp)
+                        .padding(start = RowMargin, end = RowMargin, top = 6.dp, bottom = 4.dp)
                         .graphicsLayer {
                             // Gone by the halfway point, before the small title starts to appear.
                             alpha = (1f - collapse * 2f).coerceIn(0f, 1f)
@@ -115,24 +113,19 @@ fun LargeTitleScaffold(
         }
 
         // Content dissolves into the edges instead of being cut off by a bar.
-        ProgressiveEdge(haze, top = true, height = statusTop + BarHeight, modifier = Modifier.align(Alignment.TopCenter))
-        ProgressiveEdge(haze, top = false, height = navBottom + 28.dp, modifier = Modifier.align(Alignment.BottomCenter))
+        EdgeFade(top = true, height = statusTop + BarHeight, modifier = Modifier.align(Alignment.TopCenter))
+        EdgeFade(top = false, height = navBottom + 28.dp, modifier = Modifier.align(Alignment.BottomCenter))
 
         Column(Modifier.fillMaxWidth()) {
             Spacer(Modifier.height(statusTop))
             Box(Modifier.fillMaxWidth().height(BarHeight)) {
                 if (onBack != null) {
-                    CompositionLocalProvider(LocalHazeState provides haze) {
-                        GlassCircle(
-                            onClick = onBack,
-                            size = BackSize,
-                            strength = GlassStrength.Thin,
-                            contentDescription = if (backLabel == "Back") "Back" else "Back to $backLabel",
-                            modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp),
-                        ) {
-                            Icon(PaneIcons.Back, contentDescription = null, tint = colors.label, modifier = Modifier.size(22.dp))
-                        }
-                    }
+                    BackButton(
+                        label = backLabel,
+                        onBack = onBack,
+                        fade = { (1f - collapse * 2f).coerceIn(0f, 1f) },
+                        modifier = Modifier.align(Alignment.CenterStart),
+                    )
                 }
                 Text(
                     title,
@@ -153,6 +146,39 @@ fun LargeTitleScaffold(
                     content = actions,
                 )
             }
+        }
+    }
+}
+
+/**
+ * A bare chevron, with the name of the screen it returns to beside it when there is one. No
+ * circle, no fill: it dims while pressed. The name fades out as the small title arrives.
+ */
+@Composable
+private fun BackButton(label: String, onBack: () -> Unit, fade: () -> Float, modifier: Modifier = Modifier) {
+    val colors = PaneTheme.colors
+    val named = label != "Back"
+    Row(
+        modifier
+            .padding(start = 8.dp)
+            .height(48.dp)
+            .semantics { contentDescription = if (named) "Back to $label" else "Back" }
+            .pressDim(onClick = onBack)
+            .padding(start = 4.dp, end = if (named) 12.dp else 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(PaneIcons.Back, contentDescription = null, tint = colors.label, modifier = Modifier.size(24.dp))
+        if (named) {
+            Text(
+                label,
+                style = PaneTheme.type.body,
+                color = colors.label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .widthIn(max = 120.dp)
+                    .graphicsLayer { alpha = fade() },
+            )
         }
     }
 }

@@ -2,12 +2,13 @@ package app.pane.browser.ui.extensions
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.defaultMinSize
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,8 +29,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -39,33 +43,38 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.components.RowMargin
 import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.pressScale
 import app.pane.browser.ui.navigation.Navigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.Motion
-import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.extensions.Amo
 import app.pane.core.extensions.AmoAddon
 
-/** Separator inset for rows that start with a 29pt tile: 16 padding + 29 tile + 12 gap. */
-internal val TileRowInset = 57.dp
+/** The icon size in extension rows. */
+internal val ExtensionRowIcon = 32.dp
+
+/** Separator inset for rows that start with a 32dp icon: 20 margin + 32 icon + 16 gap. */
+internal val TileRowInset = 68.dp
 
 /**
- * An extension's own icon on continuous corners; a plain neutral tile while it loads or when the
- * extension has none (no stand-in glyph). [dimmed] is used for extensions that are turned off.
+ * An extension's own icon, as it drew it, on softly rounded corners. While it loads, or when the
+ * extension has none, only a hairline outline marks the place (no fill, no stand-in glyph).
+ * [dimmed] is used for extensions that are turned off.
  */
 @Composable
 internal fun ExtensionIcon(icon: ImageBitmap?, size: Dp, modifier: Modifier = Modifier, dimmed: Boolean = false) {
     val colors = PaneTheme.colors
+    val shape = remember(size) { ContinuousRoundedShape(size * 0.225f) }
     Box(
         modifier
             .size(size)
             .graphicsLayer { alpha = if (dimmed) 0.45f else 1f }
-            .clip(ContinuousRoundedShape(size * 0.225f))
-            .background(if (icon == null) colors.fill else Color.Transparent),
+            .clip(shape)
+            .then(if (icon == null) Modifier.border(0.75.dp, colors.hairline, shape) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         if (icon != null) {
@@ -91,24 +100,36 @@ internal fun AmoIcon(url: String?, size: Dp, modifier: Modifier = Modifier, fall
 
 internal enum class GetState { Get, Installing, Installed }
 
-/** The "Get" capsule: turns into a spinner while installing and "Installed" after. */
+/**
+ * The "Get" button: a small hairline-outlined pill with no fill. It turns into a spinner while
+ * installing and into quiet "Installed" text after, and the outline fades away with it.
+ */
 @Composable
 internal fun GetButton(state: GetState, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
-    // The capsule is small; the touch target around it is not.
+    val outline = animateFloatAsState(if (state == GetState.Get) 1f else 0f, Motion.fade(), label = "getOutline")
+    // The pill is small; the touch target around it is not.
     Box(
         modifier
-            .defaultMinSize(minWidth = 76.dp, minHeight = 48.dp)
-            .pressScale(enabled = state == GetState.Get, pressedScale = 0.9f, haptic = true, onClick = onClick),
+            .defaultMinSize(minWidth = 72.dp, minHeight = 48.dp)
+            .pressScale(enabled = state == GetState.Get, pressedScale = 0.92f, haptic = true, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             Modifier
                 .height(32.dp)
-                .widthIn(min = 76.dp)
-                .clip(PaneShapes.pill)
-                .background(colors.fill)
-                .padding(horizontal = 14.dp),
+                .widthIn(min = 64.dp)
+                .drawBehind {
+                    val stroke = 1.dp.toPx()
+                    drawRoundRect(
+                        color = colors.label.copy(alpha = colors.label.alpha * outline.value),
+                        topLeft = Offset(stroke / 2f, stroke / 2f),
+                        size = Size(size.width - stroke, size.height - stroke),
+                        cornerRadius = CornerRadius((size.height - stroke) / 2f),
+                        style = Stroke(stroke),
+                    )
+                }
+                .padding(horizontal = 16.dp),
             contentAlignment = Alignment.Center,
         ) {
             AnimatedContent(
@@ -122,18 +143,18 @@ internal fun GetButton(state: GetState, onClick: () -> Unit, modifier: Modifier 
                 when (target) {
                     GetState.Get -> Text(
                         "Get",
-                        style = PaneTheme.type.subheadline.copy(fontWeight = FontWeight.Bold),
-                        color = colors.accent,
+                        style = PaneTheme.type.subheadline.copy(fontWeight = FontWeight.SemiBold),
+                        color = colors.label,
                         maxLines = 1,
                     )
                     GetState.Installing -> CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
-                        color = colors.accent,
-                        strokeWidth = 2.dp,
+                        color = colors.label,
+                        strokeWidth = 1.5.dp,
                     )
                     GetState.Installed -> Text(
                         "Installed",
-                        style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
+                        style = PaneTheme.type.footnote,
                         color = colors.secondaryLabel,
                         maxLines = 1,
                     )
@@ -144,8 +165,9 @@ internal fun GetButton(state: GetState, onClick: () -> Unit, modifier: Modifier 
 }
 
 /**
- * One row of a lazily built inset-grouped list: the same card look as [GroupedSection] but one
- * lazy item per row, for lists too long to compose at once.
+ * One row of a lazily built flat list: the same look as [GroupedSection][app.pane.browser.ui.components.GroupedSection]
+ * (full-width, a hairline under it from [separatorInset]) but one lazy item per row, for lists
+ * too long to compose at once.
  */
 @Composable
 internal fun GroupedItem(
@@ -155,19 +177,9 @@ internal fun GroupedItem(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    val colors = PaneTheme.colors
-    val top = if (index == 0) CornerSize(20.dp) else CornerSize(0.dp)
-    val bottom = if (index == count - 1) CornerSize(20.dp) else CornerSize(0.dp)
-    val shape = remember(index == 0, index == count - 1) { ContinuousRoundedShape(top, top, bottom, bottom) }
-    Column(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .clip(shape)
-            .background(colors.surface),
-    ) {
+    Column(modifier.fillMaxWidth()) {
         content()
-        if (index < count - 1) Separator(Modifier.padding(start = separatorInset))
+        if (index < count - 1) Separator(Modifier.padding(start = separatorInset, end = RowMargin))
     }
 }
 

@@ -106,7 +106,7 @@ fun ExtensionsScreen() {
                                 title = rec.name,
                                 modifier = Modifier.heightIn(min = 60.dp),
                                 subtitle = rec.summary,
-                                leading = { AmoIcon(listing?.iconUrl, 29.dp) },
+                                leading = { AmoIcon(listing?.iconUrl, ExtensionRowIcon) },
                                 showChevron = false,
                                 onClick = if (listing != null) ({ detailSlug = rec.slug }) else null,
                             ) {
@@ -156,7 +156,7 @@ private fun InstalledRow(ext: InstalledExtension, onToggle: (Boolean) -> Unit, o
         title = ext.name,
         modifier = Modifier.heightIn(min = 60.dp),
         subtitle = ext.problem,
-        leading = { ExtensionIcon(ext.icon, 29.dp, dimmed = !ext.enabled) },
+        leading = { ExtensionIcon(ext.icon, ExtensionRowIcon, dimmed = !ext.enabled) },
         showChevron = false,
         onClick = onClick,
     ) {
@@ -170,7 +170,7 @@ private fun NoneYet(modifier: Modifier = Modifier) {
     Text(
         "No extensions yet.",
         style = PaneTheme.type.body,
-        color = PaneTheme.colors.label,
+        color = PaneTheme.colors.secondaryLabel,
         textAlign = TextAlign.Center,
         modifier = modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp),
     )
@@ -181,6 +181,6 @@ internal fun SmallSpinner() {
     CircularProgressIndicator(
         modifier = Modifier.size(18.dp),
         color = PaneTheme.colors.secondaryLabel,
-        strokeWidth = 2.dp,
+        strokeWidth = 1.5.dp,
     )
 }

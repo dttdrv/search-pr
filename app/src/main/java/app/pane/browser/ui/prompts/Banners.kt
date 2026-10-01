@@ -26,12 +26,11 @@ import androidx.compose.ui.unit.dp
 import app.pane.browser.engine.prompts.PopupRequest
 import app.pane.browser.engine.prompts.RedirectRequest
 import app.pane.browser.ui.components.TextButton
-import app.pane.browser.ui.theme.GlassStrength
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.dropIn
-import app.pane.browser.ui.theme.glass
+import app.pane.browser.ui.theme.floating
 import app.pane.core.prompts.PermissionText
 import kotlinx.coroutines.delay
 
@@ -77,8 +76,8 @@ internal fun RedirectBanner(request: RedirectRequest, visible: Boolean, onDone: 
 }
 
 /**
- * A non-modal glass card floating under the status bar, in the spirit of a pop-up notice: it drops
- * in, the page stays usable, and ignoring the card keeps the thing blocked.
+ * A non-modal flat pill floating under the status bar, a hairline round it and no icon: it drops
+ * in, the page stays usable, and ignoring it keeps the thing blocked.
  */
 @Composable
 private fun BlockedBanner(
@@ -115,8 +114,8 @@ private fun BlockedBanner(
                     .dropIn()
                     .widthIn(max = 480.dp)
                     .fillMaxWidth()
-                    .glass(PaneShapes.card, GlassStrength.Thick)
-                    .padding(start = 20.dp, top = 8.dp, bottom = 8.dp, end = 6.dp),
+                    .floating(PaneShapes.pill, shadow = 8.dp)
+                    .padding(start = 24.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f).padding(end = 6.dp)) {
@@ -125,7 +124,7 @@ private fun BlockedBanner(
                         subtitle,
                         style = PaneTheme.type.footnote,
                         color = colors.secondaryLabel,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }

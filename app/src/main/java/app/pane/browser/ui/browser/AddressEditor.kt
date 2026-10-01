@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,13 +44,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -77,19 +74,20 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.components.SectionLabel
+import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.SiteIcon
 import app.pane.browser.ui.components.EngineIcon
 import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.components.excludeFromAutofill
 import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.GlassStrength
 import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.entrance
-import app.pane.browser.ui.theme.glass
+import app.pane.browser.ui.theme.floating
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.search.SearchEngines
 import app.pane.core.search.Suggestions
@@ -102,10 +100,11 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
- * The address bar in edit mode: the page frosted over, a glass pill that rises onto the keyboard
- * with inline completion of known sites, and a merged list of open tabs, history, bookmarks and
- * search suggestions above it. With nothing typed it shows favourites. Open tabs are only offered
- * when [showOpenTabs] (never while private tabs are locked).
+ * The address bar in edit mode: a solid page, a floating pill that grows out of the bar and rises
+ * onto the keyboard with inline completion of known sites, and a merged list of open tabs, history,
+ * bookmarks and search suggestions above it as plain rows. With nothing typed it shows favourites
+ * and recent pages. Open tabs are only offered when [showOpenTabs] (never while private tabs are
+ * locked).
  */
 @Composable
 fun AddressEditor(
@@ -124,23 +123,12 @@ fun AddressEditor(
 
     BackHandler(enabled = visible, onBack = onDismiss)
 
-    // The page, blurred and veiled: a paper-coloured haze that is densest at the top and clears
-    // towards the keyboard, so the top stays calm and the list has the contrast. Tapping it closes
-    // the editor.
-    val paper = PaneTheme.colors.background
+    // A solid page of the theme's own colour. Tapping it closes the editor.
     AnimatedVisibility(visibleState = state, enter = fadeIn(Motion.fade(200)), exit = fadeOut(Motion.fade(160))) {
-        val veil = remember(paper) {
-            Brush.verticalGradient(
-                0f to paper.copy(alpha = 0.72f),
-                0.5f to paper.copy(alpha = 0.16f),
-                1f to Color.Transparent,
-            )
-        }
         Box(
             Modifier
                 .fillMaxSize()
-                .glass(RectangleShape, GlassStrength.Thick, lifted = false)
-                .drawBehind { drawRect(veil) }
+                .background(PaneTheme.colors.background)
                 .clickable(interactionSource = null, indication = null, onClick = onDismiss),
         )
     }
@@ -297,6 +285,7 @@ private fun EditorContent(
                             suggestion = s,
                             query = typed,
                             best = index == 0,
+                            line = index < suggestions.lastIndex,
                             onClick = {
                                 haptics.tap()
                                 when (s) {
@@ -316,7 +305,7 @@ private fun EditorContent(
             }
         }
 
-        // The field: a glass pill docked on the keyboard, with a plain Cancel beside it.
+        // The field: a floating pill docked on the keyboard, with a plain Cancel beside it.
         Row(
             Modifier
                 .fillMaxWidth()
@@ -345,7 +334,7 @@ private fun EditorContent(
                             scaleY = sy + (1f - sy) * p
                         }
                     }
-                    .glass(PaneShapes.pill, GlassStrength.Regular),
+                    .floating(PaneShapes.pill, shadow = 6.dp),
             ) {
             Row(
                 Modifier
@@ -435,7 +424,7 @@ private fun EditorContent(
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(PaneIcons.CloseCircle, contentDescription = "Clear", tint = colors.secondaryLabel, modifier = Modifier.size(20.dp))
+                        Icon(PaneIcons.Close, contentDescription = "Clear", tint = colors.secondaryLabel, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -446,16 +435,17 @@ private fun EditorContent(
 }
 
 /**
- * One suggestion. Places and open tabs lead with the site's icon, then the title and the host
- * beneath; a quiet label marks tabs and bookmarks. Search suggestions are plain text with an arrow
- * that copies them into the field. The [best] match, the row nearest the field, is set larger and
- * bolder so the eye lands on it.
+ * One suggestion, a plain row with a hairline above it when [line]. Places and open tabs lead with
+ * the site's icon, then the title and the host beneath; a quiet label marks tabs and bookmarks.
+ * Search suggestions are plain text with an arrow that copies them into the field. The [best]
+ * match, the row nearest the field, is set larger and bolder so the eye lands on it.
  */
 @Composable
 private fun SuggestionRow(
     suggestion: Suggestion,
     query: String,
     best: Boolean,
+    line: Boolean,
     onClick: () -> Unit,
     onFill: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -482,46 +472,49 @@ private fun SuggestionRow(
         }
     }
     val host = url?.let { UrlDisplay.toolbarText(it) }
-    Row(
-        modifier
-            .fillMaxWidth()
-            .pressDim(onClick = onClick)
-            .defaultMinSize(minHeight = if (best) 68.dp else 56.dp)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        if (url != null) SiteIcon(url, if (best) 44.dp else 32.dp)
-        Column(Modifier.weight(1f)) {
-            Text(
-                highlight(title, query, colors.label),
-                style = if (best) PaneTheme.type.headline else PaneTheme.type.body,
-                // The best match is read in full ink; the rest recede until the typed part lights up.
-                color = if (best) colors.label else colors.secondaryLabel,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (host != null && host != title) {
-                Text(host, style = PaneTheme.type.footnote, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-        }
-        if (label != null) {
-            Text(label, style = PaneTheme.type.caption, color = colors.tertiaryLabel, maxLines = 1)
-        }
-        if (suggestion is Suggestion.Search) {
-            Box(
-                Modifier
-                    .size(36.dp)
-                    .pressDim { onFill(suggestion.query) },
-                contentAlignment = Alignment.Center,
-            ) {
-                // Up and to the left: "put this in the field".
-                Icon(
-                    PaneIcons.ChevronUp,
-                    contentDescription = "Use suggestion",
-                    tint = colors.tertiaryLabel,
-                    modifier = Modifier.size(18.dp).rotate(-45f),
+    Column(modifier.fillMaxWidth()) {
+        if (line) Separator(Modifier.padding(horizontal = 24.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .pressDim(onClick = onClick)
+                .defaultMinSize(minHeight = if (best) 72.dp else 56.dp)
+                .padding(horizontal = 24.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (url != null) SiteIcon(url, if (best) 36.dp else 28.dp)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    highlight(title, query, colors.label),
+                    style = if (best) PaneTheme.type.headline else PaneTheme.type.body,
+                    // The best match is read in full ink; the rest recede until the typed part lights up.
+                    color = if (best) colors.label else colors.secondaryLabel,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                if (host != null && host != title) {
+                    Text(host, style = PaneTheme.type.footnote, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (label != null) {
+                SectionLabel(label)
+            }
+            if (suggestion is Suggestion.Search) {
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .pressDim { onFill(suggestion.query) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // Up and to the left: "put this in the field".
+                    Icon(
+                        PaneIcons.ChevronUp,
+                        contentDescription = "Use suggestion",
+                        tint = colors.tertiaryLabel,
+                        modifier = Modifier.size(18.dp).rotate(-45f),
+                    )
+                }
             }
         }
     }

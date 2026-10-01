@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
@@ -28,24 +30,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import app.pane.browser.ui.theme.GlassStrength
+import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.LocalReduceMotion
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.browser.ui.theme.glass
+import app.pane.browser.ui.theme.floating
 
 enum class AlertStyle { Default, Cancel, Destructive }
 
 data class AlertAction(val label: String, val style: AlertStyle = AlertStyle.Default, val onClick: () -> Unit)
 
 /**
- * A centred floating glass card that springs in from a touch under full size: title, message, an
- * optional [body] (fields for text and auth prompts) and the actions as stacked pills. The primary
- * action is solid ink, Cancel is tinted, Destructive is red on a red tint; a lone action is always
- * solid. Cancel sits last however the caller ordered it.
+ * A centred flat floating card that springs in from a touch under full size: a title, an optional
+ * short message, an optional [body] (fields for text and auth prompts) and the actions as stacked
+ * pills. The primary action is solid ink, Cancel is a hairline outline, Destructive is red text in a
+ * red outline; a lone action is always solid. Cancel sits last however the caller ordered it.
  */
 @Composable
 fun PaneAlert(
@@ -92,8 +95,8 @@ fun PaneAlert(
                     .padding(horizontal = 24.dp)
                     .widthIn(max = 340.dp)
                     .fillMaxWidth()
-                    .glass(PaneShapes.floating, GlassStrength.Thick)
-                    .padding(start = 22.dp, end = 22.dp, top = 26.dp, bottom = 22.dp),
+                    .floating(AlertShape, shadow = 16.dp)
+                    .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(
@@ -109,27 +112,43 @@ fun PaneAlert(
                             style = PaneTheme.type.subheadline,
                             color = colors.secondaryLabel,
                             textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 8.dp),
+                            modifier = Modifier.padding(top = 6.dp),
                         )
                     }
                     if (body != null) Box(Modifier.padding(top = 16.dp)) { body() }
                 }
-                Column(Modifier.padding(top = 22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(Modifier.padding(top = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val lone = actions.size == 1
                     // Cancel goes last; sortedBy is stable, so the caller's order holds otherwise.
                     actions.sortedBy { it.style == AlertStyle.Cancel }.forEach { action ->
-                        PrimaryButton(
-                            text = action.label,
-                            onClick = action.onClick,
-                            style = when {
-                                actions.size == 1 -> ButtonStyle.Filled
-                                action.style == AlertStyle.Cancel -> ButtonStyle.Tinted
-                                action.style == AlertStyle.Destructive -> ButtonStyle.Destructive
-                                else -> ButtonStyle.Filled
-                            },
-                        )
+                        when {
+                            lone || action.style == AlertStyle.Default -> PrimaryButton(text = action.label, onClick = action.onClick)
+                            action.style == AlertStyle.Cancel -> OutlineButton(action.label, action.onClick, Modifier.fillMaxWidth())
+                            else -> DestructiveButton(action.label, action.onClick)
+                        }
                     }
                 }
             }
         }
     }
 }
+
+/** A destructive choice: red text in a red hairline pill, never a fill. */
+@Composable
+private fun DestructiveButton(text: String, onClick: () -> Unit) {
+    val colors = PaneTheme.colors
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .pressScale(pressedScale = 0.97f, haptic = true, onClick = onClick)
+            .clip(PaneShapes.pill)
+            .border(1.dp, colors.destructive, PaneShapes.pill)
+            .padding(horizontal = 24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = PaneTheme.type.headline, color = colors.destructive, maxLines = 1)
+    }
+}
+
+private val AlertShape = ContinuousRoundedShape(24.dp)

@@ -48,6 +48,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import app.pane.browser.ui.components.StatusDot
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -61,15 +64,14 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import app.pane.browser.ui.components.GlassCircle
+import app.pane.browser.ui.components.FloatingCircle
 import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.components.pressScale
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.GlassStrength
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.browser.ui.theme.glass
+import app.pane.browser.ui.theme.floating
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.tabs.SecurityState
 import app.pane.core.tabs.TabState
@@ -149,7 +151,7 @@ fun BottomBar(
                     }
                     .height(BarMetrics.mini)
                     .pressScale(pressedScale = 0.94f) { chrome.expand() }
-                    .glass(PaneShapes.pill, GlassStrength.Thin)
+                    .floating(PaneShapes.pill, shadow = 6.dp)
                     .padding(horizontal = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
@@ -184,7 +186,7 @@ fun BottomBar(
                     exit = shrinkHorizontally(Motion.snappy()) + scaleOut(Motion.snappy(), targetScale = 0.5f) + fadeOut(Motion.fade(120)),
                 ) {
                     Row {
-                        GlassCircle(onClick = onBack, size = BarMetrics.pill, contentDescription = "Back") {
+                        FloatingCircle(onClick = onBack, size = BarMetrics.pill, contentDescription = "Back") {
                             Icon(PaneIcons.Back, null, tint = PaneTheme.colors.label, modifier = Modifier.size(20.dp))
                         }
                         Spacer(Modifier.width(8.dp))
@@ -289,7 +291,7 @@ fun BottomBar(
                 Spacer(Modifier.width(8.dp))
                 TabsButton(count = tabs.size, onClick = onTabs, onLongClick = onNewTab)
                 Spacer(Modifier.width(8.dp))
-                GlassCircle(
+                FloatingCircle(
                     onClick = onMenu,
                     size = BarMetrics.pill,
                     contentDescription = "Menu",
@@ -343,16 +345,28 @@ fun AddressPill(
                     Modifier
                 },
             )
-            .glass(PaneShapes.pill, GlassStrength.Regular, lifted = lifted)
+            .floating(PaneShapes.pill, shadow = if (lifted) 8.dp else 0.dp)
             .semantics { contentDescription = if (locked) LOCKED_LABEL else "Address: $host" },
     ) {
-        // Loading sweeps a soft fill across the glass.
+        // Loading draws a thin ink line along the bottom of the pill, growing with the page.
         Box(
             Modifier
                 .fillMaxSize()
                 .drawBehind {
                     val a = progressAlpha.value
-                    if (a > 0.01f) drawRect(colors.fill, size = Size(size.width * progress.value, size.height), alpha = a)
+                    if (a > 0.01f) {
+                        val inset = size.height / 2f
+                        val y = size.height - 3.dp.toPx()
+                        val span = size.width - inset * 2f
+                        drawLine(
+                            colors.label,
+                            Offset(inset, y),
+                            Offset(inset + span * progress.value, y),
+                            strokeWidth = 1.5.dp.toPx(),
+                            cap = StrokeCap.Round,
+                            alpha = a,
+                        )
+                    }
                 },
         )
         Row(
@@ -364,13 +378,14 @@ fun AddressPill(
                 when {
                     locked -> Icon(PaneIcons.LockFill, null, tint = colors.tertiaryLabel, modifier = Modifier.size(12.dp))
                     !loaded -> Unit
+                    tab.loading -> StatusDot()
                     tab.security == SecurityState.Insecure || tab.security == SecurityState.Broken -> Box(
                         Modifier
                             .size(34.dp)
                             .pressDim(onClick = onSiteInfo),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Box(Modifier.size(7.dp).clip(PaneShapes.pill).background(colors.warning))
+                        StatusDot()
                     }
                     else -> Icon(
                         PaneIcons.LockFill,
@@ -429,7 +444,7 @@ private fun NewTabPill(modifier: Modifier) {
         modifier
             .fillMaxWidth()
             .height(BarMetrics.pill)
-            .glass(PaneShapes.pill, GlassStrength.Regular, lifted = false),
+            .floating(PaneShapes.pill, shadow = 0.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text("New tab", style = PaneTheme.type.body.copy(fontSize = 15.sp, fontWeight = FontWeight.Medium), color = colors.secondaryLabel)
@@ -440,7 +455,7 @@ private fun NewTabPill(modifier: Modifier) {
 @Composable
 private fun TabsButton(count: Int, onClick: () -> Unit, onLongClick: () -> Unit) {
     val colors = PaneTheme.colors
-    GlassCircle(onClick = onClick, size = BarMetrics.pill, contentDescription = "$count tabs", onLongClick = onLongClick) {
+    FloatingCircle(onClick = onClick, size = BarMetrics.pill, contentDescription = "$count tabs", onLongClick = onLongClick) {
         Box(
             Modifier
                 .size(24.dp)

@@ -94,8 +94,14 @@ object EngineRuntime {
             .queryParameterStrippingEnabled(settings.stripTrackingParams)
             .queryParameterStrippingPrivateBrowsingEnabled(true)
             .emailTrackerBlockingPrivateMode(true)
-            .bounceTrackingProtectionMode(ContentBlocking.BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_ENABLED)
+            .bounceTrackingProtectionMode(bounceMode(settings.trackingProtection))
             .build()
+
+    /** Bounce-tracking purging deletes a site's storage, which can sign you out of one you use: only in Strict. */
+    private fun bounceMode(level: TrackingProtection) = when (level) {
+        TrackingProtection.Strict -> ContentBlocking.BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_ENABLED
+        TrackingProtection.Standard -> ContentBlocking.BounceTrackingProtectionMode.BOUNCE_TRACKING_PROTECTION_MODE_ENABLED_DRY_RUN
+    }
 
     private fun antiTracking(level: TrackingProtection) = when (level) {
         TrackingProtection.Strict -> ContentBlocking.AntiTracking.STRICT

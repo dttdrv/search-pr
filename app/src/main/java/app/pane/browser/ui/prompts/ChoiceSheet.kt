@@ -1,6 +1,5 @@
 package app.pane.browser.ui.prompts
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,21 +23,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.engine.prompts.ChoiceRequest
 import app.pane.browser.ui.components.PaneSheet
 import app.pane.browser.ui.components.SearchField
+import app.pane.browser.ui.components.SectionLabel
 import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.ChoicePrompt.Choice
 
 /** Lists longer than this get a search field (country pickers, time zones…). */
@@ -55,9 +51,9 @@ private sealed interface ChoiceLine {
 }
 
 /**
- * `<select>` as a list of plain rows on a translucent fill: single choice picks and closes,
+ * `<select>` as a list of flat rows with hairlines between them: single choice picks and closes,
  * multiple choice ticks circles and confirms with Done, page menus act on tap. `<optgroup>`s
- * become section headers.
+ * become small-capitals section labels.
  */
 @Composable
 internal fun ChoiceSheet(request: ChoiceRequest, visible: Boolean, onDone: () -> Unit) {
@@ -71,7 +67,6 @@ internal fun ChoiceSheet(request: ChoiceRequest, visible: Boolean, onDone: () ->
     val lines = remember(groups, query) { linesFor(groups, query) }
     val initialIndex = remember { lines.indexOfFirst { it is ChoiceLine.Option && it.choice.id in selected }.coerceAtLeast(0) }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = (initialIndex - 3).coerceAtLeast(0))
-    val haze = rememberHazeState()
     val fadePx = with(LocalDensity.current) { 28.dp.toPx() }
 
     val title = listOf(prompt.title, prompt.message).firstOrNull { !it.isNullOrBlank() }
@@ -99,23 +94,19 @@ internal fun ChoiceSheet(request: ChoiceRequest, visible: Boolean, onDone: () ->
     }) {
         SheetTitle(title)
         if (optionCount > SEARCH_THRESHOLD) {
-            SearchField(query, { query = it }, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            SearchField(query, { query = it }, Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
         }
         Box(Modifier.weight(1f, fill = false)) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().hazeSource(haze),
+                modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(top = 4.dp, bottom = if (request.isMultiple) 8.dp else 24.dp),
             ) {
                 items(lines, key = { it.key }) { line ->
                     when (line) {
-                        is ChoiceLine.Header -> Text(
+                        is ChoiceLine.Header -> SectionLabel(
                             line.label,
-                            style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
-                            color = colors.secondaryLabel,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(start = 32.dp, end = 32.dp, top = 16.dp, bottom = 8.dp),
+                            modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 4.dp),
                         )
                         is ChoiceLine.Option -> OptionRow(
                             line = line,
@@ -141,7 +132,6 @@ internal fun ChoiceSheet(request: ChoiceRequest, visible: Boolean, onDone: () ->
                 }
             }
             ScrollEdges(
-                haze,
                 top = {
                     if (listState.firstVisibleItemIndex > 0) 1f else listState.firstVisibleItemScrollOffset / fadePx
                 },
@@ -172,21 +162,15 @@ private fun OptionRow(line: ChoiceLine.Option, checked: Boolean, indicator: Indi
     val colors = PaneTheme.colors
     val choice = line.choice
     val enabled = !choice.disabled
-    Column(
-        Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .clip(groupedRowShape(line.first, line.last))
-            .background(colors.secondaryFill),
-    ) {
+    Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
                 .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
-                .defaultMinSize(minHeight = 44.dp)
-                .padding(horizontal = 16.dp, vertical = 11.dp),
+                .defaultMinSize(minHeight = 52.dp)
+                .padding(horizontal = 24.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (indicator == Indicator.Circle) CheckCircle(checked)
             Text(
@@ -199,11 +183,11 @@ private fun OptionRow(line: ChoiceLine.Option, checked: Boolean, indicator: Indi
             )
             if (indicator == Indicator.Check) {
                 Box(Modifier.width(22.dp), contentAlignment = Alignment.Center) {
-                    if (checked) Icon(PaneIcons.Check, null, tint = colors.accent, modifier = Modifier.size(20.dp))
+                    if (checked) Icon(PaneIcons.Check, null, tint = colors.label, modifier = Modifier.size(20.dp))
                 }
             }
         }
-        if (!line.last) Separator(Modifier.padding(start = if (indicator == Indicator.Circle) 50.dp else 16.dp))
+        if (!line.last) Separator(Modifier.padding(start = if (indicator == Indicator.Circle) 60.dp else 24.dp, end = 24.dp))
     }
 }
 

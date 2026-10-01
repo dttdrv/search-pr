@@ -23,10 +23,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.pane.browser.ui.theme.GlassStrength
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.browser.ui.theme.glass
+import app.pane.browser.ui.theme.floating
 
 /** A 44dp-target icon button that dims when pressed. Reserved for glyphs everyone already knows. */
 @Composable
@@ -108,16 +107,15 @@ fun PrimaryButton(
     }
 }
 
-/** A round frosted button that floats over the page. Its [content] is centred. */
+/** A round button that floats over the page: solid, hairline, short shadow. Its [content] is centred. */
 @Composable
-fun GlassCircle(
+fun FloatingCircle(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     size: Dp = 50.dp,
     enabled: Boolean = true,
     contentDescription: String? = null,
     onLongClick: (() -> Unit)? = null,
-    strength: GlassStrength = GlassStrength.Regular,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
@@ -125,15 +123,15 @@ fun GlassCircle(
             .size(size)
             .then(if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier)
             .pressScale(enabled = enabled, pressedScale = 0.9f, haptic = true, onLongClick = onLongClick, onClick = onClick)
-            .glass(CircleShape, strength),
+            .floating(CircleShape),
         contentAlignment = Alignment.Center,
         content = content,
     )
 }
 
-/** A frosted text pill ("New", "Done") that floats over content. */
+/** A text pill ("New", "Done") that floats over content. */
 @Composable
-fun GlassTextButton(
+fun FloatingTextButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -149,7 +147,7 @@ fun GlassTextButton(
                 if (strong) {
                     Modifier.clip(PaneShapes.pill).background(colors.accent)
                 } else {
-                    Modifier.glass(PaneShapes.pill)
+                    Modifier.floating(PaneShapes.pill)
                 },
             )
             .padding(horizontal = 20.dp),

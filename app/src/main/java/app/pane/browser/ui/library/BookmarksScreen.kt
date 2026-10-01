@@ -6,8 +6,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,7 +28,6 @@ import app.pane.browser.ui.components.LargeTitleScaffold
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneSheet
 import app.pane.browser.ui.components.SearchField
-import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.SheetHeader
 import app.pane.browser.ui.components.SiteIcon
 import app.pane.browser.ui.components.ToggleRow
@@ -39,9 +39,6 @@ import app.pane.core.url.InputAction
 import app.pane.core.url.UrlDisplay
 import app.pane.core.url.UrlInput
 import kotlinx.coroutines.launch
-
-/** Where a row's text starts (16dp padding, 30dp icon, 12dp gap), so hairlines line up with it. */
-private val TextInset = 58.dp
 
 /**
  * Saved pages. Favorites are the ones shown on the start page; everything else about a bookmark
@@ -97,7 +94,7 @@ fun BookmarksScreen() {
                     value = query,
                     onValueChange = { query = it },
                     placeholder = "Search bookmarks",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
             },
         ) {
@@ -119,20 +116,18 @@ fun BookmarksScreen() {
                     )
                 }
                 else -> {
-                    item(key = "top") { Spacer(Modifier.height(12.dp)) }
+                    item(key = "top") { Spacer(Modifier.height(8.dp)) }
                     itemsIndexed(shown, key = { _, b -> b.id }) { index, bookmark ->
-                        val first = index == 0
-                        val last = index == shown.lastIndex
                         SwipeToDelete(
                             onDelete = { delete(bookmark) },
-                            modifier = Modifier.animateItem().arrive(index).groupedItem(first, last, colors.surface),
+                            modifier = Modifier.animateItem().arrive(index),
                         ) {
                             Column {
-                                if (!first) Separator(Modifier.padding(start = TextInset))
+                                if (index > 0) RowSeparator(SiteRowInset)
                                 LibraryRow(
                                     title = bookmark.title.ifBlank { bookmark.url },
                                     subtitle = UrlDisplay.toolbarText(bookmark.url).ifEmpty { bookmark.url },
-                                    leading = { SiteIcon(bookmark.url, 30.dp) },
+                                    leading = { SiteIcon(bookmark.url, 28.dp) },
                                     onClick = { open(bookmark) },
                                     onLongClick = {
                                         menuTarget = bookmark
@@ -140,12 +135,11 @@ fun BookmarksScreen() {
                                     },
                                     trailing = {
                                         if (bookmark.favorite) {
-                                            Text(
-                                                "Favorite",
-                                                style = PaneTheme.type.footnote,
-                                                color = colors.secondaryLabel,
-                                                maxLines = 1,
-                                                modifier = Modifier.padding(end = 6.dp),
+                                            Icon(
+                                                PaneIcons.StarFill,
+                                                contentDescription = "Favorite",
+                                                tint = colors.label,
+                                                modifier = Modifier.padding(end = 8.dp).size(16.dp),
                                             )
                                         }
                                     },

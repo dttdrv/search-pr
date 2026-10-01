@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -18,9 +17,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -34,8 +34,9 @@ import app.pane.browser.ui.theme.rememberHaptics
 import kotlin.math.roundToInt
 
 /**
- * The switch: an ink track and a thumb you can tap or drag. The thumb stretches while held, follows
- * the finger, and springs to whichever side it's nearer when let go. 56×34, so it is easy to hit.
+ * The switch, flat: off is a hairline-outlined track with a small ink thumb, on is a solid ink track
+ * with a paper thumb. You can tap it or drag the thumb; the thumb stretches while held, follows the
+ * finger, and springs to whichever side it's nearer when let go. 52×32, so it is easy to hit.
  */
 @Composable
 fun PaneSwitch(
@@ -52,13 +53,14 @@ fun PaneSwitch(
     val changeNow by rememberUpdatedState(onCheckedChange)
     val reduceMotion = LocalReduceMotion.current
 
-    val trackW = 56.dp
-    val trackH = 34.dp
-    val pad = 3.dp
-    val restW = 28.dp
-    val heldW = 36.dp
+    val trackW = 52.dp
+    val trackH = 32.dp
+    val pad = 5.dp
+    val restW = 22.dp
+    val heldW = 30.dp
     val padPx = with(density) { pad.toPx() }
     val trackPx = with(density) { trackW.toPx() }
+    val strokePx = with(density) { 1.dp.toPx() }
 
     // While dragging, the thumb's offset in px; NaN otherwise, when the spring below owns it.
     var drag by remember { mutableFloatStateOf(Float.NaN) }
@@ -72,8 +74,19 @@ fun PaneSwitch(
             .height(trackH)
             .drawBehind {
                 val fraction = position(drag, settled.value, trackPx, padPx, width.value)
-                val track = lerp(colors.fill, colors.accent, fraction)
-                drawRoundRect(track.copy(alpha = track.alpha * alpha.value), cornerRadius = CornerRadius(size.height / 2f))
+                val a = alpha.value
+                // Solid ink fills the track as the thumb travels across it...
+                val fill = colors.accent
+                drawRoundRect(fill.copy(alpha = fill.alpha * fraction * a), cornerRadius = CornerRadius(size.height / 2f))
+                // ...and the outline turns from a hairline into that same ink, so it vanishes into it.
+                val line = lerp(colors.secondaryLabel, colors.accent, fraction)
+                drawRoundRect(
+                    color = line.copy(alpha = line.alpha * a),
+                    topLeft = Offset(strokePx / 2f, strokePx / 2f),
+                    size = Size(size.width - strokePx, size.height - strokePx),
+                    cornerRadius = CornerRadius((size.height - strokePx) / 2f),
+                    style = Stroke(strokePx),
+                )
             }
             .pointerInput(enabled, checked, trackPx, padPx) {
                 if (!enabled) return@pointerInput
@@ -121,11 +134,17 @@ fun PaneSwitch(
                         placeable.place((padPx + fraction * travel).roundToInt(), 0)
                     }
                 }
-                .shadow(3.dp, RoundedCornerShape(50), ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.22f))
                 .drawBehind {
+                    val fraction = position(drag, settled.value, trackPx, padPx, width.value)
+                    // A small ink dot when off; it grows and turns to paper as the track fills.
+                    val scale = 0.68f + 0.32f * fraction
+                    val inset = size.height * (1f - scale) / 2f
+                    val color = lerp(colors.label, colors.onAccent, fraction)
                     drawRoundRect(
-                        if (checked) colors.onAccent else Color.White,
-                        cornerRadius = CornerRadius(size.height / 2f),
+                        color = color.copy(alpha = color.alpha * alpha.value),
+                        topLeft = Offset(inset, inset),
+                        size = Size(size.width - inset * 2f, size.height - inset * 2f),
+                        cornerRadius = CornerRadius((size.height - inset * 2f) / 2f),
                     )
                 },
         )

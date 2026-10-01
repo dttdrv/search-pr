@@ -23,6 +23,10 @@ import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.search.SearchEngines
 
+/** Engine logos are 28dp; with the 20dp margin and 16dp gap, titles (and hairlines) start at 64dp. */
+private val ENGINE_ICON = 28.dp
+private val EngineSeparatorInset = 64.dp
+
 /**
  * The default engine and suggestions. Engines that don't build a profile of you say "Private" in
  * plain text; the one to pick if unsure says "Recommended". Suggestions in private tabs and the
@@ -39,13 +43,13 @@ fun SearchSettingsScreen() {
 
     LargeTitleScaffold(title = "Search", onBack = navigator::pop, backLabel = backLabel) {
         item(key = "engines") {
-            GroupedSection(modifier = Modifier.arrive(0), header = "Search engine", separatorInset = IconSeparatorInset) {
+            GroupedSection(modifier = Modifier.arrive(0), header = "Search engine", separatorInset = EngineSeparatorInset) {
                 SearchEngines.defaults.forEach { engine ->
                     row {
                         ListRow(
                             title = engine.name,
                             modifier = Modifier.heightIn(min = 60.dp),
-                            leading = { EngineIcon(engine.id, 34.dp) },
+                            leading = { EngineIcon(engine.id, ENGINE_ICON) },
                             value = when {
                                 engine.id == SearchEngines.DuckDuckGo.id -> "Recommended"
                                 engine.privacyFocused -> "Private"
@@ -56,7 +60,7 @@ fun SearchSettingsScreen() {
                         ) {
                             Box(Modifier.width(22.dp), contentAlignment = Alignment.Center) {
                                 if (engine.id == current.id) {
-                                    Icon(PaneIcons.Check, contentDescription = "Selected", tint = colors.accent, modifier = Modifier.size(20.dp))
+                                    Icon(PaneIcons.Check, contentDescription = "Selected", tint = colors.label, modifier = Modifier.size(20.dp))
                                 }
                             }
                         }

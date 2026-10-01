@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -30,7 +31,9 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import app.pane.browser.ui.components.DotText
 import app.pane.browser.ui.components.PrimaryButton
+import app.pane.browser.ui.components.StatusDot
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.entrance
 
@@ -132,22 +135,20 @@ fun PrivateLockCover(onUnlock: () -> Unit, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Row(Modifier.entrance(0), verticalAlignment = Alignment.Top) {
+                DotText("PRIVATE", dot = 4.dp)
+                Spacer(Modifier.width(12.dp))
+                StatusDot(Modifier.padding(top = 2.dp), size = 8.dp)
+            }
+            Spacer(Modifier.height(16.dp))
             Text(
-                "Private Tabs Locked",
-                style = PaneTheme.type.title1,
-                color = colors.label,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.entrance(0),
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "Unlock with your fingerprint, face or screen lock.",
-                style = PaneTheme.type.subheadline,
+                "Your private tabs are locked.",
+                style = PaneTheme.type.body,
                 color = colors.secondaryLabel,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.entrance(1),
             )
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(32.dp))
             PrimaryButton("Unlock", onClick = onUnlock, modifier = Modifier.entrance(2).width(220.dp))
         }
     }

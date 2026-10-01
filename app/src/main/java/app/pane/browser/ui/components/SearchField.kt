@@ -1,6 +1,6 @@
 package app.pane.browser.ui.components
 
-import androidx.compose.foundation.background
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -13,17 +13,31 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneTheme
 
-/** UISearchBar-style field: tinted capsule with a magnifier and a clear button. */
+/**
+ * A search field: a hairline-outlined pill with no fill, a small magnifier and a clear button. The
+ * outline darkens to ink while you type.
+ */
 @Composable
 fun SearchField(
     value: String,
@@ -33,16 +47,27 @@ fun SearchField(
     onSubmit: (() -> Unit)? = null,
 ) {
     val colors = PaneTheme.colors
+    var focused by remember { mutableStateOf(false) }
+    val outline = animateColorAsState(if (focused) colors.label else colors.tertiaryLabel, Motion.fade(), label = "searchOutline")
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(42.dp)
-            .clip(app.pane.browser.ui.theme.PaneShapes.pill)
-            .background(colors.fill)
-            .padding(horizontal = 14.dp),
+            .height(44.dp)
+            .drawBehind {
+                val stroke = 1.dp.toPx()
+                drawRoundRect(
+                    color = outline.value,
+                    topLeft = Offset(stroke / 2f, stroke / 2f),
+                    size = Size(size.width - stroke, size.height - stroke),
+                    cornerRadius = CornerRadius((size.height - stroke) / 2f),
+                    style = Stroke(stroke),
+                )
+            }
+            .padding(start = 16.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.weight(1f)) {
+        Icon(PaneIcons.Magnifier, contentDescription = null, tint = colors.secondaryLabel, modifier = Modifier.size(18.dp))
+        Box(Modifier.weight(1f).padding(start = 10.dp)) {
             if (value.isEmpty()) Text(placeholder, style = PaneTheme.type.body, color = colors.secondaryLabel, maxLines = 1)
             BasicTextField(
                 value = value,
@@ -52,16 +77,23 @@ fun SearchField(
                 cursorBrush = SolidColor(colors.accent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSubmit?.invoke() }),
-                modifier = Modifier.fillMaxWidth().excludeFromAutofill(),
+                modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.isFocused }.excludeFromAutofill(),
             )
         }
         if (value.isNotEmpty()) {
-            Icon(
-                PaneIcons.CloseCircle,
-                contentDescription = "Clear",
-                tint = colors.secondaryLabel,
-                modifier = Modifier.size(18.dp).pressDim { onValueChange("") },
-            )
+            // A small mark with a full-size touch target around it.
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .semantics { contentDescription = "Clear" }
+                    .pressDim { onValueChange("") },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(PaneIcons.Close, contentDescription = null, tint = colors.secondaryLabel, modifier = Modifier.size(16.dp))
+            }
+        } else {
+            // Keeps the field's height and padding steady whether or not the clear button is there.
+            Box(Modifier.size(12.dp))
         }
     }
 }

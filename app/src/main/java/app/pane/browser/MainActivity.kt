@@ -83,7 +83,6 @@ class MainActivity : ComponentActivity() {
     /** Opens links, searches and shared text from other apps. Returns true if a tab was opened. */
     private fun handleIntent(intent: Intent?): Boolean {
         intent ?: return false
-        if (BuildConfig.DEBUG) intent.getStringExtra("glass")?.let { app.pane.browser.ui.theme.GlassDebug.mode = it }
         val browser = container.browser
         when (intent.action) {
             Intent.ACTION_VIEW -> {

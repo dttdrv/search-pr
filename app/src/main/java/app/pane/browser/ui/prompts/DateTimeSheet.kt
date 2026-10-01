@@ -2,7 +2,6 @@ package app.pane.browser.ui.prompts
 
 import android.text.format.DateFormat
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
@@ -30,7 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -42,7 +41,6 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import app.pane.browser.engine.prompts.DateTimeRequest
 import app.pane.browser.ui.components.PaneSheet
-import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.prompts.DateTimeKind
@@ -65,7 +63,7 @@ private val RowHeight = 34.dp
 private const val VISIBLE_ROWS = 5
 
 /**
- * Date and time inputs as iOS-style wheels. The value is clamped to the input's min/max as it
+ * Date and time inputs as wheels between two hairlines. The value is clamped to the input's min/max as it
  * changes, so an out-of-range choice visibly springs back instead of failing silently.
  */
 @Composable
@@ -127,13 +125,14 @@ private val KeepScrollInWheels = object : NestedScrollConnection {
     override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = available
 }
 
-/** Wheels side by side over one shared selection band, like UIDatePicker. */
+/** Wheels side by side between two hairlines that mark the selected row, like a drum. */
 @Composable
 private fun WheelGroup(content: @Composable () -> Unit) {
+    val line = PaneTheme.colors.tertiaryLabel
     Box(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 24.dp)
             .height(RowHeight * VISIBLE_ROWS)
             .nestedScroll(KeepScrollInWheels),
         contentAlignment = Alignment.Center,
@@ -142,8 +141,11 @@ private fun WheelGroup(content: @Composable () -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .height(RowHeight)
-                .clip(PaneShapes.pill)
-                .background(PaneTheme.colors.fill),
+                .drawBehind {
+                    val stroke = 1.dp.toPx()
+                    drawLine(line, Offset(0f, stroke / 2f), Offset(size.width, stroke / 2f), stroke)
+                    drawLine(line, Offset(0f, size.height - stroke / 2f), Offset(size.width, size.height - stroke / 2f), stroke)
+                },
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { content() }
     }

@@ -1,10 +1,15 @@
 package app.pane.browser.ui.settings
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -14,7 +19,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.downloads.await
@@ -22,15 +29,17 @@ import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.LargeTitleScaffold
+import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneAlert
 import app.pane.browser.ui.components.SearchField
+import app.pane.browser.ui.components.SiteIcon
 import app.pane.browser.ui.library.EmptyState
 import app.pane.browser.ui.library.RowSeparator
+import app.pane.browser.ui.library.SiteRowInset
 import app.pane.browser.ui.library.SectionTitle
 import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.library.groupedItem
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
@@ -162,7 +171,6 @@ fun SiteSettingsScreen() {
     val container = LocalAppContainer.current
     val navigator = LocalNavigator.current
     val toasts = LocalToasts.current
-    val colors = PaneTheme.colors
     val settings by rememberSettingsState()
     val backLabel = rememberBackLabel(Route.SiteSettings)
 
@@ -192,7 +200,7 @@ fun SiteSettingsScreen() {
                         value = query,
                         onValueChange = { query = it },
                         placeholder = "Search sites",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                     )
                 }
             } else {
@@ -237,15 +245,15 @@ fun SiteSettingsScreen() {
                 else -> {
                     item(key = "sites-title") { SectionTitle("Sites", Modifier.animateItem()) }
                     itemsIndexed(shown, key = { _, site -> "site:${site.origin}" }) { index, site ->
-                        Box(Modifier.animateItem().arrive(index).groupedItem(index == 0, index == shown.lastIndex, colors.surface)) {
-                            Column {
-                                if (index > 0) RowSeparator()
-                                NavRow(
-                                    title = SiteOrigins.displayName(site.origin),
-                                    subtitle = summarize(site.permissions),
-                                    onClick = { navigator.push(Route.SitePermissions(site.origin)) },
-                                )
-                            }
+                        Column(Modifier.animateItem().arrive(index)) {
+                            if (index > 0) RowSeparator(SiteRowInset)
+                            ListRow(
+                                title = SiteOrigins.displayName(site.origin),
+                                modifier = Modifier.heightIn(min = 64.dp),
+                                subtitle = summarize(site.permissions),
+                                leading = { SiteIcon(site.origin, 28.dp) },
+                                onClick = { navigator.push(Route.SitePermissions(site.origin)) },
+                            )
                         }
                     }
                     item(key = "advanced") {
@@ -332,8 +340,19 @@ fun SitePermissionsScreen(origin: String) {
 
     Box(Modifier.fillMaxSize()) {
         LargeTitleScaffold(title = name, onBack = navigator::pop, backLabel = backLabel) {
+            item(key = "origin") {
+                // Which exact address these answers belong to (http or https matters).
+                Row(
+                    Modifier.fillMaxWidth().arrive(0).padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SiteIcon(origin, 28.dp)
+                    Text(origin, style = PaneTheme.type.subheadline, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
             item(key = "essentials") {
-                GroupedSection(modifier = Modifier.arrive(0), header = origin) {
+                GroupedSection(modifier = Modifier.arrive(1)) {
                     SitePermission.entries.filter { it.common }.forEach { kind ->
                         row {
                             NavRow(
@@ -371,12 +390,12 @@ fun SitePermissionsScreen(origin: String) {
                 }
             }
             item(key = "data") {
-                GroupedSection(modifier = Modifier.arrive(1), footer = "Signs you out of $host.") {
+                GroupedSection(modifier = Modifier.arrive(2), footer = "Signs you out of $host.") {
                     row { ActionButtonRow("Clear site data", onClick = { confirmClear = true }, destructive = true) }
                 }
             }
             item(key = "advanced") {
-                AdvancedSection(modifier = Modifier.arrive(2)) {
+                AdvancedSection(modifier = Modifier.arrive(3)) {
                     GroupedSection {
                         SitePermission.entries.filterNot { it.common }.forEach { kind ->
                             row {

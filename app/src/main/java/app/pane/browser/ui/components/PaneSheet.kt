@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,7 +27,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -51,12 +50,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import app.pane.browser.ui.theme.GlassStrength
+import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.LocalReduceMotion
-import app.pane.browser.ui.theme.glass
+import app.pane.browser.ui.theme.floating
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import kotlinx.coroutines.CancellationException
@@ -209,11 +209,11 @@ fun PaneSheet(
                         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
                     }
                 }
-                .glass(PaneShapes.floating, GlassStrength.Thick)
+                .floating(SheetShape, shadow = 16.dp)
                 .pointerInput(Unit) { detectTapGestures { } }
                 .nestedScroll(nested),
         ) {
-            // Grabber; also the drag handle for sheets whose content doesn't scroll.
+            // A short, quiet handle; also the drag handle for sheets whose content doesn't scroll.
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -229,9 +229,9 @@ fun PaneSheet(
             ) {
                 Box(
                     Modifier
-                        .width(34.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(50))
+                        .width(32.dp)
+                        .height(3.dp)
+                        .clip(PaneShapes.pill)
                         .background(colors.tertiaryLabel),
                 )
             }
@@ -240,23 +240,31 @@ fun PaneSheet(
     }
 }
 
+/** A sheet's corners: a flat floating card. */
+private val SheetShape = ContinuousRoundedShape(28.dp)
+
 /** Where a sheet should grow from (root coordinates), e.g. the menu button; null slides it up from the bottom. */
 val LocalSheetOrigin = androidx.compose.runtime.staticCompositionLocalOf<Offset?> { null }
 
 private const val OFFSCREEN = 100_000f
 
-/** Title row for sheets: centred headline with an optional trailing "Done". */
+/** Title row for sheets: one line of `title3`, with an optional text button ("Done") at the end. */
 @Composable
 fun SheetHeader(title: String, onDone: (() -> Unit)? = null, doneLabel: String = "Done") {
-    Box(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 8.dp)) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(start = 24.dp, end = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         androidx.compose.material3.Text(
             title,
-            style = PaneTheme.type.headline,
+            style = PaneTheme.type.title3,
             color = PaneTheme.colors.label,
-            modifier = Modifier.align(Alignment.Center),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
         if (onDone != null) {
-            TextButton(doneLabel, onClick = onDone, bold = true, modifier = Modifier.align(Alignment.CenterEnd))
+            TextButton(doneLabel, onClick = onDone, bold = true)
         }
     }
 }

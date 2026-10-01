@@ -66,14 +66,25 @@ class SiteOriginsTest {
 }
 
 class ProtectionSummaryTest {
-    @Test fun defaultsAreMaximum() {
-        val summary = ProtectionSummary.of(BrowserSettings())
+    private val everythingOn = BrowserSettings(
+        trackingProtection = TrackingProtection.Strict,
+        httpsMode = HttpsMode.HttpsOnly,
+        fingerprintingProtection = true,
+    )
+
+    @Test fun everythingOnIsMaximum() {
+        val summary = ProtectionSummary.of(everythingOn)
         assertEquals(ProtectionLevel.Maximum, summary.level)
         assertEquals(summary.protections.size, summary.enabledCount)
     }
 
+    /** The defaults follow a normal browser: sites and logins keep working, so they are not "Maximum". */
+    @Test fun defaultsAreModerate() {
+        assertEquals(ProtectionLevel.Moderate, ProtectionSummary.of(BrowserSettings()).level)
+    }
+
     @Test fun weakeningLowersTheLevel() {
-        val high = ProtectionSummary.of(BrowserSettings(dnsOverHttps = DnsOverHttps.Off))
+        val high = ProtectionSummary.of(everythingOn.copy(dnsOverHttps = DnsOverHttps.Off))
         assertEquals(ProtectionLevel.High, high.level)
         assertEquals(listOf("Secure DNS"), high.disabled.map { it.name })
 

@@ -31,13 +31,13 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.pane.browser.engine.prompts.ColorRequest
 import app.pane.browser.ui.components.PaneSheet
+import app.pane.browser.ui.components.SectionLabel
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneTheme
@@ -83,17 +83,17 @@ internal fun ColorSheet(request: ColorRequest, visible: Boolean, onDone: () -> U
                         .size(56.dp)
                         .clip(PaneShapes.medium)
                         .drawBehind { drawRect(preview) }
-                        .border(0.5.dp, colors.separator, PaneShapes.medium),
+                        .border(1.dp, colors.hairline, PaneShapes.medium),
                 )
                 Column(Modifier.weight(1f)) {
-                    Text("Hex", style = PaneTheme.type.footnote, color = colors.secondaryLabel)
+                    SectionLabel("Hex")
                     Row(
                         Modifier
-                            .padding(top = 4.dp)
+                            .padding(top = 6.dp)
                             .fillMaxWidth()
-                            .height(40.dp)
+                            .height(44.dp)
                             .clip(PaneShapes.pill)
-                            .background(colors.fill)
+                            .border(1.dp, colors.tertiaryLabel, PaneShapes.pill)
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -120,12 +120,7 @@ internal fun ColorSheet(request: ColorRequest, visible: Boolean, onDone: () -> U
                 }
             }
             if (suggestions.isNotEmpty()) {
-                Text(
-                    "Suggested",
-                    style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
-                    color = colors.secondaryLabel,
-                    modifier = Modifier.padding(start = 24.dp, top = 12.dp, bottom = 8.dp),
-                )
+                SectionLabel("Suggested", modifier = Modifier.padding(start = 24.dp, top = 14.dp, bottom = 8.dp))
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 24.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -155,7 +150,7 @@ private fun Swatch(hex: String, selected: Boolean, onClick: () -> Unit) {
             .padding(4.dp)
             .clip(CircleShape)
             .background(colorOf(hex))
-            .border(0.5.dp, colors.separator, CircleShape),
+            .border(1.dp, colors.hairline, CircleShape),
     )
 }
 

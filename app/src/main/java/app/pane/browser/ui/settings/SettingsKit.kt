@@ -6,8 +6,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,9 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -44,7 +40,6 @@ import app.pane.browser.ui.components.ToggleRow
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.Motion
-import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.settings.BrowserSettings
 
@@ -57,30 +52,24 @@ internal fun rememberSettingsState(): State<BrowserSettings> =
 private val RowMin = 56.dp
 
 /**
- * Where a hairline starts in a section whose rows lead with a [SettingsIcon]: 16dp margin, the
- * 34dp tile and the 12dp gap, so separators line up under the titles rather than under the tiles.
+ * Where a hairline starts in a section whose rows lead with a [SettingsIcon]: the 20dp screen
+ * margin, the 22dp glyph and the 16dp gap, so separators line up under the titles, not the glyphs.
  */
-internal val IconSeparatorInset = 62.dp
+internal val IconSeparatorInset = 58.dp
 
 /**
- * The glyph that leads a navigation row: a small neutral tile with a monochrome line icon. Always
- * `fill` behind `label` ink, never a colour, so a column of them reads as one quiet set.
+ * The glyph that leads a navigation row on the settings home: a real line icon at 22dp in ink,
+ * with nothing behind it. Sub-screens have no glyphs, only chevrons and checks.
  */
 @Composable
 internal fun SettingsIcon(icon: ImageVector, modifier: Modifier = Modifier) {
-    val colors = PaneTheme.colors
-    Box(
-        modifier.size(34.dp).clip(PaneShapes.small).background(colors.fill),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(icon, contentDescription = null, tint = colors.label, modifier = Modifier.size(20.dp))
-    }
+    Icon(icon, contentDescription = null, tint = PaneTheme.colors.label, modifier = modifier.size(22.dp))
 }
 
 /**
  * A row that opens something: title on the left, the current value on the right. Give it an [icon]
- * on the settings home and on rows that head a screen of their own; inside a section, either every
- * row has one or none does (and the section passes [IconSeparatorInset]).
+ * only on the settings home; inside a section, either every row has one or none does (and the
+ * section passes [IconSeparatorInset]).
  */
 @Composable
 internal fun NavRow(
@@ -145,21 +134,21 @@ internal fun ActionButtonRow(title: String, onClick: () -> Unit, destructive: Bo
     ActionRow(title = title, onClick = onClick, modifier = Modifier.heightIn(min = RowMin), destructive = destructive)
 }
 
-/** A segmented control filling a grouped row, for two or three mutually exclusive modes. */
+/** A segmented control on its own row, for two or three mutually exclusive modes. */
 @Composable
 internal fun SegmentedRow(options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit) {
     SegmentedControl(
         options = options,
         selectedIndex = selectedIndex,
         onSelect = onSelect,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).height(48.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp).height(48.dp),
     )
 }
 
 /**
- * Everything an expert may want, out of the way until asked for. Collapsed by default (and
- * remembered across rotation); opening it grows the list on a spring. [content] is a stack of
- * [GroupedSection]s.
+ * Everything an expert may want, out of the way until asked for: one quiet row that opens in place.
+ * Collapsed by default (and remembered across rotation); opening it grows the list on a spring.
+ * [content] is a stack of [GroupedSection]s.
  */
 @Composable
 internal fun AdvancedSection(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
@@ -171,7 +160,7 @@ internal fun AdvancedSection(modifier: Modifier = Modifier, content: @Composable
                 ListRow(
                     title = "Advanced",
                     modifier = Modifier.heightIn(min = RowMin),
-                    leading = { SettingsIcon(PaneIcons.Options) },
+                    titleColor = PaneTheme.colors.secondaryLabel,
                     showChevron = false,
                     onClick = { expanded = !expanded },
                 ) {
@@ -179,7 +168,7 @@ internal fun AdvancedSection(modifier: Modifier = Modifier, content: @Composable
                         PaneIcons.ChevronDown,
                         contentDescription = if (expanded) "Hide advanced settings" else "Show advanced settings",
                         tint = PaneTheme.colors.tertiaryLabel,
-                        modifier = Modifier.size(18.dp).graphicsLayer { rotationZ = turn },
+                        modifier = Modifier.size(16.dp).graphicsLayer { rotationZ = turn },
                     )
                 }
             }
@@ -269,7 +258,6 @@ internal val SettingsIndex: List<SettingEntry> = listOf(
     // Appearance
     SettingEntry("Text size", "Appearance", Route.AppearanceSettings, "font larger bigger smaller zoom accessibility"),
     SettingEntry("Theme", "Appearance", Route.AppearanceSettings, "dark light automatic mode"),
-    SettingEntry("Glass effects", "Appearance", Route.AppearanceSettings, "liquid glass blur transparency full light off battery performance"),
     SettingEntry("Reduce motion", "Appearance", Route.AppearanceSettings, "animations accessibility"),
     SettingEntry("Haptics", "Appearance", Route.AppearanceSettings, "haptic feedback vibration"),
     SettingEntry("Request desktop sites", "Appearance", Route.AppearanceSettings, "advanced desktop mode"),

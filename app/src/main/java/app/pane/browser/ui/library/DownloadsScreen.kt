@@ -135,17 +135,15 @@ fun DownloadsScreen() {
                             SectionTitle(group.section.title(), Modifier.animateItem())
                         }
                         itemsIndexed(group.items, key = { _, r -> r.id }) { index, record ->
-                            val first = index == 0
                             SwipeToDelete(
                                 onDelete = { downloads.remove(record, deleteFile = false) },
                                 label = "Remove",
                                 modifier = Modifier
                                     .animateItem()
-                                    .arrive(base + index)
-                                    .groupedItem(first, index == group.items.lastIndex, colors.surface),
+                                    .arrive(base + index),
                             ) {
                                 Column {
-                                    if (!first) RowSeparator()
+                                    if (index > 0) RowSeparator()
                                     DownloadRow(
                                         record = record,
                                         onClick = { onTap(record) },
@@ -297,7 +295,7 @@ private fun DownloadProgress(record: DownloadRecord) {
         LinearProgressIndicator(
             modifier = modifier,
             color = colors.accent,
-            trackColor = colors.fill,
+            trackColor = colors.separator,
             strokeCap = StrokeCap.Round,
             gapSize = 0.dp,
         )
@@ -307,7 +305,7 @@ private fun DownloadProgress(record: DownloadRecord) {
             progress = { animated },
             modifier = modifier,
             color = colors.accent,
-            trackColor = colors.fill,
+            trackColor = colors.separator,
             strokeCap = StrokeCap.Round,
             gapSize = 0.dp,
             drawStopIndicator = {},

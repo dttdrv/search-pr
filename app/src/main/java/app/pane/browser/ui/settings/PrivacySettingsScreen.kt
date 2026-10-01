@@ -1,30 +1,34 @@
 package app.pane.browser.ui.settings
 
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.ui.browser.BiometricGate
+import app.pane.browser.ui.components.DotText
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.LargeTitleScaffold
-import app.pane.browser.ui.components.ListRow
-import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
+import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.settings.BrowserSettings
 import app.pane.core.settings.CookiePolicy
 import app.pane.core.settings.DnsOverHttps
 import app.pane.core.settings.DohProvider
 import app.pane.core.settings.HttpsMode
 import app.pane.core.settings.TrackingProtection
-import java.text.NumberFormat
 
 /**
  * Privacy in two tiers. The essentials are the few things everyone should know about: how hard
@@ -38,7 +42,6 @@ fun PrivacySettingsScreen() {
     val context = LocalContext.current
     val settings by rememberSettingsState()
     val backLabel = rememberBackLabel(Route.PrivacySettings)
-    val blocked by container.privacyStats.weekTotal.collectAsStateWithLifecycle()
     // The same check the browser uses to lock, so the switch never promises a lock that won't happen.
     val canLock = remember { BiometricGate.canLock(context) }
 
@@ -50,7 +53,7 @@ fun PrivacySettingsScreen() {
             GroupedSection(
                 modifier = Modifier.arrive(0),
                 header = "Tracker protection",
-                footer = "Strict is recommended.",
+                footer = "Strict can break some sites.",
             ) {
                 row {
                     SegmentedRow(
@@ -59,13 +62,6 @@ fun PrivacySettingsScreen() {
                         onSelect = { i ->
                             update { it.copy(trackingProtection = if (i == 1) TrackingProtection.Strict else TrackingProtection.Standard) }
                         },
-                    )
-                }
-                row {
-                    ListRow(
-                        title = "${NumberFormat.getIntegerInstance().format(blocked)} " +
-                            (if (blocked == 1) "tracker" else "trackers") + " blocked this week",
-                        modifier = Modifier.heightIn(min = 56.dp),
                     )
                 }
             }
@@ -100,8 +96,8 @@ fun PrivacySettingsScreen() {
         }
 
         item(key = "connections") {
-            GroupedSection(modifier = Modifier.arrive(2), separatorInset = IconSeparatorInset) {
-                row { NavRow("Connections", icon = PaneIcons.Transfer, onClick = { navigator.push(Route.Connections) }) }
+            GroupedSection(modifier = Modifier.arrive(2)) {
+                row { NavRow("Connections", onClick = { navigator.push(Route.Connections) }) }
             }
         }
 
@@ -211,6 +207,7 @@ fun PrivacySettingsScreen() {
     }
 }
 
+
 private fun cookieTitle(policy: CookiePolicy) = when (policy) {
     CookiePolicy.IsolateAll -> "Isolate cross-site cookies"
     CookiePolicy.BlockCrossSiteTrackers -> "Block cross-site trackers"
@@ -232,7 +229,7 @@ private fun httpsTitle(mode: HttpsMode) = when (mode) {
 }
 
 private fun httpsNote(mode: HttpsMode): String? = when (mode) {
-    HttpsMode.HttpsOnly -> "Recommended"
-    HttpsMode.HttpsFirst -> "May fall back to HTTP"
+    HttpsMode.HttpsOnly -> "Blocks plain HTTP sites"
+    HttpsMode.HttpsFirst -> "Recommended"
     HttpsMode.Off -> "Pages may load unencrypted"
 }

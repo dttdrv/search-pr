@@ -62,16 +62,13 @@ import app.pane.browser.ui.prompts.SiteInfoSheet
 import app.pane.browser.ui.tabs.TabSwitcher
 import app.pane.browser.ui.theme.DarkColors
 import app.pane.browser.ui.theme.LightColors
-import app.pane.browser.ui.theme.LocalHazeState
 import app.pane.browser.ui.theme.LocalPaneColors
 import app.pane.browser.ui.theme.Motion
+import app.pane.browser.ui.theme.EdgeFade
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.PrivateColors
-import app.pane.browser.ui.theme.ProgressiveEdge
 import app.pane.core.tabs.TabState
 import app.pane.core.url.UrlDisplay
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.FlowPreview
@@ -84,9 +81,6 @@ import kotlinx.coroutines.launch
  * The browser itself: page, start page, bottom chrome, and the overlays that grow out of it
  * (address editor, tab overview, menu, find bar, site info). Themed dark-violet in private mode.
  */
-/** How far the status area's fade reaches down into a scrolled page. */
-private val StatusFade = 26.dp
-
 @OptIn(FlowPreview::class)
 @Composable
 fun BrowserScreen() {
@@ -155,7 +149,6 @@ fun BrowserScreen() {
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // The floating bar covers this much of the page; Gecko keeps fixed footers above it until it melts away.
     val dynamicPx = with(density) { (BarMetrics.zone + navBottom).toPx() }
-    val hazeState = rememberHazeState()
     val fullscreen = tab?.fullscreen == true
 
     // Toolbar collapses with the page.
@@ -304,7 +297,7 @@ fun BrowserScreen() {
         }
     }
 
-    PaneTheme(mode = settings.theme, private = private, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion, glassQuality = settings.glassQuality) {
+    PaneTheme(mode = settings.theme, private = private, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion) {
         val colors = PaneTheme.colors
         val onPage = tab != null && tab.url.isNotEmpty()
 
@@ -343,15 +336,13 @@ fun BrowserScreen() {
         val sameMode = state.tabsIn(private)
         val index = sameMode.indexOfFirst { it.id == tab?.id }
 
-        CompositionLocalProvider(LocalHazeState provides hazeState) {
+        run {
         Box(Modifier.fillMaxSize().background(colors.background)) {
-            // Page: edge to edge, under the floating bar. Glass elsewhere blurs it.
+            // Page: truly edge to edge, under the status bar and the floating bar.
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(if (fullscreen) PaddingValues() else PaddingValues(top = statusTop))
-                    .onGloballyPositioned { chrome.pageRect = it.boundsInRoot() }
-                    .hazeSource(hazeState),
+                    .onGloballyPositioned { chrome.pageRect = it.boundsInRoot() },
             ) {
                 EngineView(
                     tab = tab,
@@ -391,28 +382,25 @@ fun BrowserScreen() {
                 }
             }
 
-            // Status area, painted with the page's own top colour. Once the page has scrolled, its
-            // lower edge dissolves into the page (a graduated blur and fade, as in Play Store)
-            // instead of ending in a hard line.
+            // Status area: the page runs underneath it, and a soft veil of the page's own top colour
+            // (strongest at the very top, gone a little below the icons) keeps the clock and battery
+            // legible without a solid band or a shadow, as in the native apps.
             if (!fullscreen) {
-                Box(Modifier.fillMaxWidth().height(statusTop).drawBehind { drawRect(statusColorState.value) })
-                val fadeAlpha = animateFloatAsState(if (chrome.scrolled) 1f else 0f, Motion.fade(220), label = "statusFade")
                 Box(
                     Modifier
-                        .offset(y = statusTop)
                         .fillMaxWidth()
-                        .height(StatusFade)
-                        .graphicsLayer { alpha = fadeAlpha.value },
-                ) {
-                    ProgressiveEdge(hazeState, top = true, height = StatusFade, tint = statusColorState.value)
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .drawBehind {
-                                drawRect(Brush.verticalGradient(listOf(statusColorState.value, statusColorState.value.copy(alpha = 0f))))
-                            },
-                    )
-                }
+                        .height(statusTop + 16.dp)
+                        .drawBehind {
+                            val tint = statusColorState.value
+                            drawRect(
+                                Brush.verticalGradient(
+                                    0f to tint.copy(alpha = 0.9f),
+                                    (statusTop.toPx() / size.height).coerceIn(0.2f, 0.9f) to tint.copy(alpha = 0.55f),
+                                    1f to tint.copy(alpha = 0f),
+                                ),
+                            )
+                        },
+                )
             }
 
             // Floating bar.

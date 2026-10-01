@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,15 +24,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.engine.prompts.SitePermissions
-import app.pane.browser.ui.components.ActionRow
 import app.pane.browser.ui.components.AlertAction
 import app.pane.browser.ui.components.AlertStyle
-import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneAlert
 import app.pane.browser.ui.components.PaneSheet
+import app.pane.browser.ui.components.Separator
+import app.pane.browser.ui.components.StatusDot
 import app.pane.browser.ui.components.TextButton
-import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.entrance
 import app.pane.core.prompts.PermissionText
@@ -55,9 +52,9 @@ private enum class Tone { Normal, Caution, Danger }
 private class SiteGrant(val permission: ContentPermission, val kind: SitePermission, val value: Int)
 
 /**
- * The sheet behind the lock mark: the host as a plain title, one line on the connection, trackers
- * blocked, the site's remembered permissions (tap one to switch it in place) and a way to wipe its
- * cookies and storage.
+ * The sheet behind the lock mark: the host as a plain title, one line on the connection (with a red
+ * light only when it is unsafe), trackers blocked, the site's remembered permissions (tap one to
+ * switch it in place) and a way to wipe its cookies and storage.
  */
 @Composable
 fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
@@ -85,17 +82,18 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
         }
         FadingColumn(Modifier.weight(1f, fill = false)) {
             Row(
-                Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 2.dp).entrance(1),
+                Modifier.fillMaxWidth().padding(start = 24.dp, end = 10.dp, top = 2.dp).entrance(1),
                 verticalAlignment = Alignment.Top,
             ) {
-                Column(Modifier.weight(1f).padding(top = 4.dp)) {
-                    Text(host, style = PaneTheme.type.title2, color = colors.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Column(Modifier.weight(1f).padding(top = 10.dp)) {
+                    Text(host, style = PaneTheme.type.title3, color = colors.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(
-                        Modifier.padding(top = 6.dp),
+                        Modifier.padding(top = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        if (connection.locked) Icon(PaneIcons.LockFill, null, tint = colors.tertiaryLabel, modifier = Modifier.size(12.dp))
+                        // A red light only when the connection is not safe; a safe one just says so.
+                        if (connection.tone != Tone.Normal) StatusDot(color = colors.signal, size = 6.dp)
                         Text(connection.title, style = PaneTheme.type.subheadline, color = connectionColor)
                     }
                 }
@@ -106,22 +104,19 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                     connection.detail,
                     style = PaneTheme.type.footnote,
                     color = colors.secondaryLabel,
-                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 8.dp).entrance(2),
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 6.dp).entrance(2),
                 )
             }
             Spacer(Modifier.height(10.dp))
 
             if (isWeb) {
-                GlassSection(entranceIndex = 3) {
-                    row {
-                        ListRow(
-                            title = "Trackers Blocked",
-                            value = (tab?.trackersBlocked ?: 0).toString(),
-                        )
-                    }
+                Separator(Modifier.padding(vertical = 4.dp))
+                FlatSection(entranceIndex = 3) {
+                    row { FlatRow("Trackers Blocked", value = (tab?.trackersBlocked ?: 0).toString()) }
                 }
 
-                GlassSection(
+                Separator(Modifier.padding(vertical = 4.dp))
+                FlatSection(
                     header = "Permissions",
                     footer = if (grants.isEmpty()) "None saved yet." else "Tap to change.",
                     entranceIndex = 4,
@@ -129,10 +124,9 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                     grants.forEach { grant ->
                         row {
                             val allowed = grant.value == ContentPermission.VALUE_ALLOW
-                            ListRow(
+                            FlatRow(
                                 title = PermissionText.settingLabel(grant.kind, grant.permission.thirdPartyOrigin),
                                 value = if (allowed) "Allowed" else "Blocked",
-                                showChevron = false,
                                 onClick = {
                                     val allow = !allowed
                                     setGrant(container, grant.permission, allow)
@@ -149,7 +143,7 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                     }
                     if (grants.isNotEmpty()) {
                         row {
-                            ActionRow("Reset Permissions", onClick = {
+                            FlatRow("Reset Permissions", onClick = {
                                 grants.forEach { resetGrant(container, it.permission) }
                                 grants = emptyList()
                                 toasts.show("Permissions reset for $host")
@@ -158,11 +152,12 @@ fun SiteInfoSheet(visible: Boolean, tabId: String?, onDismiss: () -> Unit) {
                     }
                 }
 
-                GlassSection(entranceIndex = 5 + grants.size.coerceAtMost(3)) {
-                    row { ActionRow("Clear Site Data", onClick = { confirmClear = true }, destructive = true) }
+                Separator(Modifier.padding(vertical = 4.dp))
+                FlatSection(entranceIndex = 5 + grants.size.coerceAtMost(3)) {
+                    row { FlatRow("Clear Site Data", titleColor = colors.destructive, onClick = { confirmClear = true }) }
                 }
             }
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(12.dp))
         }
     }
 

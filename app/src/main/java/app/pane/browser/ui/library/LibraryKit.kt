@@ -8,7 +8,6 @@ import android.os.Build
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
@@ -41,11 +39,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
@@ -53,22 +48,24 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.components.GroupedSection
+import app.pane.browser.ui.components.LeadingGap
+import app.pane.browser.ui.components.RowMargin
+import app.pane.browser.ui.components.SectionLabel
 import app.pane.browser.ui.components.PaneSheet
 import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.ToastState
+import app.pane.browser.ui.components.rowPress
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
-import app.pane.browser.ui.theme.ContinuousRoundedShape
 import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.Motion
-import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
 import kotlinx.coroutines.delay
@@ -93,31 +90,16 @@ internal fun Modifier.arrive(index: Int): Modifier {
 
 private const val ARRIVE_LIMIT = 9
 
-private val TopRounded = ContinuousRoundedShape(CornerSize(20.dp), CornerSize(20.dp), CornerSize(0.dp), CornerSize(0.dp))
-private val BottomRounded = ContinuousRoundedShape(CornerSize(0.dp), CornerSize(0.dp), CornerSize(20.dp), CornerSize(20.dp))
-
 /**
- * One row of an inset-grouped card built from separate lazy items, so rows can animate in and out
- * individually while the card keeps its rounded ends.
+ * A date or group heading above library rows: small capitals, with 28dp of air before it. The
+ * rows under it are flat, separated by hairlines, with no card behind them.
  */
-internal fun Modifier.groupedItem(first: Boolean, last: Boolean, background: Color): Modifier {
-    val shape: Shape = when {
-        first && last -> PaneShapes.large
-        first -> TopRounded
-        last -> BottomRounded
-        else -> RectangleShape
-    }
-    return this.padding(horizontal = 16.dp).clip(shape).background(background)
-}
-
-/** Section title matching [GroupedSection]'s header, for sections built from lazy items. */
 @Composable
 internal fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-    Text(
+    SectionLabel(
         text,
-        style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
         color = PaneTheme.colors.secondaryLabel,
-        modifier = modifier.padding(start = 32.dp, end = 32.dp, top = 24.dp, bottom = 8.dp),
+        modifier = modifier.padding(start = RowMargin, end = RowMargin, top = 28.dp, bottom = 4.dp),
     )
 }
 
@@ -128,14 +110,15 @@ internal fun SectionFooter(text: String, modifier: Modifier = Modifier) {
         text,
         style = PaneTheme.type.footnote,
         color = PaneTheme.colors.secondaryLabel,
-        modifier = modifier.padding(start = 32.dp, end = 32.dp, top = 7.dp),
+        modifier = modifier.padding(start = RowMargin, end = RowMargin, top = 12.dp),
     )
 }
 
 /**
- * A list row with a one-line title and subtitle, press and long-press. Unlike
+ * A list row with a one-line title and subtitle, press (it dims) and long-press. Unlike
  * [app.pane.browser.ui.components.ListRow] it supports long-press menus and extra content
- * beneath the text (a progress bar).
+ * beneath the text (a progress bar). Its text starts at 20dp, or after a 28dp icon and a 16dp
+ * gap (64dp) when it has a [leading] mark, which is where [RowSeparator] should start.
  */
 @Composable
 internal fun LibraryRow(
@@ -153,11 +136,11 @@ internal fun LibraryRow(
     Row(
         modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 60.dp)
-            .combinedClickable(onLongClick = onLongClick, onClick = onClick)
-            .padding(start = 16.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
+            .defaultMinSize(minHeight = 64.dp)
+            .rowPress(onLongClick = onLongClick, onClick = onClick)
+            .padding(start = RowMargin, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(LeadingGap),
     ) {
         leading?.invoke()
         Column(Modifier.weight(1f)) {
@@ -171,10 +154,16 @@ internal fun LibraryRow(
     }
 }
 
-/** Hairline between rows of a lazily built card. */
+/** Where a library row's text starts when it leads with a 28dp site icon. */
+internal val SiteRowInset = 64.dp
+
+/**
+ * Hairline between rows of a lazily built list, from [inset] (where the text starts) to the screen
+ * margin.
+ */
 @Composable
-internal fun RowSeparator() {
-    Separator(Modifier.padding(start = 16.dp))
+internal fun RowSeparator(inset: Dp = RowMargin) {
+    Separator(Modifier.padding(start = inset, end = RowMargin))
 }
 
 /**
@@ -244,7 +233,8 @@ internal fun SwipeToDelete(
             Modifier
                 .fillMaxWidth()
                 .offset { IntOffset(offset.value.roundToInt(), 0) }
-                .background(colors.surface)
+                // Opaque, so the red action only shows once the row has moved off it.
+                .background(colors.background)
                 .draggable(
                     orientation = Orientation.Horizontal,
                     enabled = enabled,
@@ -307,7 +297,7 @@ internal fun ActionSheet(
     val colors = PaneTheme.colors
     PaneSheet(visible = visible, onDismiss = onDismiss) {
         Row(
-            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 4.dp),
+            Modifier.fillMaxWidth().padding(start = RowMargin, end = RowMargin, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -327,11 +317,11 @@ internal fun ActionSheet(
                         Modifier
                             .fillMaxWidth()
                             .defaultMinSize(minHeight = 56.dp)
-                            .clickable {
+                            .rowPress {
                                 onDismiss()
                                 action.onClick()
                             }
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = RowMargin),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(action.label, style = PaneTheme.type.body, color = tint, modifier = Modifier.weight(1f))
@@ -357,7 +347,7 @@ internal fun EmptyState(title: String, message: String, modifier: Modifier = Mod
     }
 }
 
-/** A borderless text field for grouped sections, like the fields in iOS edit sheets. */
+/** A borderless text field for list sections: type on the row itself, no box around it. */
 @Composable
 internal fun FieldRow(
     value: String,
@@ -369,7 +359,7 @@ internal fun FieldRow(
     val colors = PaneTheme.colors
     val isUri = keyboardType == KeyboardType.Uri
     Box(
-        modifier.fillMaxWidth().defaultMinSize(minHeight = 44.dp).padding(horizontal = 16.dp, vertical = 11.dp),
+        modifier.fillMaxWidth().defaultMinSize(minHeight = 56.dp).padding(horizontal = RowMargin, vertical = 11.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         if (value.isEmpty()) Text(placeholder, style = PaneTheme.type.body, color = colors.tertiaryLabel, maxLines = 1)

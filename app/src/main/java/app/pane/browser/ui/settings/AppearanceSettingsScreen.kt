@@ -1,43 +1,34 @@
 package app.pane.browser.ui.settings
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.components.DotText
 import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.LargeTitleScaffold
 import app.pane.browser.ui.library.arrive
@@ -45,11 +36,9 @@ import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.Motion
-import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.settings.BrowserSettings
-import app.pane.core.settings.GlassQuality
 import app.pane.core.settings.ThemeMode
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -58,9 +47,9 @@ import kotlin.math.roundToInt
 private val TextScales: List<Float> = (8..20).map { it / 10f }
 
 /**
- * Text size first, big and obvious, then theme, how much glass to draw, and the two everyday
- * switches. What the toolbar and tabs do lives in Tabs & toolbar; the rest sits under Advanced.
- * Every change applies live.
+ * Text size first, one dotted number and a slider, then theme and the two everyday switches. What
+ * the toolbar and tabs do lives in Tabs & toolbar; the rest sits under Advanced. Every change
+ * applies live.
  */
 @Composable
 fun AppearanceSettingsScreen() {
@@ -76,16 +65,15 @@ fun AppearanceSettingsScreen() {
             val percent = (settings.textScale * 100).roundToInt()
             GroupedSection(modifier = Modifier.arrive(0), header = "Text size") {
                 row {
-                    Column(Modifier.padding(top = 16.dp, bottom = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("$percent%", style = PaneTheme.type.title1, color = PaneTheme.colors.label)
+                    Column(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp)) {
+                        DotText("$percent%", modifier = Modifier.padding(horizontal = 20.dp))
                         Text(
                             "The quick brown fox",
                             style = PaneTheme.type.body.copy(fontSize = (17f * settings.textScale).sp, lineHeight = (23f * settings.textScale).sp),
                             color = PaneTheme.colors.label,
-                            textAlign = TextAlign.Center,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                            modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
                         )
                         TextSizeSlider(
                             value = settings.textScale,
@@ -103,22 +91,6 @@ fun AppearanceSettingsScreen() {
                         options = listOf("Automatic", "Light", "Dark"),
                         selectedIndex = settings.theme.ordinal,
                         onSelect = { i -> update { it.copy(theme = ThemeMode.entries[i]) } },
-                    )
-                }
-            }
-        }
-
-        item(key = "glass") {
-            GroupedSection(
-                modifier = Modifier.arrive(2),
-                header = "Glass effects",
-                footer = "Light is easier on the battery.",
-            ) {
-                row {
-                    SegmentedRow(
-                        options = listOf("Full", "Light", "Off"),
-                        selectedIndex = settings.glassQuality.ordinal,
-                        onSelect = { i -> update { it.copy(glassQuality = GlassQuality.entries[i]) } },
                     )
                 }
             }
@@ -173,7 +145,7 @@ private fun TextSizeSlider(value: Float, onValueChange: (Float) -> Unit) {
     val haptics = rememberHaptics()
     val index = TextScales.indices.minByOrNull { abs(TextScales[it] - value) } ?: 2
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -199,15 +171,19 @@ private fun TextSizeSlider(value: Float, onValueChange: (Float) -> Unit) {
     }
 }
 
-/** A track with [count] detents and a springy thumb; tap or drag anywhere to pick a detent. */
+/**
+ * A thin ink track with a dot at every detent and a solid round thumb; tap or drag anywhere to pick
+ * a detent. It is all drawn in one pass, and the thumb's position is read only while drawing.
+ */
 @Composable
 private fun StepTrack(count: Int, index: Int, onIndex: (Int) -> Unit, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
     val currentOnIndex by rememberUpdatedState(onIndex)
-    val position by animateFloatAsState(index.toFloat() / (count - 1).coerceAtLeast(1), Motion.snappy(), label = "thumb")
+    val position = animateFloatAsState(index.toFloat() / (count - 1).coerceAtLeast(1), Motion.snappy(), label = "thumb")
+    // The thumb's slot: it is drawn smaller, but the touch target and the travel use this width.
     val thumb = 32.dp
 
-    BoxWithConstraints(
+    Box(
         modifier
             .pointerInput(count) {
                 // Measured per event, so the mapping follows size changes such as rotation.
@@ -220,51 +196,39 @@ private fun StepTrack(count: Int, index: Int, onIndex: (Int) -> Unit, modifier: 
                     change.consume()
                     currentOnIndex(detent(change.position.x))
                 }
-            },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        val trackWidth = maxWidth - thumb
-        // Detent ticks under the track.
-        Row(
-            Modifier.padding(horizontal = thumb / 2).fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            repeat(count) {
-                Box(Modifier.width(1.5.dp).height(10.dp).clip(PaneShapes.pill).background(colors.tertiaryLabel))
             }
-        }
-        Box(
-            Modifier
-                .padding(horizontal = thumb / 2)
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(PaneShapes.pill)
-                .background(colors.fill),
-        )
-        // The filled part of the track follows the thumb; its width is read while drawing.
-        Box(
-            Modifier
-                .padding(horizontal = thumb / 2)
-                .fillMaxWidth()
-                .height(6.dp)
-                .drawBehind {
-                    drawRoundRect(
-                        color = colors.accent,
-                        size = Size(size.width * position, size.height),
-                        cornerRadius = CornerRadius(size.height / 2f),
-                    )
-                },
-        )
-        Box(
-            Modifier
-                .offset { IntOffset((trackWidth * position).roundToPx(), 0) }
-                .size(thumb)
-                .shadow(4.dp, CircleShape, ambientColor = Color.Black.copy(alpha = 0.2f), spotColor = Color.Black.copy(alpha = 0.25f))
-                .clip(CircleShape)
-                .background(Color.White),
-        )
-    }
+            .drawBehind {
+                val slot = thumb.toPx()
+                val usable = (size.width - slot).coerceAtLeast(1f)
+                val cy = size.height / 2f
+                val line = 2.dp.toPx()
+                val travelled = usable * position.value
+                val left = slot / 2f
+                // The track: ink up to the thumb, a faint line beyond it.
+                drawRoundRect(
+                    colors.tertiaryLabel,
+                    topLeft = Offset(left, cy - line / 2f),
+                    size = Size(usable, line),
+                    cornerRadius = CornerRadius(line / 2f),
+                )
+                drawRoundRect(
+                    colors.label,
+                    topLeft = Offset(left, cy - line / 2f),
+                    size = Size(travelled, line),
+                    cornerRadius = CornerRadius(line / 2f),
+                )
+                // A dot at each detent, ink where the thumb has been and faint where it has not.
+                for (i in 0 until count) {
+                    val x = left + usable * i / (count - 1).coerceAtLeast(1)
+                    val passed = x <= left + travelled + 0.5f
+                    drawCircle(if (passed) colors.label else colors.tertiaryLabel, 2.5.dp.toPx(), Offset(x, cy))
+                }
+                // The thumb: a solid ink dot with a thin gap of page around it.
+                val centre = Offset(left + travelled, cy)
+                drawCircle(colors.background, 11.dp.toPx(), centre)
+                drawCircle(colors.label, 9.dp.toPx(), centre)
+            },
+    )
 }
 
 private fun detentAt(x: Float, usableWidth: Float, count: Int): Int =

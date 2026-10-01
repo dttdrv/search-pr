@@ -40,9 +40,9 @@ import androidx.core.content.getSystemService
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.engine.prompts.ContextMenuRequest
-import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneSheet
+import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.ToastState
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
@@ -65,8 +65,9 @@ import kotlin.coroutines.resume
 private class MenuItem(val label: String, val destructive: Boolean = false, val action: () -> Unit)
 
 /**
- * The long-press menu for links and media, a floating glass list: the host of what was pressed
- * (with a preview for images) and then plain text rows that arrive one after another.
+ * The long-press menu for links and media, a flat floating sheet: the host of what was pressed
+ * (with a preview for images) and then plain text rows, a hairline between them, that arrive one
+ * after another.
  */
 @Composable
 internal fun ContextMenuSheet(request: ContextMenuRequest, visible: Boolean, onDone: () -> Unit) {
@@ -126,25 +127,25 @@ internal fun ContextMenuSheet(request: ContextMenuRequest, visible: Boolean, onD
             ) {
                 val image = preview
                 if (image != null) {
-                    Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
                         Image(
                             bitmap = image,
                             contentDescription = request.altText,
                             contentScale = ContentScale.Fit,
-                            modifier = Modifier.heightIn(max = 220.dp).clip(PaneShapes.large),
+                            modifier = Modifier.heightIn(max = 220.dp).clip(PaneShapes.medium),
                         )
                     }
                 }
             }
             MenuHeader(request, Modifier.entrance(1))
             groups.forEachIndexed { g, items ->
-                GlassSection(entranceIndex = 2 + groups.take(g).sumOf { it.size }) {
+                Separator(Modifier.padding(vertical = 4.dp))
+                FlatSection(entranceIndex = 2 + groups.take(g).sumOf { it.size }) {
                     items.forEach { item ->
                         row {
-                            ListRow(
+                            FlatRow(
                                 title = item.label,
                                 titleColor = if (item.destructive) colors.destructive else colors.label,
-                                showChevron = false,
                                 onClick = {
                                     item.action()
                                     onDone()
@@ -154,7 +155,7 @@ internal fun ContextMenuSheet(request: ContextMenuRequest, visible: Boolean, onD
                     }
                 }
             }
-            Box(Modifier.height(10.dp))
+            Box(Modifier.height(8.dp))
         }
     }
 }
@@ -164,7 +165,7 @@ internal fun ContextMenuSheet(request: ContextMenuRequest, visible: Boolean, onD
 private fun MenuHeader(request: ContextMenuRequest, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
     val target = request.linkUri ?: request.srcUri.orEmpty()
-    Column(modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 8.dp)) {
+    Column(modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 12.dp)) {
         request.label?.let {
             Text(it, style = PaneTheme.type.headline, color = colors.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }

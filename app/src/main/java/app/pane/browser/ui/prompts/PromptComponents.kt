@@ -13,12 +13,14 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -35,12 +37,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -49,24 +48,21 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import app.pane.browser.ui.components.ButtonStyle
+import app.pane.browser.ui.components.OutlineButton
 import app.pane.browser.ui.components.PrimaryButton
+import app.pane.browser.ui.components.SectionLabel
 import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.autofill
 import app.pane.browser.ui.components.excludeFromAutofill
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.theme.ContinuousRoundedShape
+import app.pane.browser.ui.theme.EdgeFade
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
-import app.pane.browser.ui.theme.ProgressiveEdge
 import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.rememberHaptics
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
-import dev.chrisbanes.haze.rememberHazeState
 
-/** The text field inside an alert: a soft pill of fill on the glass, no border, no floating label. */
+/** The text field inside an alert: a hairline-outlined box, no fill, no floating label. */
 @Composable
 internal fun AlertTextField(
     value: String,
@@ -84,10 +80,10 @@ internal fun AlertTextField(
     Box(
         modifier
             .fillMaxWidth()
-            .height(46.dp)
+            .height(48.dp)
             .clip(PaneShapes.medium)
-            .background(colors.fill)
-            .padding(horizontal = 14.dp),
+            .border(1.dp, colors.tertiaryLabel, PaneShapes.medium)
+            .padding(horizontal = 16.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         if (value.isEmpty()) {
@@ -160,18 +156,20 @@ internal fun OptOutRow(checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     }
 }
 
-/** A big plain title for the top of a sheet, with an optional line of body text under it. */
+/** The title of a sheet in `title3`, with an optional quiet line under it. */
 @Composable
 internal fun SheetTitle(title: String, modifier: Modifier = Modifier, subtitle: String? = null) {
     val colors = PaneTheme.colors
-    Column(modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 14.dp)) {
-        Text(title, style = PaneTheme.type.title2, color = colors.label, maxLines = 3, overflow = TextOverflow.Ellipsis)
+    Column(modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 2.dp, bottom = 12.dp)) {
+        Text(title, style = PaneTheme.type.title3, color = colors.label, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (subtitle != null) {
             Text(
                 subtitle,
                 style = PaneTheme.type.subheadline,
                 color = colors.secondaryLabel,
-                modifier = Modifier.padding(top = 6.dp),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
             )
         }
     }
@@ -179,7 +177,7 @@ internal fun SheetTitle(title: String, modifier: Modifier = Modifier, subtitle: 
 
 /**
  * The action buttons that close a sheet: a solid-ink pill for the primary action and, optionally, a
- * tinted pill for the other one, stacked or side by side.
+ * hairline-outlined pill for the other one, stacked or side by side.
  */
 @Composable
 internal fun SheetButtons(
@@ -190,24 +188,87 @@ internal fun SheetButtons(
     onSecondary: (() -> Unit)? = null,
     sideBySide: Boolean = false,
 ) {
-    val padding = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 14.dp)
+    val padding = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 16.dp)
     if (sideBySide && secondary != null && onSecondary != null) {
         Row(modifier.then(padding), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            PrimaryButton(secondary, onSecondary, Modifier.weight(1f), style = ButtonStyle.Tinted)
+            OutlineButton(secondary, onSecondary, Modifier.weight(1f))
             PrimaryButton(primary, onPrimary, Modifier.weight(1f))
         }
     } else {
         Column(modifier.then(padding), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             PrimaryButton(primary, onPrimary)
             if (secondary != null && onSecondary != null) {
-                PrimaryButton(secondary, onSecondary, style = ButtonStyle.Tinted)
+                OutlineButton(secondary, onSecondary, Modifier.fillMaxWidth())
             }
         }
     }
 }
 
-/** Collects the rows of a [GlassSection] so hairlines can be drawn between them. */
-internal class GlassRows {
+/**
+ * One flat, full-width row for sheets: a title, an optional quiet value, an optional control
+ * ([trailing], such as a switch) and an optional chevron. No fill, no box; the hairlines between
+ * rows come from [FlatSection].
+ */
+@Composable
+internal fun FlatRow(
+    title: String,
+    modifier: Modifier = Modifier,
+    titleColor: Color = PaneTheme.colors.label,
+    value: String? = null,
+    chevron: Boolean = false,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    val colors = PaneTheme.colors
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 54.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 24.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            title,
+            style = PaneTheme.type.body,
+            color = titleColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (value != null) {
+            Text(
+                value,
+                style = PaneTheme.type.body,
+                color = colors.secondaryLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 180.dp),
+            )
+        }
+        trailing?.invoke()
+        if (chevron) Icon(PaneIcons.ChevronRight, null, tint = colors.tertiaryLabel, modifier = Modifier.size(15.dp))
+    }
+}
+
+/** A [FlatRow] in a single-choice list: a tick at the end when selected. */
+@Composable
+internal fun FlatCheckRow(title: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    FlatRow(
+        title,
+        modifier = modifier,
+        onClick = onClick,
+        trailing = {
+            Box(Modifier.width(22.dp), contentAlignment = Alignment.Center) {
+                if (selected) Icon(PaneIcons.Check, null, tint = PaneTheme.colors.label, modifier = Modifier.size(19.dp))
+            }
+        },
+    )
+}
+
+/** Collects the rows of a [FlatSection] so hairlines can be drawn between them. */
+internal class FlatRows {
     val rows = mutableListOf<@Composable () -> Unit>()
 
     fun row(content: @Composable () -> Unit) {
@@ -216,98 +277,71 @@ internal class GlassRows {
 }
 
 /**
- * A group of rows on a translucent fill, so the glass of the sheet shows through (unlike
- * GroupedSection, whose rows sit on an opaque surface). Hairlines are inset 16dp. When
- * [entranceIndex] is 0 or more, each row arrives with a staggered entrance starting at that beat.
+ * A group of [FlatRow]s in a sheet: no fill, a hairline between rows (inset to the text), an
+ * optional small-capitals [header] and a quiet [footer]. When [entranceIndex] is 0 or more, each
+ * row arrives with a staggered entrance starting at that beat.
  */
 @Composable
-internal fun GlassSection(
+internal fun FlatSection(
     modifier: Modifier = Modifier,
     header: String? = null,
     footer: String? = null,
     entranceIndex: Int = -1,
-    rows: GlassRows.() -> Unit,
+    rows: FlatRows.() -> Unit,
 ) {
     val colors = PaneTheme.colors
-    val built = GlassRows().apply(rows).rows
-    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+    val built = FlatRows().apply(rows).rows
+    Column(modifier.fillMaxWidth()) {
         if (header != null) {
-            Text(
-                header,
-                style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
-                color = colors.secondaryLabel,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
-            )
+            SectionLabel(header, modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 4.dp))
         }
-        if (built.isNotEmpty()) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(PaneShapes.large)
-                    .background(colors.secondaryFill),
-            ) {
-                built.forEachIndexed { index, row ->
-                    Box(if (entranceIndex >= 0) Modifier.entrance(entranceIndex + index) else Modifier) { row() }
-                    if (index < built.lastIndex) Separator(Modifier.padding(start = 16.dp))
-                }
-            }
+        built.forEachIndexed { index, row ->
+            Box(if (entranceIndex >= 0) Modifier.entrance(entranceIndex + index) else Modifier) { row() }
+            if (index < built.lastIndex) Separator(Modifier.padding(horizontal = 24.dp))
         }
         if (footer != null) {
             Text(
                 footer,
                 style = PaneTheme.type.footnote,
                 color = colors.secondaryLabel,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 6.dp, bottom = 4.dp),
             )
         }
     }
 }
 
-private val EdgeFade = 28.dp
+private val ScrollFadeHeight = 28.dp
 
 /**
- * The top and bottom edges of scrolling content in a sheet: a progressive blur that dissolves
- * whatever slides under it instead of cutting it off. Each edge fades in as the content moves
- * under it ([top] and [bottom] return how many [EdgeFade]s of content are hidden there, read while
- * drawing so nothing recomposes as it scrolls) and is invisible when there is nothing more to see.
- * The scrolling content must be `hazeSource(haze)`.
+ * The top and bottom edges of scrolling content in a sheet: a plain fade into the sheet's own fill
+ * instead of a hard cut. Each edge fades in as the content moves under it ([top] and [bottom]
+ * return how many fade-heights of content are hidden there, read while drawing so nothing
+ * recomposes as it scrolls) and is invisible when there is nothing more to see.
  */
 @Composable
-internal fun BoxScope.ScrollEdges(haze: HazeState, top: () -> Float, bottom: () -> Float) {
-    ProgressiveEdge(
-        haze,
+internal fun BoxScope.ScrollEdges(top: () -> Float, bottom: () -> Float) {
+    val fill = PaneTheme.colors.floating
+    EdgeFade(
         top = true,
-        height = EdgeFade,
+        height = ScrollFadeHeight,
         modifier = Modifier.align(Alignment.TopCenter).graphicsLayer { alpha = top().coerceIn(0f, 1f) },
+        color = fill,
     )
-    ProgressiveEdge(
-        haze,
+    EdgeFade(
         top = false,
-        height = EdgeFade,
+        height = ScrollFadeHeight,
         modifier = Modifier.align(Alignment.BottomCenter).graphicsLayer { alpha = bottom().coerceIn(0f, 1f) },
+        color = fill,
     )
 }
 
-/** A vertically scrolling column for sheets whose top and bottom edges dissolve into a progressive blur. */
+/** A vertically scrolling column for sheets whose top and bottom edges fade into the sheet. */
 @Composable
 internal fun FadingColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    val haze = rememberHazeState()
     val scroll = rememberScrollState()
-    val fadePx = with(LocalDensity.current) { EdgeFade.toPx() }
+    val fadePx = with(LocalDensity.current) { ScrollFadeHeight.toPx() }
     Box(modifier) {
-        Column(Modifier.fillMaxWidth().hazeSource(haze).verticalScroll(scroll), content = content)
-        ScrollEdges(haze, top = { scroll.value / fadePx }, bottom = { (scroll.maxValue - scroll.value) / fadePx })
-    }
-}
-
-/** Shape of one row in a list of separate lazy items, so they read as one rounded card. */
-internal fun groupedRowShape(first: Boolean, last: Boolean): Shape {
-    val r = CornerSize(20.dp)
-    val none = CornerSize(0.dp)
-    return when {
-        first && last -> PaneShapes.large
-        first -> ContinuousRoundedShape(r, r, none, none)
-        last -> ContinuousRoundedShape(none, none, r, r)
-        else -> RectangleShape
+        Column(Modifier.fillMaxWidth().verticalScroll(scroll), content = content)
+        ScrollEdges(top = { scroll.value / fadePx }, bottom = { (scroll.maxValue - scroll.value) / fadePx })
     }
 }

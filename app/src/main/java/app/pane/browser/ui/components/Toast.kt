@@ -8,7 +8,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,13 +28,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.floating
 import kotlinx.coroutines.delay
 
 data class Toast(
@@ -64,7 +62,7 @@ class ToastState {
     }
 }
 
-/** Dynamic-Island-style pill that drops in from the top. */
+/** A small solid pill that drops in from the top: a short line and, sometimes, one text action. */
 @Composable
 fun ToastHost(state: ToastState, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
@@ -79,8 +77,8 @@ fun ToastHost(state: ToastState, modifier: Modifier = Modifier) {
         AnimatedContent(
             targetState = toast,
             transitionSpec = {
-                (slideInVertically(Motion.bouncy()) { -it * 2 } + scaleIn(Motion.bouncy(), initialScale = 0.6f) + fadeIn(Motion.fade(120)))
-                    .togetherWith(slideOutVertically(Motion.smooth()) { -it * 2 } + scaleOut(Motion.smooth(), targetScale = 0.7f) + fadeOut(Motion.fade(150)))
+                (slideInVertically(Motion.bouncy()) { -it * 2 } + scaleIn(Motion.bouncy(), initialScale = 0.85f) + fadeIn(Motion.fade(120)))
+                    .togetherWith(slideOutVertically(Motion.smooth()) { -it * 2 } + scaleOut(Motion.smooth(), targetScale = 0.85f) + fadeOut(Motion.fade(150)))
             },
             contentKey = { it?.id },
             label = "toast",
@@ -90,23 +88,31 @@ fun ToastHost(state: ToastState, modifier: Modifier = Modifier) {
                     Modifier
                         .widthIn(max = 420.dp)
                         .heightIn(min = 44.dp)
-                        .shadow(18.dp, PaneShapes.pill, ambientColor = colors.shadow, spotColor = colors.shadow)
-                        .clip(PaneShapes.pill)
-                        .background(colors.accent)
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                        .floating(PaneShapes.pill, shadow = 8.dp)
+                        .padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    Text(t.message, style = PaneTheme.type.subheadline, color = colors.onAccent, maxLines = 2)
+                    Text(
+                        t.message,
+                        style = PaneTheme.type.subheadline,
+                        color = colors.label,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
                     if (t.actionLabel != null && t.action != null) {
                         Text(
                             t.actionLabel,
                             style = PaneTheme.type.headline,
-                            color = colors.onAccent.copy(alpha = 0.72f),
-                            modifier = Modifier.pressDim {
-                                t.action.invoke()
-                                state.dismiss()
-                            },
+                            color = colors.label,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .pressDim {
+                                    t.action.invoke()
+                                    state.dismiss()
+                                }
+                                .padding(vertical = 6.dp),
                         )
                     }
                 }

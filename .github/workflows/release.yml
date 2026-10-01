@@ -137,7 +137,7 @@ jobs:
           {
             echo "## Pane $VERSION"
             echo
-            echo "A private, minimal browser built on Firefox's GeckoView engine, with liquid-glass chrome and full add-on support."
+            echo "A minimal browser built on Firefox's GeckoView engine, with a flat black-and-white design and full add-on support."
             echo
             echo "### Which APK?"
             echo "| Phone | File |"

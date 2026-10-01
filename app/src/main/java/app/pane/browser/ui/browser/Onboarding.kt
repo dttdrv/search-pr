@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
@@ -14,16 +15,20 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,25 +39,33 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.components.DotText
+import app.pane.browser.ui.components.EngineIcon
+import app.pane.browser.ui.components.PaneSwitch
 import app.pane.browser.ui.components.PrimaryButton
-import app.pane.browser.ui.components.SegmentedControl
+import app.pane.browser.ui.components.SectionLabel
+import app.pane.browser.ui.components.Separator
+import app.pane.browser.ui.components.StatusDot
 import app.pane.browser.ui.components.TextButton
-import app.pane.browser.ui.components.ToggleRow
+import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.theme.Motion
-import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.entrance
 import app.pane.core.extensions.Amo
 import app.pane.core.search.SearchEngines
 
 /**
- * First launch: what Pane is, three choices that matter (search engine, content blocker, default
- * browser), then out of the way. Everything here can be changed later in Settings.
+ * First launch: what Pane is in three lines, then three choices that matter (search engine,
+ * content blocker, default browser), then out of the way. Plain type and hairlines, no boxes.
+ * Everything here can be changed later in Settings.
  */
 @Composable
 fun Onboarding(visible: Boolean, onDone: () -> Unit) {
@@ -68,6 +81,12 @@ fun Onboarding(visible: Boolean, onDone: () -> Unit) {
 }
 
 private val choices = SearchEngines.defaults
+
+private val points = listOf(
+    "One floating bar for everything",
+    "Firefox extensions, like uBlock Origin",
+    "Your passwords stay with your phone",
+)
 
 @Composable
 private fun OnboardingContent(onDone: () -> Unit) {
@@ -103,50 +122,30 @@ private fun OnboardingContent(onDone: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Column(Modifier.widthIn(max = 520.dp).fillMaxWidth()) {
-                    Spacer(Modifier.height(56.dp))
-                    Text("Welcome to Pane", style = PaneTheme.type.largeTitle, color = colors.label, modifier = Modifier.entrance(0))
-                    Spacer(Modifier.height(32.dp))
-                    Column(verticalArrangement = Arrangement.spacedBy(22.dp)) {
-                        Statement(
-                            "Private by default",
-                            "Strict tracking protection, isolated cookies, HTTPS-only and encrypted DNS. No telemetry, ever.",
-                            Modifier.entrance(1),
-                        )
-                        Statement(
-                            "Real extensions",
-                            "Install Firefox add-ons like uBlock Origin and Dark Reader.",
-                            Modifier.entrance(2),
-                        )
-                        Statement(
-                            "Built for your thumb",
-                            "The address bar lives at the bottom. Swipe it to switch tabs, swipe up for all tabs.",
-                            Modifier.entrance(3),
-                        )
-                    }
-                    Spacer(Modifier.height(36.dp))
-                    Column(Modifier.entrance(4)) {
-                        Text(
-                            "Search engine",
-                            style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
-                            color = colors.secondaryLabel,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-                        )
-                        SegmentedControl(choices.map { it.name }, engine, { engine = it }, Modifier.fillMaxWidth())
-                    }
                     Spacer(Modifier.height(24.dp))
-                    Column(
-                        Modifier
-                            .entrance(5)
-                            .fillMaxWidth()
-                            .clip(PaneShapes.large)
-                            .background(colors.surface),
-                    ) {
-                        ToggleRow(
-                            "Block ads with uBlock Origin",
-                            checked = blocker,
-                            onCheckedChange = { blocker = it },
-                            subtitle = "Downloads uBlock Origin from addons.mozilla.org. You'll be asked to approve its permissions.",
-                        )
+                    DotText("PANE", Modifier.entrance(0), dot = 3.dp)
+                    Spacer(Modifier.height(44.dp))
+                    Text("Welcome", style = PaneTheme.type.largeTitle, color = colors.label, modifier = Modifier.entrance(1))
+                    Spacer(Modifier.height(24.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        points.forEachIndexed { i, line -> Point(line, Modifier.entrance(2 + i)) }
+                    }
+
+                    Spacer(Modifier.height(44.dp))
+                    SectionLabel("Search with", Modifier.entrance(5).padding(bottom = 10.dp))
+                    Column(Modifier.entrance(6).selectableGroup()) {
+                        Separator()
+                        choices.forEachIndexed { i, c ->
+                            EngineRow(c.id, c.name, selected = i == engine, onClick = { engine = i })
+                            Separator()
+                        }
+                    }
+
+                    Spacer(Modifier.height(28.dp))
+                    Column(Modifier.entrance(7)) {
+                        Separator()
+                        ToggleLine("Block ads with uBlock Origin", checked = blocker, onCheckedChange = { blocker = it })
+                        Separator()
                     }
                     Spacer(Modifier.height(24.dp))
                 }
@@ -154,7 +153,7 @@ private fun OnboardingContent(onDone: () -> Unit) {
             // Actions stay put at the bottom, like a setup screen.
             Column(
                 Modifier
-                    .entrance(6)
+                    .entrance(8)
                     .fillMaxWidth()
                     .background(colors.background)
                     .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -166,8 +165,9 @@ private fun OnboardingContent(onDone: () -> Unit) {
                     val roles = context.getSystemService(RoleManager::class.java)
                     if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_BROWSER) && !roles.isRoleHeld(RoleManager.ROLE_BROWSER)) {
                         TextButton(
-                            "Make Pane Your Default Browser",
+                            "Make Pane your default browser",
                             onClick = { roleLauncher.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER)) },
+                            color = colors.secondaryLabel,
                         )
                     }
                 }
@@ -176,13 +176,74 @@ private fun OnboardingContent(onDone: () -> Unit) {
     }
 }
 
-/** A short statement: one bold line, one quiet paragraph. No icon. */
+/** One short line led by a small ink dot. */
 @Composable
-private fun Statement(title: String, body: String, modifier: Modifier = Modifier) {
+private fun Point(text: String, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
-    Column(modifier.fillMaxWidth()) {
-        Text(title, style = PaneTheme.type.title3, color = colors.label)
-        Spacer(Modifier.height(4.dp))
-        Text(body, style = PaneTheme.type.body, color = colors.secondaryLabel)
+    Row(
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        StatusDot(color = colors.label, size = 6.dp)
+        Text(text, style = PaneTheme.type.body, color = colors.label)
+    }
+}
+
+/** A search engine: its mark, its name and a radio dot at the end. */
+@Composable
+private fun EngineRow(id: String, name: String, selected: Boolean, onClick: () -> Unit) {
+    val colors = PaneTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 56.dp)
+            .semantics { this.selected = selected }
+            .pressDim(role = Role.RadioButton, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        EngineIcon(id, 28.dp)
+        Text(name, style = PaneTheme.type.body, color = colors.label, modifier = Modifier.weight(1f))
+        RadioDot(selected)
+    }
+}
+
+/** A hairline circle that fills with ink, from the middle out, when chosen. */
+@Composable
+private fun RadioDot(selected: Boolean) {
+    val colors = PaneTheme.colors
+    val fill by animateFloatAsState(if (selected) 1f else 0f, Motion.snappy(), label = "radio")
+    Box(
+        Modifier
+            .size(22.dp)
+            .drawBehind {
+                val stroke = 1.5.dp.toPx()
+                drawCircle(
+                    colors.label.copy(alpha = 0.3f + 0.7f * fill),
+                    radius = size.minDimension / 2f - stroke / 2f,
+                    style = Stroke(stroke),
+                )
+                if (fill > 0f) {
+                    drawCircle(colors.label, radius = (size.minDimension / 2f - 5.dp.toPx()) * fill)
+                }
+            },
+    )
+}
+
+/** A single setting row: the title and a switch, the whole row toggles. */
+@Composable
+private fun ToggleLine(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+    val colors = PaneTheme.colors
+    Row(
+        modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 64.dp)
+            .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Switch) { onCheckedChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(title, style = PaneTheme.type.body, color = colors.label, modifier = Modifier.weight(1f))
+        PaneSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

@@ -1,7 +1,6 @@
 package app.pane.browser.ui.extensions
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +45,8 @@ import app.pane.browser.ui.components.LargeTitleScaffold
 import app.pane.browser.ui.components.PaneSheet
 import app.pane.browser.ui.components.PrimaryButton
 import app.pane.browser.ui.components.SearchField
+import app.pane.browser.ui.components.SectionLabel
+import app.pane.browser.ui.components.rowPress
 import app.pane.browser.ui.components.TextButton
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.library.arrive
@@ -114,7 +115,7 @@ fun AddonStoreScreen() {
                     onValueChange = { query = it },
                     placeholder = "Search add-ons",
                     onSubmit = { focus.clearFocus() },
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
             },
         ) {
@@ -134,11 +135,10 @@ fun AddonStoreScreen() {
                 }
                 else -> {
                     item(key = "section") {
-                        Text(
+                        SectionLabel(
                             if (store.resultsQuery.isBlank()) "Recommended" else "Results",
-                            style = PaneTheme.type.footnote.copy(fontWeight = FontWeight.SemiBold),
                             color = PaneTheme.colors.secondaryLabel,
-                            modifier = Modifier.padding(start = 32.dp, end = 32.dp, top = 16.dp, bottom = 8.dp),
+                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
                         )
                     }
                     itemsIndexed(results, key = { _, addon -> "addon:${addon.guid}" }) { index, addon ->
@@ -166,7 +166,8 @@ fun AddonStoreScreen() {
 
 private const val SEARCH_DEBOUNCE_MS = 350L
 private const val PREFETCH_DISTANCE = 5
-private val ROW_INSET = 84.dp
+/** 20dp margin + 40dp icon + 16dp gap: where a store row's text, and its hairline, start. */
+private val ROW_INSET = 76.dp
 
 /** Search results and paging for the store. Survives recomposition, not the screen. */
 @Stable
@@ -239,12 +240,12 @@ private fun AddonRow(addon: AmoAddon, state: GetState, onGet: () -> Unit, onClic
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .rowPress(onClick = onClick)
+            .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        AmoIcon(addon.iconUrl, 56.dp)
+        AmoIcon(addon.iconUrl, 40.dp)
         Column(Modifier.weight(1f)) {
             Text(
                 addon.name,
@@ -257,8 +258,8 @@ private fun AddonRow(addon: AmoAddon, state: GetState, onGet: () -> Unit, onClic
             if (line.isNotBlank()) {
                 Text(line, style = PaneTheme.type.footnote, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            // Who uses it, and whether Mozilla vouches for it; no star ratings in the list.
             val facts = listOfNotNull(
-                ExtensionFormat.rating(addon.rating).takeIf { addon.ratingCount > 0 },
                 ExtensionFormat.users(addon.users),
                 "Recommended".takeIf { addon.recommended },
             ).joinToString(" · ")

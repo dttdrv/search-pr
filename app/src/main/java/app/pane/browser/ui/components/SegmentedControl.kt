@@ -2,6 +2,7 @@ package app.pane.browser.ui.components
 
 import androidx.compose.animation.core.animate
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.selection.selectable
@@ -48,10 +49,11 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * A choice between a few options that you can tap or swipe. The ink thumb rides under your finger,
- * ticks over each option as it passes, and springs into the nearest one when let go — with the
- * speed of the flick, so a quick swipe carries on to the next option. Plain, high-contrast labels:
- * the chosen one reads paper-on-ink, the others ink-on-grey.
+ * A choice between a few options that you can tap or swipe. A hairline-outlined pill with no fill:
+ * the ink thumb rides under your finger, ticks over each option as it passes, and springs into the
+ * nearest one when let go — with the speed of the flick, so a quick swipe carries on to the next
+ * option. Plain, high-contrast labels: the chosen one reads paper-on-ink, the others ink on
+ * nothing.
  */
 @Composable
 fun SegmentedControl(
@@ -59,7 +61,7 @@ fun SegmentedControl(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    height: Dp = 46.dp,
+    height: Dp = 44.dp,
 ) {
     if (options.isEmpty()) return
     val colors = PaneTheme.colors
@@ -70,13 +72,14 @@ fun SegmentedControl(
     val count = options.size.coerceAtLeast(1)
     val selection = selectedIndex.coerceIn(0, count - 1)
     val selectNow by rememberUpdatedState(onSelect)
-    val inset = 3.dp
+    // The 1dp outline plus a 3dp gap, so the thumb never touches the line.
+    val inset = 4.dp
 
     BoxWithConstraints(
         modifier = modifier
             .height(height)
             .clip(PaneShapes.pill)
-            .background(colors.fill)
+            .border(1.dp, colors.secondaryLabel, PaneShapes.pill)
             .padding(inset),
     ) {
         val segment = maxWidth / count

@@ -51,28 +51,22 @@ enum class ThemeMode { System, Light, Dark }
 enum class ToolbarPosition { Bottom, Top }
 
 /**
- * How much of the liquid glass is drawn. Full bends the page along each rim like real glass, Light
- * only blurs and tints it (much cheaper on the GPU), Off is a plain translucent surface. Pane
- * steps Full down to Light by itself while the phone is in battery saver.
- */
-@Serializable
-enum class GlassQuality { Full, Light, Off }
-
-/**
- * User preferences. Defaults are the most private options that don't break the web.
+ * User preferences. Defaults match a normal, well-behaved browser (Firefox's Standard profile): they
+ * block known trackers and isolate third-party cookies, but never at the cost of a site not loading or a
+ * login not working. Strict is one tap away; private tabs are always strict.
  */
 @Serializable
 data class BrowserSettings(
     val searchEngineId: String = "ddg",
     val searchSuggestions: Boolean = true,
     val searchSuggestionsInPrivate: Boolean = false,
-    val trackingProtection: TrackingProtection = TrackingProtection.Strict,
+    val trackingProtection: TrackingProtection = TrackingProtection.Standard,
     val cookiePolicy: CookiePolicy = CookiePolicy.IsolateAll,
-    val httpsMode: HttpsMode = HttpsMode.HttpsOnly,
+    val httpsMode: HttpsMode = HttpsMode.HttpsFirst,
     val dnsOverHttps: DnsOverHttps = DnsOverHttps.Default,
     val dohProvider: DohProvider = DohProvider.Quad9,
     val globalPrivacyControl: Boolean = true,
-    val fingerprintingProtection: Boolean = true,
+    val fingerprintingProtection: Boolean = false,
     val safeBrowsing: Boolean = true,
     val stripTrackingParams: Boolean = true,
     val javascriptEnabled: Boolean = true,
@@ -92,8 +86,13 @@ data class BrowserSettings(
     val showHomeFavorites: Boolean = true,
     val haptics: Boolean = true,
     val reduceMotion: Boolean = false,
-    val glassQuality: GlassQuality = GlassQuality.Full,
     val restoreTabs: Boolean = true,
     val closeTabsAfterDays: Int = 0,
     val onboardingDone: Boolean = false,
-)
+    /** Bumped when the defaults are loosened, so older installs are moved to them once (see SettingsStore). */
+    val defaultsVersion: Int = BrowserSettings.DEFAULTS_VERSION,
+) {
+    companion object {
+        const val DEFAULTS_VERSION = 2
+    }
+}

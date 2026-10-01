@@ -13,9 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,10 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
-import app.pane.browser.ui.components.GlassCircle
+import app.pane.browser.ui.components.ChromeButton
+import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.navigation.LocalNavigator
-import app.pane.browser.ui.theme.GlassStrength
 import app.pane.browser.ui.theme.PaneTheme
 import org.mozilla.geckoview.GeckoView
 
@@ -56,6 +54,8 @@ fun ExtensionOptionsScreen(extensionId: String) {
     ) {
         Spacer(Modifier.height(WindowInsets.statusBars.asPaddingValues().calculateTopPadding()))
         NavBar(title = ext?.name ?: "Settings", onBack = navigator::pop)
+        // A hairline is the only edge between the bar and the extension's own page.
+        Separator()
         if (ext?.optionsPageUrl == null) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
@@ -92,20 +92,18 @@ fun ExtensionOptionsScreen(extensionId: String) {
     }
 }
 
-/** A bar with a floating back circle and a centred title, sitting directly on the page. */
+/** A bar with a bare back chevron and a centred title, sitting directly on the page. */
 @Composable
 internal fun NavBar(title: String, onBack: () -> Unit, backLabel: String = "Back") {
     val colors = PaneTheme.colors
     Box(Modifier.fillMaxWidth().height(56.dp)) {
-        GlassCircle(
-            onClick = onBack,
-            size = 48.dp,
-            strength = GlassStrength.Thin,
+        ChromeButton(
+            icon = PaneIcons.Back,
             contentDescription = if (backLabel == "Back") "Back" else "Back to $backLabel",
+            onClick = onBack,
             modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp),
-        ) {
-            Icon(PaneIcons.Back, contentDescription = null, tint = colors.label, modifier = Modifier.size(22.dp))
-        }
+            size = 24.dp,
+        )
         Text(
             title,
             style = PaneTheme.type.headline,

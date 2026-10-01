@@ -1,6 +1,6 @@
 package app.pane.browser.ui.browser
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,25 +21,28 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
+import app.pane.browser.ui.components.OutlineButton
+import app.pane.browser.ui.components.SectionLabel
+import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.SiteIcon
 import app.pane.browser.ui.components.pressDim
 import app.pane.browser.ui.components.pressScale
-import app.pane.browser.ui.theme.PaneShapes
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.entrance
 import app.pane.core.library.LetterTiles
 import app.pane.core.url.UrlDisplay
 import app.pane.core.url.UrlInput
 
-/** A site shown as an icon on the start page and in the empty address editor. */
+/** A site shown as a round mark on the start page and in the empty address editor. */
 data class FavoriteSite(val url: String, val title: String)
 
 /**
@@ -55,9 +60,9 @@ fun rememberFavoriteSites(limit: Int = 8, includeHistory: Boolean = true): List<
 }
 
 /**
- * Sites as a grid of icons with their names underneath, [columns] to a row. Icons arrive one after
- * another; [indexOffset] says how many things above them on the page have already been given a
- * place in that sequence (the cells are numbered row by row from there).
+ * Sites as a grid of round marks with their names underneath, [columns] to a row. Marks arrive one
+ * after another; [indexOffset] says how many things above them on the page have already been given
+ * a place in that sequence (the cells are numbered row by row from there).
  */
 @Composable
 fun FavoritesGrid(
@@ -66,8 +71,8 @@ fun FavoritesGrid(
     modifier: Modifier = Modifier,
     columns: Int = 4,
     indexOffset: Int = 0,
-    iconSize: Dp = 60.dp,
-    labelLines: Int = 2,
+    iconSize: Dp = 56.dp,
+    labelLines: Int = 1,
 ) {
     val perRow = columns.coerceAtLeast(1)
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -89,6 +94,19 @@ fun FavoritesGrid(
     }
 }
 
+/** A site's own icon inside a hairline circle: the round mark used for favourites. */
+@Composable
+internal fun SiteMark(url: String, size: Dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(size)
+            .border(1.dp, PaneTheme.colors.hairline, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        SiteIcon(url, size * 0.58f)
+    }
+}
+
 @Composable
 private fun FavoriteTile(
     site: FavoriteSite,
@@ -101,7 +119,7 @@ private fun FavoriteTile(
         modifier.pressScale(pressedScale = 0.92f, haptic = true, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        SiteIcon(site.url, iconSize)
+        SiteMark(site.url, iconSize)
         Spacer(Modifier.height(8.dp))
         Text(
             favoriteLabel(site),
@@ -115,7 +133,7 @@ private fun FavoriteTile(
     }
 }
 
-/** The short name under an icon: the page's own name if it is brief, otherwise the site's. */
+/** The short name under a mark: the page's own name if it is brief, otherwise the site's. */
 private fun favoriteLabel(site: FavoriteSite): String {
     val title = cleanTitle(site.title)
     if (title.isNotBlank() && title.length <= 22) return title
@@ -130,8 +148,8 @@ private fun cleanTitle(title: String): String = title.split(" - ", " | ", " · "
 
 /**
  * Shown in the address editor before typing, bottom-aligned so it sits in thumb reach above the
- * field: favourites, then [recent] pages as rows, then "Paste and Go". If the keyboard leaves too
- * little room it scrolls, staying anchored to the bottom.
+ * field: favourites, then [recent] pages as plain rows, then "Paste and go". If the keyboard leaves
+ * too little room it scrolls, staying anchored to the bottom.
  */
 @Composable
 fun FavoritesPanel(
@@ -141,13 +159,12 @@ fun FavoritesPanel(
     recent: List<FavoriteSite> = emptyList(),
     includeHistory: Boolean = true,
 ) {
-    val colors = PaneTheme.colors
     val sites = rememberFavoriteSites(limit = 4, includeHistory = includeHistory)
     Column(
         modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState(), reverseScrolling = true)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
+            .padding(horizontal = 24.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.Bottom,
     ) {
         var next = 0
@@ -155,67 +172,60 @@ fun FavoritesPanel(
             PanelLabel("Favorites", Modifier.entrance(next))
             FavoritesGrid(sites, onOpen, indexOffset = next + 1, iconSize = 52.dp, labelLines = 1)
             next += 1 + sites.size
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(28.dp))
         }
         if (recent.isNotEmpty()) {
             PanelLabel("Recent", Modifier.entrance(next))
             next += 1
-            recent.forEach { site ->
-                RecentRow(site, onClick = { onOpen(site.url) }, modifier = Modifier.entrance(next, key = site.url))
+            recent.forEachIndexed { i, site ->
+                RecentRow(site, line = i > 0, onClick = { onOpen(site.url) }, modifier = Modifier.entrance(next, key = site.url))
                 next += 1
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(20.dp))
         }
-        Box(
-            Modifier
-                .entrance(next)
-                .pressScale(pressedScale = 0.95f, haptic = true, onClick = onPasteAndGo)
-                .clip(PaneShapes.pill)
-                .background(colors.fill)
-                .padding(horizontal = 18.dp, vertical = 10.dp),
-        ) {
-            Text("Paste and Go", style = PaneTheme.type.subheadline, color = colors.label)
-        }
-        Spacer(Modifier.height(4.dp))
+        OutlineButton("Paste and go", onClick = onPasteAndGo, modifier = Modifier.entrance(next))
+        Spacer(Modifier.height(8.dp))
     }
 }
 
+/**
+ * A section heading drawn in capitals but read, and found by tests and screen readers, as written.
+ */
 @Composable
-private fun PanelLabel(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text,
-        style = PaneTheme.type.footnote,
-        fontWeight = FontWeight.SemiBold,
-        color = PaneTheme.colors.secondaryLabel,
-        modifier = modifier.padding(start = 2.dp, bottom = 10.dp),
-    )
+private fun PanelLabel(label: String, modifier: Modifier = Modifier) {
+    Box(modifier.padding(bottom = 12.dp).clearAndSetSemantics { text = AnnotatedString(label) }) {
+        SectionLabel(label)
+    }
 }
 
-/** A page as a row: its icon, its title and the host beneath. */
+/** A page as a plain row: its icon, its title and the host beneath, a hairline above all but the first. */
 @Composable
-private fun RecentRow(site: FavoriteSite, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun RecentRow(site: FavoriteSite, line: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = PaneTheme.colors
     val host = UrlDisplay.toolbarText(site.url)
-    Row(
-        modifier
-            .fillMaxWidth()
-            .defaultMinSize(minHeight = 48.dp)
-            .pressDim(onClick = onClick)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        SiteIcon(site.url, 32.dp)
-        Column(Modifier.weight(1f)) {
-            Text(
-                site.title.ifBlank { host },
-                style = PaneTheme.type.body,
-                color = colors.label,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (site.title.isNotBlank() && host != site.title) {
-                Text(host, style = PaneTheme.type.footnote, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    Column(modifier.fillMaxWidth()) {
+        if (line) Separator()
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 56.dp)
+                .pressDim(onClick = onClick)
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            SiteIcon(site.url, 28.dp)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    site.title.ifBlank { host },
+                    style = PaneTheme.type.body,
+                    color = colors.label,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (site.title.isNotBlank() && host != site.title) {
+                    Text(host, style = PaneTheme.type.footnote, color = colors.secondaryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
     }

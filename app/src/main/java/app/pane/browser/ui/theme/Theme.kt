@@ -16,7 +16,6 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import app.pane.core.settings.GlassQuality
 import app.pane.core.settings.ThemeMode
 
 object PaneTheme {
@@ -32,7 +31,6 @@ fun PaneTheme(
     private: Boolean = false,
     hapticsEnabled: Boolean = true,
     reduceMotion: Boolean = false,
-    glassQuality: GlassQuality = GlassQuality.Full,
     content: @Composable () -> Unit,
 ) {
     val dark = when (mode) {
@@ -66,7 +64,6 @@ fun PaneTheme(
             LocalPaneTypography provides DefaultTypography,
             LocalHapticsEnabled provides hapticsEnabled,
             LocalReduceMotion provides reduceMotion,
-            LocalGlassQuality provides glassQuality,
             LocalContentColor provides colors.label,
             // iOS highlights instead of rippling; a soft, bounded ripple is the closest native equivalent.
             LocalIndication provides ripple(color = colors.label.copy(alpha = 0.12f)),

@@ -31,7 +31,6 @@ import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneSheet
 import app.pane.browser.ui.components.SearchField
-import app.pane.browser.ui.components.Separator
 import app.pane.browser.ui.components.SheetHeader
 import app.pane.browser.ui.components.SiteIcon
 import app.pane.browser.ui.components.TextButton
@@ -47,9 +46,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val HISTORY_LIMIT = 1000
-
-/** Where a row's text starts (16dp padding, 30dp icon, 12dp gap), so hairlines line up with it. */
-private val TextInset = 58.dp
 
 /**
  * Visited pages grouped by day (Today, Yesterday, weekdays, Earlier), newest first. Search filters
@@ -124,7 +120,7 @@ fun HistoryScreen() {
                     value = query,
                     onValueChange = { query = it },
                     placeholder = "Search history",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 )
             },
         ) {
@@ -159,20 +155,18 @@ fun HistoryScreen() {
                             SectionTitle(group.section.title(), Modifier.animateItem())
                         }
                         itemsIndexed(group.items, key = { _, h -> "h:${h.url}" }) { index, entry ->
-                            val first = index == 0
                             SwipeToDelete(
                                 onDelete = { delete(entry) },
                                 modifier = Modifier
                                     .animateItem()
-                                    .arrive(base + index)
-                                    .groupedItem(first, index == group.items.lastIndex, colors.surface),
+                                    .arrive(base + index),
                             ) {
                                 Column {
-                                    if (!first) Separator(Modifier.padding(start = TextInset))
+                                    if (index > 0) RowSeparator(SiteRowInset)
                                     LibraryRow(
                                         title = entry.title.ifBlank { UrlDisplay.toolbarText(entry.url).ifEmpty { entry.url } },
                                         subtitle = UrlDisplay.toolbarText(entry.url).ifEmpty { entry.url },
-                                        leading = { SiteIcon(entry.url, 30.dp) },
+                                        leading = { SiteIcon(entry.url, 28.dp) },
                                         onClick = { open(entry) },
                                         onLongClick = {
                                             menuTarget = entry
@@ -184,7 +178,7 @@ fun HistoryScreen() {
                                                 style = PaneTheme.type.footnote,
                                                 color = colors.tertiaryLabel,
                                                 maxLines = 1,
-                                                modifier = Modifier.padding(end = 6.dp),
+                                                modifier = Modifier.padding(end = 8.dp),
                                             )
                                         },
                                     )

@@ -12,7 +12,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.pane.browser.BuildConfig
 import app.pane.browser.LocalAppContainer
@@ -74,10 +73,9 @@ fun AboutScreen() {
             item(key = "promise") {
                 Text(
                     "No telemetry. No accounts. Your data stays on this device.",
-                    style = PaneTheme.type.body,
-                    color = colors.label,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.arrive(1).fillMaxWidth().padding(horizontal = 32.dp, vertical = 24.dp),
+                    style = PaneTheme.type.subheadline,
+                    color = colors.secondaryLabel,
+                    modifier = Modifier.arrive(1).fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp),
                 )
             }
             item(key = "advanced") {
