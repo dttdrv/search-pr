@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -189,6 +190,7 @@ fun FloatingCircle(
     enabled: Boolean = true,
     contentDescription: String? = null,
     onLongClick: (() -> Unit)? = null,
+    frostAt: (() -> Offset)? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
@@ -196,7 +198,7 @@ fun FloatingCircle(
             .size(size)
             .then(if (contentDescription != null) Modifier.semantics { this.contentDescription = contentDescription } else Modifier)
             .pressScale(enabled = enabled, pressedScale = 0.9f, haptic = true, onLongClick = onLongClick, onClick = onClick)
-            .frosted(CircleShape),
+            .frosted(CircleShape, position = frostAt),
         contentAlignment = Alignment.Center,
         content = content,
     )

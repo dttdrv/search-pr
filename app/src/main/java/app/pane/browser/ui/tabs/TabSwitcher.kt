@@ -30,7 +30,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -61,7 +60,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.lerp
+import androidx.compose.ui.util.lerp
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -75,7 +77,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
@@ -107,6 +108,25 @@ import app.pane.core.url.UrlDisplay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+
+/** Where a piece of the cluster is, [c] of the way from [from] (the bar's matching piece) to [rest]: scaled and moved about its own centre. */
+private fun GraphicsLayerScope.carryFrom(from: Rect, rest: Rect, c: Float) {
+    if (rest.isEmpty) return
+    val k = 1f - c
+    scaleX = lerp(from.width / rest.width, 1f, c)
+    scaleY = lerp(from.height / rest.height, 1f, c)
+    translationX = k * (from.center.x - rest.center.x)
+    translationY = k * (from.center.y - rest.center.y)
+    alpha = (c / 0.3f).coerceIn(0f, 1f)
+}
+
+/** The top-left of that piece in the root, for the frost under it, which a transform can't report. */
+private fun carriedTopLeft(from: Rect, rest: Rect, c: Float): Offset {
+    val k = 1f - c
+    val w = lerp(from.width, rest.width, c)
+    val h = lerp(from.height, rest.height, c)
+    return Offset(rest.center.x + k * (from.center.x - rest.center.x) - w / 2, rest.center.y + k * (from.center.y - rest.center.y) - h / 2)
+}
 
 /** A snapshot flying between the full page and a card during open/close. */
 private class Flight(val tabId: String?, val bitmap: Bitmap?, val card: Rect, val page: Rect, val isPrivate: Boolean)
@@ -142,8 +162,10 @@ fun TabSwitcher(
     val haptics = rememberHaptics()
 
     val progress = remember { Animatable(0f) }
-    /** 0 = the cluster waits below the screen, 1 = it floats in place. */
+    /** 0 = the cluster is still the bar's pill and menu button (below the screen if the bar wasn't open), 1 = it floats in place. */
     val cluster = remember { Animatable(0f) }
+    var switchRest by remember { mutableStateOf(Rect.Zero) }
+    var plusRest by remember { mutableStateOf(Rect.Zero) }
     var shown by remember { mutableStateOf(false) }
     var closing by remember { mutableStateOf(false) }
     var flight by remember { mutableStateOf<Flight?>(null) }
@@ -372,8 +394,11 @@ fun TabSwitcher(
                 }
 
                 // The floating cluster: the Private / Tabs switch, then a plus for a new tab on the right.
-                // It rises from below and hovers clear of the screen edges; the grid scrolls beneath it, frosted.
-                // The rise is a layout offset, so the frost under each piece follows it.
+                // Its pieces grow out of the bar's pill and menu button (from below the screen when the
+                // bar wasn't open) and hover clear of the screen edges; the grid scrolls beneath them, frosted.
+                val belowScreen = with(LocalDensity.current) { ClusterRest.toPx() }
+                val fromPill = chrome.pillRect.takeIf { it != Rect.Zero } ?: switchRest.translate(0f, belowScreen)
+                val fromMenu = chrome.menuRect.takeIf { it != Rect.Zero } ?: plusRest.translate(0f, belowScreen)
                 CompositionLocalProvider(LocalFrost provides frost) {
                     Row(
                         Modifier
@@ -381,8 +406,7 @@ fun TabSwitcher(
                             .windowInsetsPadding(WindowInsets.navigationBars)
                             .padding(start = 12.dp, end = 12.dp, bottom = ClusterGap)
                             .widthIn(max = 520.dp)
-                            .fillMaxWidth()
-                            .offset { IntOffset(0, ((1f - cluster.value) * ClusterRest.toPx()).roundToInt()) },
+                            .fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
@@ -390,7 +414,9 @@ fun TabSwitcher(
                                 .weight(1f)
                                 .padding(end = 8.dp)
                                 .height(ClusterHeight - 4.dp)
-                                .frosted(PaneShapes.pill)
+                                .onGloballyPositioned { switchRest = it.boundsInRoot() }
+                                .graphicsLayer { carryFrom(fromPill, switchRest, cluster.value) }
+                                .frosted(PaneShapes.pill, position = { carriedTopLeft(fromPill, switchRest, cluster.value) })
                                 .padding(4.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -420,6 +446,10 @@ fun TabSwitcher(
                             },
                             size = ClusterHeight - 4.dp,
                             contentDescription = "New tab",
+                            modifier = Modifier
+                                .onGloballyPositioned { plusRest = it.boundsInRoot() }
+                                .graphicsLayer { carryFrom(fromMenu, plusRest, cluster.value) },
+                            frostAt = { carriedTopLeft(fromMenu, plusRest, cluster.value) },
                         ) {
                             Icon(PaneIcons.Plus, null, tint = PaneTheme.colors.label, modifier = Modifier.size(24.dp))
                         }
