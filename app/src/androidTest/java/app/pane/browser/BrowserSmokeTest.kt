@@ -11,6 +11,7 @@ import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Configurator
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -37,14 +38,18 @@ class BrowserSmokeTest {
         config.waitForIdleTimeout = 0
         try {
             launch()
-            // The carousel: three pages of drawings, then the choices.
-            node(By.text("Just the page"))
+            // The carousel has no buttons: a welcome, three films, then the choices, all by swiping.
+            node(By.descContains("Welcome to ${context.getString(R.string.app_name)}"))
             shot("01-onboarding")
-            repeat(3) { tap(By.desc("Next")) }
-            node(By.desc("Start Browsing"))
+            swipe(Direction.LEFT)
+            node(By.text("Just the page"))
+            shot("01a-onboarding-film")
+            repeat(3) { swipe(Direction.LEFT) }
+            node(By.text("Make it yours"))
             shot("01b-onboarding-setup")
             scrollTo(By.text("Block ads")).click()
-            tap(By.desc("Start Browsing"))
+            // swiping up on the last page lifts the carousel away
+            swipe(Direction.UP)
             node(By.desc("Menu"))
             shot("02-start-page")
 
@@ -178,6 +183,14 @@ class BrowserSmokeTest {
             device.swipe(device.displayWidth / 2, device.displayHeight * 3 / 4, device.displayWidth / 2, device.displayHeight / 3, 30)
         }
         return node(selector)
+    }
+
+    /** One swipe across the middle of the screen: left to the next onboarding page, up to finish it. */
+    private fun swipe(direction: Direction) {
+        val w = device.displayWidth
+        val h = device.displayHeight
+        if (direction == Direction.LEFT) device.swipe(w * 9 / 10, h / 2, w / 10, h / 2, 20) else device.swipe(w / 2, h * 3 / 4, w / 2, h / 3, 20)
+        SystemClock.sleep(600)
     }
 
     private fun menu(entry: String) {
