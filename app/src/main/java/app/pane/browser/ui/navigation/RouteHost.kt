@@ -105,7 +105,7 @@ fun RouteHost(navigator: Navigator, underlay: MutableFloatState? = null, content
 
     PredictiveBackHandler(enabled = navigator.stack.isNotEmpty()) { events: Flow<BackEventCompat> ->
         try {
-            events.collect { progress.snapTo(it.progress * 0.85f) }
+            events.collect { progress.takeOver { snapTo(it.progress * 0.85f) } }
             navigator.pop()
         } catch (e: CancellationException) {
             scope.launch { progress.animateTo(0f, Motion.smooth()) }
