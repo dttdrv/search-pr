@@ -21,6 +21,7 @@ import app.pane.browser.engine.Thumbnails
 import app.pane.browser.engine.WebFetcher
 import app.pane.browser.engine.prompts.ContextMenus
 import app.pane.browser.engine.prompts.PromptBridge
+import app.pane.browser.settings.NightMode
 import app.pane.browser.settings.SettingsStore
 import app.pane.core.tabs.BrowserStore
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +30,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** Manual dependency graph, created lazily from the main activity. */
@@ -86,6 +88,7 @@ class AppContainer(val app: Application) {
                 sessions.schedulePersist()
             }
         }
+        scope.launch { settings.state.map { it.theme }.distinctUntilChanged().collect { NightMode.apply(app, it) } }
     }
 }
 

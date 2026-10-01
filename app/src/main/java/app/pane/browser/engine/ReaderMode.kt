@@ -1,7 +1,6 @@
 package app.pane.browser.engine
 
 import android.content.Context
-import app.pane.core.settings.ThemeMode
 import org.json.JSONObject
 
 /**
@@ -40,10 +39,10 @@ internal class ReaderScripts(private val context: Context) {
     """
 
     /** Replaces the page with its article. Evaluates to "ok", "active" or "unavailable". */
-    fun enter(theme: ThemeMode, viewOriginalLabel: String): String {
+    fun enter(dark: Boolean, viewOriginalLabel: String): String {
         val options = JSONObject()
             .put("css", css)
-            .put("theme", themeName(theme))
+            .put("theme", themeName(dark))
             .put("original", viewOriginalLabel)
         return """
             (function () {
@@ -63,11 +62,8 @@ internal class ReaderScripts(private val context: Context) {
     }
 
     internal companion object {
-        fun themeName(theme: ThemeMode): String = when (theme) {
-            ThemeMode.Dark -> "dark"
-            ThemeMode.Light -> "light"
-            ThemeMode.System -> "auto"
-        }
+        /** The `data-theme` of the article: always one of the two, so it follows the app and not the page's own media query. */
+        fun themeName(dark: Boolean): String = if (dark) "dark" else "light"
 
         /** Pages worth probing: real web documents, not the app's own pages. */
         fun isReadableScheme(url: String): Boolean =

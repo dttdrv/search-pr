@@ -3,6 +3,7 @@ package app.pane.browser.engine
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
@@ -46,7 +47,6 @@ import app.pane.core.security.LinkPolicy
 import app.pane.core.privacy.TrackingParams
 import app.pane.core.settings.BrowserSettings
 import app.pane.core.settings.HttpsMode
-import app.pane.core.settings.ThemeMode
 import app.pane.core.tabs.BrowserAction
 import app.pane.core.tabs.BrowserStore
 import app.pane.core.tabs.PersistedSession
@@ -520,7 +520,7 @@ class SessionManager(
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(page, !s.blockThirdPartyCookies)
         if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-            WebSettingsCompat.setAlgorithmicDarkeningAllowed(page.settings, darkenPages(s))
+            WebSettingsCompat.setAlgorithmicDarkeningAllowed(page.settings, s.darkPages && appDark(s))
         }
         applyPrivacy(page, s)
         if (barInsetScripts[page] == null) applyBarInset(page)
@@ -537,15 +537,12 @@ class SessionManager(
     }
 
     /**
-     * Dark pages darken only in a dark app: the Dark theme, or Automatic while the system is dark. The
-     * engine then decides page by page (a page with its own dark style keeps it); its own idea of "dark
-     * app" is the activity's night mode, which follows the system.
+     * Whether the app is dark: the choice, or the night mode of the system for Automatic. The engine
+     * reads the same night mode for its own idea of a dark app (see NightMode), so a page's
+     * prefers-color-scheme and the darkening below agree with the screens around it.
      */
-    private fun darkenPages(s: BrowserSettings): Boolean {
-        val night = context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
-        val systemDark = night == android.content.res.Configuration.UI_MODE_NIGHT_YES
-        return s.darkPages && (s.theme == ThemeMode.Dark || (s.theme == ThemeMode.System && systemDark))
-    }
+    private fun appDark(s: BrowserSettings = settings.current): Boolean =
+        s.theme.isDark(context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES)
 
     /**
      * What a page is allowed to learn and what it is told, per page and each only where this WebView
@@ -586,15 +583,16 @@ class SessionManager(
     fun applySettings(s: BrowserSettings) {
         pages.forEach { (id, page) ->
             configure(page, store.state.value.tab(id)?.desktopMode ?: s.desktopModeByDefault)
+            if (store.state.value.tab(id)?.inReaderMode == true) recolorReader(id, page)
         }
     }
 
     /** The system switching between light and dark re-decides Dark pages, without a change in settings. */
     private val nightWatcher = object : android.content.ComponentCallbacks {
-        private var night = context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        private var night = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
 
-        override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-            val now = newConfig.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        override fun onConfigurationChanged(newConfig: Configuration) {
+            val now = newConfig.uiMode and Configuration.UI_MODE_NIGHT_MASK
             if (now == night) return
             night = now
             applySettings(settings.current)
@@ -945,14 +943,12 @@ class SessionManager(
      * the document without navigating, so Back leaves it; leaving Reader reloads the page.
      */
     /** The ground the reader page is drawn on (light or dark, following the app theme), as an ARGB int. */
-    private fun readerGround(): Int {
-        val dark = when (settings.current.theme) {
-            ThemeMode.Dark -> true
-            ThemeMode.Light -> false
-            else -> (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-        }
-        return if (dark) 0xFF131313.toInt() else 0xFFF3F3F4.toInt()
+    private fun readerGround(): Int = if (appDark()) 0xFF131313.toInt() else 0xFFF3F3F4.toInt()
+
+    /** The app changed between light and dark while an article is showing: the article follows. */
+    private fun recolorReader(tabId: String, page: PaneWebView) {
+        page.evaluateJavascript("document.documentElement.setAttribute('data-theme','${ReaderScripts.themeName(appDark())}')", null)
+        store.updateTab(tabId) { it.copy(themeColor = readerGround()) }
     }
 
     fun toggleReader(tabId: String) {
@@ -963,7 +959,7 @@ class SessionManager(
             return
         }
         val page = pages[tabId] ?: return
-        val script = readerScripts.enter(settings.current.theme, "View original")
+        val script = readerScripts.enter(appDark(), "View original")
         page.evaluateJavascript(script) { raw ->
             if (pages[tabId] !== page) return@evaluateJavascript
             when (raw?.trim('"')) {

@@ -148,6 +148,14 @@ class BrowserSettingsTest {
         assertEquals(4, BrowserSettings(startFavoritesCount = -3).startFavoritesLimit)
     }
 
+    @Test fun themeFollowsTheSystemOnlyInAutomatic() {
+        for (system in listOf(false, true)) {
+            assertEquals(system, ThemeMode.System.isDark(system))
+            assertFalse(ThemeMode.Light.isDark(system))
+            assertTrue(ThemeMode.Dark.isDark(system))
+        }
+    }
+
     @Test fun customStartTitleIsTrimmedAndCapped() {
         assertEquals("Hello", BrowserSettings(startTitleText = "  Hello  ").startTitleCustom)
         assertEquals(BrowserSettings.START_TITLE_MAX, BrowserSettings(startTitleText = "x".repeat(60)).startTitleCustom.length)

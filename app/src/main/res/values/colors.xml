@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="pane_background">#FFF3F3F4</color>
+    <color name="pane_accent">#FF0285FF</color>
     <color name="pane_launcher_bg">#FFFFFFFF</color>
 </resources>
