@@ -30,15 +30,16 @@ class MainActivity : ComponentActivity() {
     private val fileChooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         PromptEnvironment.deliverFileResult(it.resultCode, it.data)
     }
+    private val chooserLauncher: (Intent, (Int, Intent?) -> Unit) -> Unit = { intent, done ->
+        PromptEnvironment.pendingFileResult = done
+        fileChooser.launch(intent)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         container.sessions.attachHost(this)
-        PromptEnvironment.launchFileChooser = { intent, done ->
-            PromptEnvironment.pendingFileResult = done
-            fileChooser.launch(intent)
-        }
+        PromptEnvironment.launchFileChooser = chooserLauncher
         setContent { AppRoot(container, navigator) }
 
         lifecycleScope.launch {
@@ -75,7 +76,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        PromptEnvironment.launchFileChooser = null
+        if (PromptEnvironment.launchFileChooser === chooserLauncher) PromptEnvironment.launchFileChooser = null
         container.sessions.attachHost(null)
         // Leaving Pane with Back (or swiping it away) counts as exiting.
         if (isFinishing && container.settings.current.clearOnExit) {

@@ -1,6 +1,7 @@
 package app.pane.browser.engine.prompts
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.webkit.GeolocationPermissions
@@ -294,7 +295,9 @@ class PromptBridge(
 
         fun onResult(resultCode: Int, data: Intent?) {
             if (done.get()) return
-            val picked = WebChromeClient.FileChooserParams.parseResult(resultCode, data)?.toList().orEmpty()
+            // several picks come as clip data, which parseResult does not read
+            val picked = data?.clipData?.takeIf { resultCode == Activity.RESULT_OK }?.let { clip -> List(clip.itemCount) { clip.getItemAt(it).uri } }
+                ?: WebChromeClient.FileChooserParams.parseResult(resultCode, data)?.toList().orEmpty()
             if (picked.isEmpty()) {
                 finish(null)
                 return
