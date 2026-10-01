@@ -36,12 +36,12 @@ import kotlin.math.min
 
 /**
  * the three little films of the onboarding carousel. each plays from its first frame when its page arrives
- * and loops every [ms]; [still] is the moment shown when motion is off: the gesture done
+ * and loops every [ms]
  */
-enum class Scene(val ms: Int, val still: Float) {
-    Bar(7200, 0.5f),
-    Sideways(9600, 0.8f),
-    Up(9600, 0.4f),
+enum class Scene(val ms: Int) {
+    Bar(7200),
+    Sideways(9600),
+    Up(9600),
 }
 
 /** Where a loop's after-state has faded out and it starts over. */
@@ -88,8 +88,7 @@ fun OnboardingArt(scene: Scene, active: Boolean, modifier: Modifier = Modifier) 
     val colors = PaneTheme.colors
     val type = PaneTheme.type
     val window = LocalWindowInfo.current.containerSize
-    val still = rememberStill()
-    val clock = rememberLoop(scene.ms, run = active && !still, rest = if (still) scene.still else 0f)
+    val clock = rememberLoop(scene.ms, run = active)
     val ink = remember(colors) { Ink(colors.elevatedSurface, colors.background, colors.label, colors.accent) }
     val dark = remember { Ink(PrivateColors.elevatedSurface, PrivateColors.background, PrivateColors.label, PrivateColors.accent) }
     val glyphs = Glyphs(

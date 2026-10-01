@@ -4,18 +4,14 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -48,14 +44,16 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.State
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -315,24 +313,25 @@ private fun OnboardingContent(onDone: () -> Unit) {
     }
 }
 
-/** a clock that runs 0 to 1 every [ms] while [run], and rests at [rest] otherwise */
+/**
+ * a clock that runs 0 to 1 every [ms] while [run], and rests at 0 otherwise. it follows the frames, not
+ * the animation scale, so the films keep showing how to use the browser when a phone has its animations off
+ */
 @Composable
-internal fun rememberLoop(ms: Int, run: Boolean, rest: Float = 0f): Animatable<Float, AnimationVector1D> {
-    val clock = remember { Animatable(rest) }
-    LaunchedEffect(ms, run, rest) {
-        clock.snapTo(rest)
-        if (run) clock.animateTo(1f, infiniteRepeatable(tween(ms, easing = LinearEasing)))
+internal fun rememberLoop(ms: Int, run: Boolean): State<Float> {
+    val clock = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(ms, run) {
+        clock.floatValue = 0f
+        if (!run) return@LaunchedEffect
+        val start = withFrameNanos { it }
+        while (true) withFrameNanos { clock.floatValue = ((it - start) / (ms * 1_000_000f)) % 1f }
     }
     return clock
 }
 
-/** no looping animation: the app's reduce-motion setting, or the system's animations turned off */
+/** no looping decoration: the app's reduce-motion setting. the films that teach are not decoration, they keep playing */
 @Composable
-internal fun rememberStill(): Boolean {
-    val reduce = LocalReduceMotion.current
-    val resolver = LocalContext.current.contentResolver
-    return reduce || remember { Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
-}
+internal fun rememberStill(): Boolean = LocalReduceMotion.current
 
 /** when each piece of the welcome arrives, in ms: the greeting, the name a beat later, the closing line, the prompt */
 private const val GreetingAt = 0
