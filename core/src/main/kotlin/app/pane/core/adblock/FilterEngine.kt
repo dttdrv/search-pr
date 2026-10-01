@@ -7,6 +7,10 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.regex.Pattern
+import java.net.URLDecoder
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * Decides whether a request is blocked and which elements a page hides, from uBlock Origin /
@@ -32,6 +36,11 @@ class FilterEngine internal constructor(
     private val allow: Index,
     private val page: Index,
     private val cos: Cosmetics,
+    private val rExt: IntArray,
+    private val extensions: List<NetworkExtra>,
+    private val redirects: Index,
+    private val parameters: Index,
+    private val scripts: ScriptletIndex,
 ) {
     internal class Cosmetics(
         val selOff: IntArray,
@@ -57,10 +66,16 @@ class FilterEngine internal constructor(
     /** How many request rules and element-hiding rules are live (duplicates and `badfilter`ed rules excluded). */
     val networkRuleCount: Int = rFlags.count { it and F_DEAD == 0 }
     val cosmeticRuleCount: Int = cos.ruleCount
+    val scriptletRuleCount: Int = scripts.rules.size
+    val documentStartScript: String by lazy { scripts.program() }
+    val scriptletOrigins: Set<String> get() = scripts.origins
 
-    val isEmpty: Boolean get() = networkRuleCount == 0 && cosmeticRuleCount == 0
+    fun scriptletsForHost(host: String, ancestors: List<String> = emptyList()): List<List<String>> = scripts.forHost(host, ancestors)
+
+    val isEmpty: Boolean get() = networkRuleCount == 0 && cosmeticRuleCount == 0 && scriptletRuleCount == 0
 
     private val regexCache = ConcurrentHashMap<Int, Any>()
+    private val parameterRegexCache = ConcurrentHashMap<String, Pattern>()
 
     // ---- blocking
 
@@ -71,16 +86,76 @@ class FilterEngine internal constructor(
      * Main-frame navigations never get here; [type] with no request bit is never blocked.
      * An exception rule overrides a blocking rule unless the blocking rule is `$important`.
      */
-    fun shouldBlock(url: String, pageHost: String?, type: Int, thirdParty: Boolean): Boolean {
+    fun shouldBlock(url: String, pageHost: String?, type: Int, thirdParty: Boolean, method: String = "GET"): Boolean {
         if (networkRuleCount == 0) return false
         val t = type and ResourceType.ALL_REQUESTS
         if (t == 0) return false
-        val c = Ctx(if (url.length > MAX_URL) url.substring(0, MAX_URL) else url, t, thirdParty, pageHost)
+        val c = Ctx(url, t, thirdParty, pageHost, method)
         if (!c.parse()) return false
         if (pageHost != null && !page.isEmpty && pageFlags(pageHost) and ResourceType.DOCUMENT != 0) return false
         if (!important.isEmpty && scan(important, c)) return true
         if (!scan(block, c)) return false
         return allow.isEmpty || !scan(allow, c)
+    }
+
+    fun redirectResource(url: String, pageHost: String?, type: Int, thirdParty: Boolean, method: String = "GET"): RedirectResource? {
+        val c = Ctx(url, type, thirdParty, pageHost, method)
+        if (!c.parse()) return null
+        val id = matchingModifiers(redirects, c).maxWithOrNull(compareBy<Int> { rFlags[it] and F_IMPORTANT != 0 }.thenBy { extensions[rExt[it]].priority }) ?: return null
+        return FilterResources.redirect(extensions[rExt[id]].redirect ?: return null)
+    }
+
+    private fun matchingModifiers(index: Index, c: Ctx): List<Int> {
+        val candidates = LinkedHashMap<String, Int>()
+        val important = LinkedHashMap<String, Int>()
+        val exceptions = HashSet<String>()
+        forEachMatch(index, c) { id ->
+            val e = extensions[rExt[id]]
+            val key = e.removeParam ?: e.redirect?.let { if (it.isEmpty()) "" else "$it:${e.priority}" } ?: return@forEachMatch
+            when {
+                rFlags[id] and F_EXCEPTION != 0 -> exceptions.add(key)
+                rFlags[id] and F_IMPORTANT != 0 -> important[key] = id
+                else -> candidates[key] = id
+            }
+        }
+        for (key in important.keys) { candidates.remove(key); exceptions.remove(key) }
+        if ("" in exceptions) candidates.clear() else for (key in exceptions) candidates.remove(key)
+        return candidates.values.toList() + important.values
+    }
+
+    fun removeParameters(url: String, pageHost: String?, type: Int, thirdParty: Boolean, method: String = "GET"): String {
+        val q = url.indexOf('?')
+        val fragment = url.indexOf('#').let { if (it < 0) url.length else it }
+        if (q < 0 || q > fragment || parameters.isEmpty) return url
+        val c = Ctx(url, type, thirdParty, pageHost, method)
+        if (!c.parse()) return url
+        val matched = matchingModifiers(parameters, c)
+        if (matched.isEmpty()) return url
+        val parts = url.substring(q + 1, fragment).split('&')
+        val kept = parts.filter { part ->
+            val raw = part.substringAfter('=', "")
+            val value = try { URLDecoder.decode(raw.replace("+", "%2B"), "UTF-8") } catch (_: IllegalArgumentException) { raw }
+            val pair = part.substringBefore('=') + "=" + value
+            matched.none { id -> parameterMatches(extensions[rExt[id]].removeParam!!, pair) }
+        }
+        if (kept.size == parts.size) return url
+        return url.substring(0, q) + (if (kept.isEmpty()) "" else "?" + kept.joinToString("&")) + url.substring(fragment)
+    }
+
+    private fun parameterMatches(pattern: String, pair: String): Boolean {
+        val negate = pattern.startsWith('~')
+        val p = pattern.removePrefix("~")
+        val match = when {
+            p.isEmpty() -> true
+            p.startsWith('/') -> {
+                val end = p.lastIndexOf('/')
+                if (end <= 0) false else try {
+                    parameterRegexCache.getOrPut(p) { Pattern.compile(p.substring(1, end), if (p.substring(end + 1).contains('i')) Pattern.CASE_INSENSITIVE else 0) }.matcher(BoundedText(pair)).find()
+                } catch (_: java.util.regex.PatternSyntaxException) { return false } catch (_: BudgetExceeded) { return false }
+            }
+            else -> pair.substringBefore('=') == p
+        }
+        return match != negate
     }
 
     @Volatile private var lastPage: PageFlags? = null
@@ -113,11 +188,35 @@ class FilterEngine internal constructor(
         return false
     }
 
+    private inline fun forEachMatch(index: Index, c: Ctx, visit: (Int) -> Unit) {
+        val seen = HashSet<Int>()
+        for (k in 0 until c.nKeys) {
+            val row = index.find(c.keys[k])
+            if (row < 0) continue
+            for (j in index.starts[row] until index.starts[row + 1]) {
+                val id = index.ids[j]
+                if (seen.add(id) && ruleMatches(id, c)) visit(id)
+            }
+        }
+        for (id in index.fallback) if (ruleMatches(id, c)) visit(id)
+    }
+
     private fun ruleMatches(i: Int, c: Ctx): Boolean {
         val f = rFlags[i]
-        if (rTypes[i] and c.type == 0) return false
+        val covered = rTypes[i] and c.type
+        if (if (f and F_EXCEPTION != 0) covered == 0 else covered != c.type) return false
+        if (f and (F_THIRD or F_FIRST) != 0 && c.pageHost == null) return false
         if (f and F_THIRD != 0 && !c.third) return false
         if (f and F_FIRST != 0 && c.third) return false
+        if (f and (F_STRICT_THIRD or F_STRICT_FIRST) != 0) {
+            val p = c.pageHost ?: return false
+            val same = Hosts.normalize(c.lower.substring(c.hostStart, c.hostEnd)) == Hosts.normalize(p)
+            if (f and F_STRICT_THIRD != 0 && same || f and F_STRICT_FIRST != 0 && !same) return false
+        }
+        if (rExt[i] >= 0) {
+            val e = extensions[rExt[i]]
+            if (e.methods.isNotEmpty() && c.method.lowercase() !in e.methods || c.method.lowercase() in e.excludedMethods) return false
+        }
         val ok = if (f and F_REGEX != 0) regexMatches(i, f, c) else patternMatches(i, f, c)
         if (!ok) return false
         val d = rDom[i]
@@ -272,12 +371,12 @@ class FilterEngine internal constructor(
     }
 
     /** Everything one lookup needs, computed once: the lower-cased URL, its host, and the keys to look up. */
-    private class Ctx(val url: String, val type: Int, val third: Boolean, val pageHost: String?) {
+    private class Ctx(val url: String, val type: Int, val third: Boolean, val pageHost: String?, val method: String = "GET") {
         val len = url.length
         val lower: String = url.lowercase()
         var hostStart = 0
         var hostEnd = 0
-        val keys = IntArray(MAX_KEYS)
+        var keys = IntArray(MAX_KEYS)
         var nKeys = 0
         lateinit var req: HostHashes
         private var page: HostHashes? = null
@@ -301,13 +400,13 @@ class FilterEngine internal constructor(
                 if (colon >= s) hostE = colon
             }
             if (hostE <= s) return false
+            if (!Hosts.isValid(lower.substring(s, hostE)) || pageHost != null && !Hosts.isValid(pageHost)) return false
             hostStart = s
             hostEnd = hostE
             req = HostHashes(lower, s, hostE, false)
             for (k in 0 until req.n) addKey(req.h[k])
-            // Whole alphanumeric tokens, left to right, as many as fit.
             var i = 0
-            while (i < len && nKeys < MAX_KEYS) {
+            while (i < len) {
                 val ch = lower[i]
                 if (ch in 'a'..'z' || ch in '0'..'9') {
                     var j = i + 1
@@ -325,9 +424,12 @@ class FilterEngine internal constructor(
             return true
         }
 
+        private val seenKeys = HashSet<Int>()
+
         private fun addKey(k: Int) {
-            for (x in 0 until nKeys) if (keys[x] == k) return
-            if (nKeys < MAX_KEYS) keys[nKeys++] = k
+            if (!seenKeys.add(k)) return
+            if (nKeys == keys.size) keys = keys.copyOf(keys.size * 2)
+            keys[nKeys++] = k
         }
 
         fun pageHashes(): HostHashes? {
@@ -432,6 +534,8 @@ class FilterEngine internal constructor(
         w.ints(cos.selOff); w.bytes(cos.selPool)
         w.ints(cos.cSel); w.ints(cos.cDom); w.ints(cos.cFlags); w.ints(cos.domPool)
         w.index(cos.domainIdx); w.index(cos.keyedIdx); w.ints(cos.always)
+        w.ints(rExt); w.bytes(Json.encodeToString(extensions).toByteArray(Charsets.UTF_8)); w.index(redirects); w.index(parameters)
+        w.bytes(Json.encodeToString(scripts.rules).toByteArray(Charsets.UTF_8))
         w.int(END_MARK)
         w.finish()
     }
@@ -440,7 +544,7 @@ class FilterEngine internal constructor(
 
     companion object {
         /** Bumped whenever the binary layout or the meaning of a stored rule changes; older bytes are refused. */
-        const val FORMAT_VERSION = 3
+        const val FORMAT_VERSION = 4
         private const val END_MARK = 0x50414e45 // "PANE"
 
         internal const val F_IMPORTANT = 1
@@ -453,13 +557,16 @@ class FilterEngine internal constructor(
         internal const val F_FIRST = 128
         internal const val F_DEAD = 256
         internal const val F_EXCEPTION = 512
+        internal const val F_STRICT_THIRD = 1024
+        internal const val F_STRICT_FIRST = 2048
+        internal const val F_REDIRECT_RULE = 4096
+        internal const val F_REMOVE_PARAM = 8192
 
         internal const val CF_EXCEPTION = 1
 
         private const val STAR = '*'.code.toByte()
         private const val CARET = '^'.code.toByte()
         internal const val LITERAL_END: Byte = 1
-        private const val MAX_URL = 2048
         private const val MAX_KEYS = 96
         private val DEAD_REGEX = Any()
 
@@ -487,13 +594,19 @@ class FilterEngine internal constructor(
                 val selOff = r.ints(); val selPool = r.bytes()
                 val cSel = r.ints(); val cDom = r.ints(); val cFlags = r.ints(); val cDomPool = r.ints()
                 val domainIdx = r.index(); val keyedIdx = r.index(); val always = r.ints()
+                val ext = r.ints(); val extensions = Json.decodeFromString<List<NetworkExtra>>(String(r.bytes(), Charsets.UTF_8))
+                val redirects = r.index(); val parameters = r.index()
+                val scripts = ScriptletIndex(Json.decodeFromString<List<ScriptletFilter>>(String(r.bytes(), Charsets.UTF_8)))
                 if (r.int() != END_MARK) throw IOException("Truncated filter index")
                 val n = flags.size
-                if (types.size != n || off.size != n || len.size != n || dom.size != n) throw IOException("Corrupt filter index")
+                if (types.size != n || off.size != n || len.size != n || dom.size != n || ext.size != n || ext.any { it < -1 || it >= extensions.size }) throw IOException("Corrupt filter index")
                 return FilterEngine(
                     flags, types, off, len, dom, pool, domPool, important, block, allow, page,
                     Cosmetics(selOff, selPool, cSel, cDom, cFlags, cDomPool, domainIdx, keyedIdx, always),
+                    ext, extensions, redirects, parameters, scripts,
                 )
+            } catch (e: kotlinx.serialization.SerializationException) {
+                throw IOException("Corrupt filter index metadata", e)
             } catch (e: java.io.EOFException) {
                 throw IOException("Truncated filter index", e)
             }
@@ -557,12 +670,10 @@ internal class HostHashes(s: String, start: Int, end: Int, entities: Boolean) {
         while (cnt > 1 && starts[cnt - 1] >= end) cnt--
         for (k in maxOf(0, cnt - MAX) until cnt) h[n++] = Hashing.hash(s, starts[k], end, Hashing.HOST)
         if (entities && cnt >= 2) {
-            // Strip the last label, or the last two under a country second level (`co.uk`).
-            var strip = 1
-            if (cnt >= 3 && end - starts[cnt - 1] == 2 && Hosts.hasSecondLevel(s.substring(starts[cnt - 2], starts[cnt - 1] - 1))) strip = 2
-            val baseEnd = starts[cnt - strip] - 1
+            val suffix = Hosts.publicSuffix(s.substring(start, end))
+            val baseEnd = end - suffix.length - 1
             if (baseEnd > start) {
-                val usable = cnt - strip
+                val usable = starts.take(cnt).count { it < baseEnd }
                 for (k in maxOf(0, usable - 6) until usable) e[ne++] = Hashing.hash(s, starts[k], baseEnd, Hashing.ENTITY)
             }
         }

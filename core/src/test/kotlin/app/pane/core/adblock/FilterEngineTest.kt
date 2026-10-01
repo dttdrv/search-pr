@@ -62,6 +62,15 @@ class FilterEngineTest {
         assertTrue(e.blocks("https://hard.com/x.js"))
     }
 
+    @Test fun ambiguousRequestsRequireEveryPossibleTypeForBlocking() {
+        val url = "https://example.com/endpoint"
+        assertFalse(engine("||example.com^\$script").blocks(url, type = ResourceType.UNKNOWN))
+        assertFalse(engine("||example.com^\$xhr").blocks(url, type = ResourceType.UNKNOWN))
+        assertTrue(engine("||example.com^").blocks(url, type = ResourceType.UNKNOWN))
+        assertTrue(engine("||example.com^\$~image").blocks(url, type = ResourceType.UNKNOWN))
+        assertFalse(engine("||example.com^", "@@||example.com^\$xhr").blocks(url, type = ResourceType.UNKNOWN))
+    }
+
     @Test fun thirdPartyOptions() {
         val e = engine("||t.com^\$third-party", "||f.com^\$~third-party")
         assertTrue(e.blocks("https://t.com/x", third = true))
@@ -96,9 +105,8 @@ class FilterEngineTest {
         assertFalse(e.blocks("https://i.com/a", type = ResourceType.IMAGE))
         assertTrue(e.blocks("https://i.com/a", type = ResourceType.STYLESHEET))
         assertTrue(e.blocks("https://x.com/a", type = ResourceType.XHR))
-        // Not knowing what it is: any shared bit is enough.
-        assertTrue(e.blocks("https://x.com/a", type = ResourceType.UNKNOWN))
-        assertTrue(e.blocks("https://s.com/a", type = ResourceType.UNKNOWN))
+        assertFalse(e.blocks("https://x.com/a", type = ResourceType.UNKNOWN))
+        assertFalse(e.blocks("https://s.com/a", type = ResourceType.UNKNOWN))
         assertFalse(e.blocks("https://s.com/a", type = ResourceType.IMAGE or ResourceType.FONT))
         // The main frame is never filtered.
         assertFalse(e.blocks("https://s.com/a", type = ResourceType.DOCUMENT))
@@ -144,8 +152,7 @@ class FilterEngineTest {
 
     @Test fun unsupportedRulesAreNotLoose() {
         val e = engine(
-            "||x.com^\$csp=script-src 'none'", "||y.com^\$removeparam=a", "||z.com^\$popup",
-            "||w.com^\$redirect=googletagservices_gpt.js", "example.com##+js(abort-on-property-read, x)",
+            "||x.com^\$csp=script-src 'none'", "||z.com^\$popup",
             "example.com##div:has-text(Ad)", "||q.com^\$document",
         )
         assertEquals(0, e.networkRuleCount)
@@ -154,7 +161,7 @@ class FilterEngineTest {
     }
 
     @Test fun denyAllowSkipsListedHosts() {
-        val e = engine("\$script,3p,denyallow=cdn.com|b.net")
+        val e = engine("\$script,3p,denyallow=cdn.com|b.net,domain=news.site")
         assertTrue(e.blocks("https://track.org/x.js"))
         assertFalse(e.blocks("https://cdn.com/x.js"))
         assertFalse(e.blocks("https://static.b.net/x.js"))

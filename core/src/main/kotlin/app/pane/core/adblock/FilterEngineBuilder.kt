@@ -13,6 +13,8 @@ import app.pane.core.adblock.FilterEngine.Companion.F_REGEX
 import app.pane.core.adblock.FilterEngine.Companion.F_THIRD
 import app.pane.core.adblock.FilterEngine.Companion.LITERAL_END
 import java.util.regex.Pattern
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 /**
  * Turns filter list text into a [FilterEngine]. Feed it lists with [addLines] (a list at a time,
@@ -34,6 +36,10 @@ class FilterEngineBuilder {
     private val seen = LongSet(1 shl 14)
     private val bad = LongSet(64)
     private var regexCount = 0
+    private val extensions = ArrayList<NetworkExtra>()
+    private val extIds = HashMap<NetworkExtra, Int>()
+    private val ext = IntList(1 shl 14)
+    private val scriptlets = LinkedHashSet<ScriptletFilter>()
 
     private val selIndex = HashMap<String, Int>()
     private val selOff = IntList()
@@ -45,7 +51,7 @@ class FilterEngineBuilder {
     private val cosSeen = LongSet(1 shl 12)
 
     /** Reads one list; returns how many rules it holds (a rule an earlier list already supplied still counts for this one). */
-    fun addLines(lines: Sequence<String>): Int {
+    fun addLines(lines: Sequence<String>, trusted: Boolean = false): Int {
         var count = 0
         // Preprocessor state: each entry is [parent active, condition].
         val stack = ArrayList<BooleanArray>()
@@ -57,15 +63,19 @@ class FilterEngineBuilder {
             if (stack.isNotEmpty() && !stack.last().let { it[0] && it[1] }) continue
             FilterParser.parse(raw) { f ->
                 count += when (f) {
-                    is NetworkFilter -> addNetwork(f)
+                    is NetworkFilter -> if (!trusted && f.extra?.redirect?.let { FilterResources.redirect(it)?.trusted } == true) 0 else addNetwork(f)
                     is CosmeticFilter -> addCosmetic(f)
+                    is ScriptletFilter -> {
+                        if (f.args.isNotEmpty() && FilterResources.scriptlet(f.args[0])?.trusted == true && !trusted) 0
+                        else { scriptlets.add(f); 1 }
+                    }
                 }
             }
         }
         return count
     }
 
-    fun addText(text: String): Int = addLines(text.lineSequence())
+    fun addText(text: String, trusted: Boolean = false): Int = addLines(text.lineSequence(), trusted)
 
     private fun directive(raw: String, stack: ArrayList<BooleanArray>) {
         val parentActive = stack.isEmpty() || stack.last().let { it[0] && it[1] }
@@ -79,6 +89,15 @@ class FilterEngineBuilder {
     // ---- request rules
 
     private fun addNetwork(f: NetworkFilter): Int {
+        val e = f.extra
+        if (e?.redirect != null && !e.redirectRule) {
+            val plain = e.copy(redirect = null, priority = 0).takeUnless { it == NetworkExtra() }
+            return addNetwork(f.copy(extra = plain)) + addNetwork(f.copy(extra = e.copy(redirectRule = true)))
+        }
+        if (f.includeDomains.size > 1 && f.excludeDomains.isEmpty() && f.extra?.redirect == null &&
+            (f.pattern.isEmpty() || f.anchorStart && f.pattern in listOf("https://", "http://"))
+        ) return f.includeDomains.sumOf { addNetwork(f.copy(includeDomains = listOf(it))) }
+        if (f.extra?.removeParam != null || f.extra?.redirectRule == true) return storeNetwork(f, f.types)
         var added = 0
         val pageTypes = f.types and ResourceType.PAGE_BITS
         val requestTypes = f.types and ResourceType.ALL_REQUESTS
@@ -97,6 +116,9 @@ class FilterEngineBuilder {
         if (f.anchorEnd) fl = fl or F_ANCHOR_END
         if (f.matchCase) fl = fl or F_MATCH_CASE
         if (f.party == 1) fl = fl or F_THIRD else if (f.party == 2) fl = fl or F_FIRST
+        if (f.strictParty == 1) fl = fl or FilterEngine.F_STRICT_THIRD else if (f.strictParty == 2) fl = fl or FilterEngine.F_STRICT_FIRST
+        if (f.extra?.redirectRule == true) fl = fl or FilterEngine.F_REDIRECT_RULE
+        if (f.extra?.removeParam != null) fl = fl or FilterEngine.F_REMOVE_PARAM
 
         val stored: String
         if (f.regex) {
@@ -122,6 +144,7 @@ class FilterEngineBuilder {
         fp = (fp xor domainFingerprint(f.includeDomains, 1)) * FNV_PRIME
         fp = (fp xor domainFingerprint(f.excludeDomains, 2)) * FNV_PRIME
         fp = (fp xor domainFingerprint(f.denyAllow, 3)) * FNV_PRIME
+        if (f.extra != null) for (c in Json.encodeToString(f.extra)) fp = (fp xor c.code.toLong()) * FNV_PRIME
         if (f.badfilter) {
             bad.add(fp)
             return 0
@@ -135,6 +158,7 @@ class FilterEngineBuilder {
         pool.addAscii(stored)
         len.add(stored.length)
         dom.add(domRef)
+        ext.add(f.extra?.let { e -> extIds.getOrPut(e) { extensions.add(e); extensions.lastIndex } } ?: -1)
         fingerprints.add(fp)
         if (f.regex) regexCount++
         return 1
@@ -207,13 +231,15 @@ class FilterEngineBuilder {
             for (k in 0 until c) counter.increment(cand[k])
         }
 
-        val pairs = Array(4) { LongList() }
-        val fallbacks = Array(4) { IntList() }
+        val pairs = Array(6) { LongList() }
+        val fallbacks = Array(6) { IntList() }
         for (i in 0 until n) {
             val f = flags[i]
             if (f and F_DEAD != 0) continue
             val exception = f and F_EXCEPTION != 0
             val cat = when {
+                f and FilterEngine.F_REMOVE_PARAM != 0 -> 5
+                f and FilterEngine.F_REDIRECT_RULE != 0 -> 4
                 exception && types[i] and ResourceType.PAGE_BITS != 0 -> 3
                 exception -> 2
                 f and F_IMPORTANT != 0 -> 1
@@ -250,6 +276,7 @@ class FilterEngineBuilder {
             pool.toArray(), domPool.toArray(),
             index(1), index(0), index(2), index(3),
             cosmetics,
+            ext.toArray(), extensions, index(4), index(5), ScriptletIndex(scriptlets.toList()),
         )
     }
 

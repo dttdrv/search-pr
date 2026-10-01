@@ -15,6 +15,11 @@ class TrackingParamsTest {
         assertEquals("https://example.com/?si=keep", TrackingParams.strip("https://example.com/?si=keep"))
     }
 
+    @Test fun preservesSearchAntiAbuseParameters() {
+        val url = "https://www.google.com/search?q=pane&sxsrf=a&ei=b&ved=c&sca_esv=d&gs_lcrp=e&source=hp&sei=f"
+        assertEquals(url, TrackingParams.strip(url))
+    }
+
     @Test fun leavesCleanUrlsAlone() {
         assertEquals("https://a.com/p?q=1&page=2", TrackingParams.strip("https://a.com/p?q=1&page=2"))
         assertEquals("https://a.com/", TrackingParams.strip("https://a.com/"))

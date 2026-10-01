@@ -68,12 +68,9 @@ class FilterParserTest {
 
     @Test fun unsupportedOptionsDropTheRule() {
         ignored("||x.com^\$csp=script-src 'none'")
-        ignored("||x.com^\$removeparam=utm_source")
         ignored("||x.com^\$replace=/a/b/")
         ignored("||x.com^\$header=via:1.1 google")
         ignored("||x.com^\$popup")
-        ignored("||x.com^\$redirect-rule=noop.js")
-        ignored("||x.com^\$redirect=googletagservices_gpt.js")
         ignored("||x.com^\$to=y.com")
         ignored("||x.com^\$document")
         ignored("||x.com^\$domain=/reg/")
@@ -83,6 +80,18 @@ class FilterParserTest {
         assertTrue(net("||x.com^\$script,redirect=noop.js").types == ResourceType.SCRIPT)
         net("||x.com^\$empty")
         net("||x.com^\$mp4")
+    }
+
+    @Test fun listDrivenScriptletsAndModifiersAreParsed() {
+        for (line in listOf(
+            "example.com##+js(set, adblock, false)",
+            "example.com##+js(json-prune, playerAds adPlacements)",
+            "example.com#@#+js()",
+            "||example.com^\$script,redirect-rule=noop.js",
+            "||example.com^\$script,redirect=googletagservices_gpt.js",
+            "||example.com^\$removeparam=utm_source",
+            "||example.com^\$method=POST|~GET",
+        )) assertNotNull(FilterParser.parseOne(line), line)
     }
 
     @Test fun pageLevelExceptions() {
@@ -128,13 +137,12 @@ class FilterParserTest {
         assertEquals(listOf(".a", ".b:not(.c, .d)", "[x=\"1,2\"]"), list.map { (it as CosmeticFilter).selector })
     }
 
-    @Test fun proceduralAndScriptletRulesAreIgnored() {
+    @Test fun proceduralRulesAreIgnored() {
         ignored("a.com##.x:has-text(Sponsored)")
         ignored("a.com##div:xpath(//a)")
         ignored("a.com##.x:matches-css(display: block)")
         ignored("a.com##.x:upward(2)")
         ignored("a.com##.x:style(display:none)")
-        ignored("a.com##+js(set-constant, a, b)")
         ignored("a.com##^script:has-text(x)")
         ignored("a.com#?#.x:-abp-has(.y)")
         ignored("a.com#\$#.x { display: none }")
