@@ -69,6 +69,12 @@ private class Match(val found: Boolean, val current: Int, val total: Int)
 /** Typing pauses this long before searching, so a fast typist doesn't restart the search per key. */
 private const val DEBOUNCE_MS = 120L
 
+private val Pill = 52.dp
+private val Gap = 10.dp
+
+/** What the bar covers at the bottom of the page: the pill and the space around it. */
+val FindBarZone = Pill + Gap * 2
+
 /**
  * Find-in-page as a flat floating pill above the keyboard: the field, a live "3 of 12" counter,
  * previous/next chevrons and a text "Done". The pill rises into place when it appears (the caller
@@ -131,12 +137,12 @@ fun FindInPageBar(tabId: String, onClose: () -> Unit, modifier: Modifier = Modif
                 alpha = p.coerceIn(0f, 1f)
                 if (!reduceMotion) translationY = (1f - p) * risePx
             }
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = Gap),
     ) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .height(Pill)
                 .floating(PaneShapes.pill)
                 .padding(start = 20.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,

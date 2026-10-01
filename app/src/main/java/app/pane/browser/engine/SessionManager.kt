@@ -103,20 +103,24 @@ class SessionManager(
 
     private val barInsetScripts = java.util.WeakHashMap<PaneWebView, ScriptHandler>()
     private var barInset = 0
+    private var barRoom = 0
     private val barInsetJs by lazy { context.assets.open("bar-inset.js").bufferedReader().use { it.readText() } }
 
     /**
-     * The floating bar's height in css pixels. Pages run under the bar, so each keeps this much clear
-     * after the end of its content and lifts fixed bottom ui above the bar. 0 when the bar is away.
+     * What the floating bar covers at the bottom of the page, in css pixels. Pages run under the bar, so
+     * fixed and sticky bottom ui sits [inset] above the page's bottom edge, and the end of the page keeps
+     * [room] clear (the full bar, so it doesn't jump when the bar folds to its label). Both are 0 when the
+     * bar is away.
      */
-    fun setBarInset(px: Int) {
-        if (px == barInset) return
-        barInset = px
+    fun setBarInset(inset: Int, room: Int) {
+        if (inset == barInset && room == barRoom) return
+        barInset = inset
+        barRoom = room
         pages.values.forEach(::applyBarInset)
     }
 
     private fun applyBarInset(page: PaneWebView) {
-        val script = "($barInsetJs)($barInset)"
+        val script = "($barInsetJs)($barInset,$barRoom)"
         page.evaluateJavascript(script, null)
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
         barInsetScripts.remove(page)?.remove()

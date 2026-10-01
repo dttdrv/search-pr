@@ -185,10 +185,11 @@ fun BottomBar(
 
                 // One detector for both directions: sideways swipes the tabs, a flick up opens the
                 // overview. Two nested draggables fought over every diagonal touch. The label has its
-                // own flick and leaves the rest of the strip to the page.
+                // own flick and leaves the rest of the strip to the page; so do the gaps above and below the pill.
                 Box(
                     Modifier
                         .fillMaxSize()
+                        .padding(vertical = BarMetrics.gap)
                         .then(if (label) Modifier else Modifier.pointerInput(stride) {
                             val tracker = VelocityTracker()
                             var axis = 0 // 0 undecided, 1 sideways, 2 vertical
@@ -259,8 +260,7 @@ fun BottomBar(
                                     }
                                 },
                             )
-                        })
-                        .padding(bottom = BarMetrics.gap),
+                        }),
                     // the pill keeps its bottom edge as it shrinks into the label
                     contentAlignment = Alignment.BottomCenter,
                 ) {
