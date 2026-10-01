@@ -86,14 +86,15 @@ if(M.size===0)return;
 var A=${Json.encodeToString(argIds)},B=${Json.encodeToString(exceptions)},S=new Set(),N=new Set();
 for(var i of X)N.add(A[i]);for(var i of M)(B[i]?N:S).add(A[i])
 if(N.has($allExcept))return;for(var i of N)S.delete(i);if(S.size===0)return;
-(function(M){const scriptletGlobals={warOrigin:${Json.encodeToString(FilterResources.origin)}};
+function runScriptlets(M){const scriptletGlobals={warOrigin:${Json.encodeToString(FilterResources.origin)}};
 ${FilterResources.definitions(args.filter { it.isNotEmpty() }.map { it[0] })}
 const Q=${Json.encodeToString(priorities)},C=${Json.encodeToString(args.map { it.drop(1) })},R=${Json.encodeToString(resourceForArg)},F=${Json.encodeToString(resources.map { it.fn })};
 const K=new Map();for(const i of M)K.set(i,F[R[i]]+JSON.stringify(C[i]));
 for(const i of Array.from(M).sort((a,b)=>Q[b]-Q[a]||K.get(a).localeCompare(K.get(b)))){switch(R[i]){
 $calls
 }}
-})(S);
+}
+runScriptlets(S);
 })();
 """.trimIndent()
     }
