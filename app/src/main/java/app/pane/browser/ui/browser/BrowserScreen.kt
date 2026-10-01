@@ -75,6 +75,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -145,6 +146,7 @@ fun BrowserScreen() {
         }
     }
 
+    val swipeCapture = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // The floating bar covers this much of the page; Gecko keeps fixed footers above it until it melts away.
@@ -443,17 +445,21 @@ fun BrowserScreen() {
                         onStop = { container.browser.stop() },
                         onSiteInfo = { chrome.siteInfo = true },
                         onSwipeStart = { _ ->
-                            scope.launch {
+                            swipeCapture[0]?.cancel()
+                            swipeCapture[0] = scope.launch {
                                 val snap = chrome.capture(120)
-                                chrome.overlay = PageOverlay(snap, null, kind = PageOverlay.Kind.TabSwipe)
+                                // The swipe may be over by now: a snapshot arriving late must not be left on screen.
+                                if (isActive) chrome.overlay = PageOverlay(snap, null, kind = PageOverlay.Kind.TabSwipe)
                             }
                         },
                         onSwipeCommit = { target ->
+                            swipeCapture[0]?.cancel()
                             tab?.takeIf { it.url.isNotEmpty() }?.let { t ->
                                 chrome.overlay?.current?.let { bmp -> scope.launch { container.thumbnails.put(t.id, bmp, t.isPrivate) } }
                             }
                             if (target == null) {
-                                container.browser.newTab(private)
+                                // A blank tab already is the new tab; don't pile up empty ones.
+                                if (tab?.url.isNullOrEmpty().not()) container.browser.newTab(private)
                                 chrome.overlay = null
                                 editText = ""
                                 chrome.editing = true
@@ -464,7 +470,10 @@ fun BrowserScreen() {
                                     ?.let { PageOverlay(it, null, kind = PageOverlay.Kind.Cover) }
                             }
                         },
-                        onSwipeCancel = { if (chrome.overlay?.kind == PageOverlay.Kind.TabSwipe) chrome.overlay = null },
+                        onSwipeCancel = {
+                            swipeCapture[0]?.cancel()
+                            if (chrome.overlay?.kind == PageOverlay.Kind.TabSwipe) chrome.overlay = null
+                        },
                     )
                 }
             }

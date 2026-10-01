@@ -37,8 +37,12 @@ class BrowserSmokeTest {
         config.waitForIdleTimeout = 0
         try {
             launch()
-            node(By.text("Start Browsing"))
+            // The carousel: three pages of drawings, then the choices.
+            node(By.text("Just the page"))
             shot("01-onboarding")
+            repeat(3) { tap(By.text("Next")) }
+            node(By.text("Start Browsing"))
+            shot("01b-onboarding-setup")
             scrollTo(By.text("Block ads with uBlock Origin")).click()
             tap(By.text("Start Browsing"))
             node(By.desc("Menu"))

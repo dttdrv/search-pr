@@ -3,6 +3,15 @@ package app.pane.browser.ui.browser
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import kotlinx.coroutines.Job
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
@@ -16,9 +25,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -131,8 +137,10 @@ fun BottomBar(
     val previous = tabs.getOrNull(index - 1)
     val next = tabs.getOrNull(index + 1)
 
-    val swipe = remember { Animatable(0f) }
-    val thresholdPassed = remember { booleanArrayOf(false) }
+    // The finger-driven offset of the pill, a plain float so dragging writes it directly (a coroutine
+    // per drag event would read stale values and drop deltas); the settle animation writes it too.
+    var offset by remember { mutableFloatStateOf(0f) }
+    val swipeJob = remember { arrayOfNulls<Job>(1) }
     val canGoBack = tab?.canGoBack == true || tab?.parentId != null
 
     Box(modifier.fillMaxWidth().padding(bottom = navBarHeight)) {
@@ -150,6 +158,28 @@ fun BottomBar(
                         scaleY = s
                     }
                     .height(BarMetrics.mini)
+                    // A flick sideways works on the collapsed label as well: next tab, or a new one.
+                    .pointerInput(locked, previous?.id, next?.id) {
+                        var sum = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { sum = 0f },
+                            onDragEnd = {
+                                if (!locked && abs(sum) > 56.dp.toPx()) {
+                                    val toNext = sum < 0f
+                                    val target = if (toNext) next else previous
+                                    if (target != null || toNext) {
+                                        haptics.confirm()
+                                        chrome.expand()
+                                        onSwipeCommit(target?.id)
+                                    }
+                                }
+                            },
+                            onHorizontalDrag = { change, delta ->
+                                change.consume()
+                                sum += delta
+                            },
+                        )
+                    }
                     .pressScale(pressedScale = 0.94f) { chrome.expand() }
                     .floating(PaneShapes.pill, shadow = 6.dp)
                     .padding(horizontal = 14.dp),
@@ -199,7 +229,7 @@ fun BottomBar(
                         // Neighbouring tabs slide in from the sides, so clip there but leave room for shadows.
                         .drawWithContent {
                             // Clip only while another tab is sliding in; at rest the pill's shadow may spill past the edge.
-                            if (swipe.value != 0f) {
+                            if (offset != 0f) {
                                 clipRect(left = 0f, top = -size.height, right = size.width, bottom = size.height * 2) {
                                     this@drawWithContent.drawContent()
                                 }
@@ -211,74 +241,115 @@ fun BottomBar(
                 ) {
                     val width = constraints.maxWidth.toFloat()
                     val stride = width + with(density) { 12.dp.toPx() }
-                    val showPrevious by remember { derivedStateOf { swipe.value > 0f } }
-                    val showNext by remember { derivedStateOf { swipe.value < 0f } }
-                    val dragState = rememberDraggableState { delta ->
-                        val hasTarget = if (swipe.value + delta > 0) previous != null else true
-                        val resisted = if (hasTarget) delta else delta * 0.25f
-                        scope.launch { swipe.snapTo(swipe.value + resisted) }
-                        chrome.tabSwipe = (swipe.value / stride).coerceIn(-1f, 1f)
-                        val past = abs(swipe.value) > stride * 0.3f
-                        if (past != thresholdPassed[0]) {
-                            thresholdPassed[0] = past
-                            if (past) haptics.tick()
-                        }
+                    val showPrevious by remember { derivedStateOf { offset > 0f } }
+                    val showNext by remember { derivedStateOf { offset < 0f } }
+                    val currentPrevious by rememberUpdatedState(previous)
+                    val currentNext by rememberUpdatedState(next)
+                    val currentLocked by rememberUpdatedState(locked)
+                    val currentOnTabs by rememberUpdatedState(onTabs)
+                    val currentCommit by rememberUpdatedState(onSwipeCommit)
+                    val currentStart by rememberUpdatedState(onSwipeStart)
+                    val currentCancel by rememberUpdatedState(onSwipeCancel)
+
+                    fun move(value: Float) {
+                        offset = value
+                        chrome.tabSwipe = (value / stride).coerceIn(-1f, 1f)
                     }
+
+                    // One detector for both directions: sideways swipes the tabs, a flick up opens the
+                    // overview. Two nested draggables fought over every diagonal touch.
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .draggable(
-                                orientation = Orientation.Vertical,
-                                state = rememberDraggableState { },
-                                onDragStopped = { velocity -> if (velocity < -600f) onTabs() },
-                            )
-                            .draggable(
-                                orientation = Orientation.Horizontal,
-                                state = dragState,
-                                // Swiping would slide the neighbouring private tabs into view.
-                                enabled = !locked,
-                                onDragStarted = {
-                                    thresholdPassed[0] = false
-                                    onSwipeStart(next?.id ?: previous?.id)
-                                },
-                                onDragStopped = { velocity ->
-                                    val toNext = swipe.value < 0
-                                    val target = if (toNext) next else previous
-                                    val commit = (abs(swipe.value) > stride * 0.3f || abs(velocity) > 900f) &&
-                                        (target != null || toNext)
-                                    if (commit) {
-                                        haptics.confirm()
-                                        swipe.animateTo(if (toNext) -stride else stride, Motion.snappy(), initialVelocity = velocity)
-                                        onSwipeCommit(target?.id)
-                                        swipe.snapTo(0f)
-                                        chrome.tabSwipe = 0f
-                                    } else {
-                                        swipe.animateTo(0f, Motion.bouncy(), initialVelocity = velocity) {
-                                            chrome.tabSwipe = (value / stride).coerceIn(-1f, 1f)
+                            .pointerInput(stride) {
+                                val tracker = VelocityTracker()
+                                var axis = 0 // 0 undecided, 1 sideways, 2 vertical
+                                var totalX = 0f
+                                var totalY = 0f
+                                var passed = false
+                                var started = false
+
+                                fun finishSideways(vx: Float) {
+                                    val flicked = abs(vx) > 900f
+                                    val toNext = if (flicked) vx < 0f else offset < 0f
+                                    val target = if (toNext) currentNext else currentPrevious
+                                    val dragged = abs(offset) > stride * 0.28f && (offset < 0f) == toNext
+                                    val commit = (dragged || flicked) && (target != null || toNext)
+                                    swipeJob[0]?.cancel()
+                                    swipeJob[0] = scope.launch {
+                                        if (commit) {
+                                            haptics.confirm()
+                                            animate(offset, if (toNext) -stride else stride, vx, Motion.snappy()) { v, _ -> move(v) }
+                                            currentCommit(target?.id)
+                                            move(0f)
+                                        } else {
+                                            animate(offset, 0f, vx, Motion.bouncy()) { v, _ -> move(v) }
+                                            currentCancel()
                                         }
-                                        chrome.tabSwipe = 0f
-                                        onSwipeCancel()
                                     }
-                                },
-                            ),
+                                }
+
+                                detectDragGestures(
+                                    onDragStart = {
+                                        tracker.resetTracking()
+                                        axis = 0
+                                        totalX = 0f
+                                        totalY = 0f
+                                        passed = false
+                                        started = false
+                                        // Catching the pill mid-settle: the finger takes over from where it is.
+                                        swipeJob[0]?.cancel()
+                                    },
+                                    onDragEnd = {
+                                        val v = tracker.calculateVelocity()
+                                        when {
+                                            axis == 1 && started -> finishSideways(v.x)
+                                            axis == 2 && (totalY < -48.dp.toPx() || v.y < -600f) -> currentOnTabs()
+                                        }
+                                    },
+                                    onDragCancel = {
+                                        if (axis == 1 && started) finishSideways(0f)
+                                    },
+                                    onDrag = { change, drag ->
+                                        tracker.addPosition(change.uptimeMillis, change.position)
+                                        totalX += drag.x
+                                        totalY += drag.y
+                                        if (axis == 0) axis = if (abs(totalX) >= abs(totalY)) 1 else 2
+                                        if (axis == 1 && !currentLocked) {
+                                            if (!started) {
+                                                started = true
+                                                currentStart(currentNext?.id ?: currentPrevious?.id)
+                                            }
+                                            // Past the first tab on the left, the pill pulls against you.
+                                            val resisted = if (offset + drag.x > 0f && currentPrevious == null) drag.x * 0.25f else drag.x
+                                            move(offset + resisted)
+                                            val over = abs(offset) > stride * 0.28f
+                                            if (over != passed) {
+                                                passed = over
+                                                if (over) haptics.tick()
+                                            }
+                                        }
+                                    },
+                                )
+                            },
                         contentAlignment = Alignment.Center,
                     ) {
                         // Neighbours slide in alongside the current pill.
                         if (showPrevious && previous != null) {
-                            AddressPill(previous, private, Modifier.offset { IntOffset((swipe.value - stride).roundToInt(), 0) }, lifted = false)
+                            AddressPill(previous, private, Modifier.offset { IntOffset((offset - stride).roundToInt(), 0) }, lifted = false)
                         }
                         if (showNext) {
                             if (next != null) {
-                                AddressPill(next, private, Modifier.offset { IntOffset((swipe.value + stride).roundToInt(), 0) }, lifted = false)
+                                AddressPill(next, private, Modifier.offset { IntOffset((offset + stride).roundToInt(), 0) }, lifted = false)
                             } else {
-                                NewTabPill(Modifier.offset { IntOffset((swipe.value + stride).roundToInt(), 0) })
+                                NewTabPill(Modifier.offset { IntOffset((offset + stride).roundToInt(), 0) })
                             }
                         }
                         AddressPill(
                             tab = tab,
                             private = private,
                             modifier = Modifier
-                                .offset { IntOffset(swipe.value.roundToInt(), 0) }
+                                .offset { IntOffset(offset.roundToInt(), 0) }
                                 .onGloballyPositioned { chrome.pillRect = it.boundsInRoot() },
                             locked = locked,
                             onClick = onAddress,
