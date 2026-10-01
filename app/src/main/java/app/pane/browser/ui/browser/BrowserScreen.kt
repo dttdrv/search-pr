@@ -1,6 +1,7 @@
 package app.pane.browser.ui.browser
 
 import android.app.Activity
+import android.graphics.Bitmap
 import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.BackHandler
@@ -61,6 +62,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.engine.EngineEvent
+import app.pane.browser.engine.SessionManager
 import app.pane.browser.ui.findinpage.FindInPageBar
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.prompts.SiteInfoSheet
@@ -263,14 +265,35 @@ fun BrowserScreen() {
         }
     }
 
+    // What a step back would show: the page before it in this tab, or the tab that opened this one.
+    fun backTarget(current: TabState): Pair<SessionManager.BackEntry?, Bitmap?> {
+        val entry = container.sessions.backEntry(current.id)
+        return entry to (entry?.let { container.snapshots.get(current.id, it.url) }
+            ?: current.parentId?.takeIf { !current.canGoBack }?.let { container.thumbnails.get(it) })
+    }
+
+    // The page slides away the way the back gesture's does, [act] having already switched what's underneath.
+    suspend fun slideAway(fromRight: Boolean, behind: Bitmap?, title: String? = null, act: () -> Unit) {
+        val snap = if (settings.reduceMotion || chrome.overlay != null) null else chrome.capture(150)
+        if (snap == null) {
+            act()
+            return
+        }
+        chrome.backFromRight = fromRight
+        chrome.back.snapTo(0f)
+        chrome.overlay = PageOverlay(snap, behind, title, PageOverlay.Kind.Back)
+        act()
+        chrome.back.animateTo(1f, Motion.smooth())
+        chrome.overlay = behind?.let { PageOverlay(it, null, kind = PageOverlay.Kind.Cover) }
+        chrome.back.snapTo(0f)
+    }
+
     // Back swipe: slide the page away like iOS, revealing where you're going.
     BackHandler(enabled = fullscreen && navigator.isEmpty) { container.sessions.exitFullscreen() }
     val canGoBack = tab != null && (tab.canGoBack || tab.parentId != null) && !locked && !chrome.anyOverlay && navigator.isEmpty && !fullscreen
     PredictiveBackHandler(enabled = canGoBack) { events: Flow<BackEventCompat> ->
         val current = tab ?: return@PredictiveBackHandler
-        val entry = container.sessions.backEntry(current.id)
-        val behind = entry?.let { container.snapshots.get(current.id, it.url) }
-            ?: current.parentId?.takeIf { !current.canGoBack }?.let { container.thumbnails.get(it) }
+        val (entry, behind) = backTarget(current)
         val captureJob = scope.launch {
             val snap = chrome.capture(150)
             chrome.overlay = PageOverlay(snap, behind, entry?.title, PageOverlay.Kind.Back)
@@ -438,7 +461,12 @@ fun BrowserScreen() {
                         },
                         onBack = {
                             tab?.let { t ->
-                                if (t.canGoBack) container.browser.goBack() else if (t.parentId != null) container.browser.close(t.id)
+                                val (entry, behind) = backTarget(t)
+                                scope.launch {
+                                    slideAway(fromRight = false, behind, entry?.title) {
+                                        if (t.canGoBack) container.browser.goBack() else if (t.parentId != null) container.browser.close(t.id)
+                                    }
+                                }
                             }
                         },
                         onTabs = { chrome.showTabs = true },
@@ -511,9 +539,12 @@ fun BrowserScreen() {
                 tabCount = sameMode.size,
                 onTabs = { chrome.showTabs = true },
                 onNewTab = { p ->
-                    container.browser.newTab(p)
-                    editText = ""
-                    chrome.editing = true
+                    scope.launch {
+                        // a blank tab already is a new tab, so there is nothing to slide away from
+                        if (tab?.url.isNullOrEmpty()) container.browser.newTab(p) else slideAway(fromRight = true, behind = null) { container.browser.newTab(p) }
+                        editText = ""
+                        chrome.editing = true
+                    }
                 },
             )
 
