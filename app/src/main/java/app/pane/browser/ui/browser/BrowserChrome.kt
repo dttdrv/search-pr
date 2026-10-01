@@ -1,6 +1,8 @@
 package app.pane.browser.ui.browser
 
 import android.graphics.Bitmap
+import kotlin.math.roundToInt
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -71,8 +73,13 @@ class BrowserChrome(private val scope: CoroutineScope) {
         if (isCurrent()) applyEdges(tabId, bitmap, bottomBandPx)
     }
 
+    /** What shows through where the page paints nothing: the theme's ground, set by the screen. */
+    var ground: Color = Color.White
+
+    /** [bottomBandPx] is in the page's own pixels, so it is scaled to the (smaller) bitmap before it is read. */
     fun applyEdges(tabId: String, bitmap: Bitmap, bottomBandPx: Int) {
-        val sampled = PageColors.sample(bitmap, bottomBandPx) ?: return
+        val band = if (pageRect.height > 0f) (bottomBandPx * bitmap.height / pageRect.height).roundToInt() else bottomBandPx
+        val sampled = PageColors.sample(bitmap, band, ground) ?: return
         edgeCache[tabId] = sampled
         edges = sampled
     }

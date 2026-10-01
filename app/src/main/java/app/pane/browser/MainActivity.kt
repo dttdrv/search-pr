@@ -9,6 +9,8 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import app.pane.browser.engine.prompts.PromptEnvironment
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -25,11 +27,18 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private val container: AppContainer get() = (application as PaneApp).container
     private val navigator = Navigator()
+    private val fileChooser = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        PromptEnvironment.deliverFileResult(it.resultCode, it.data)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         container.sessions.attachHost(this)
+        PromptEnvironment.launchFileChooser = { intent, done ->
+            PromptEnvironment.pendingFileResult = done
+            fileChooser.launch(intent)
+        }
         setContent { AppRoot(container, navigator) }
 
         lifecycleScope.launch {
@@ -66,6 +75,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        PromptEnvironment.launchFileChooser = null
         container.sessions.attachHost(null)
         // Leaving Pane with Back (or swiping it away) counts as exiting.
         if (isFinishing && container.settings.current.clearOnExit) {

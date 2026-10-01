@@ -2,7 +2,9 @@ package app.pane.browser.ui.browser
 
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 
 /** What the edges of the page look like right now, so the chrome can match the site. */
 data class PageEdges(
@@ -21,19 +23,20 @@ data class PageEdges(
 object PageColors {
     private const val COLUMNS = 48
 
-    fun sample(bitmap: Bitmap, bottomBandPx: Int): PageEdges? {
+    /** [ground] shows through where the page paints nothing, so those pixels count as the ground. */
+    fun sample(bitmap: Bitmap, bottomBandPx: Int, ground: Color): PageEdges? {
         val w = bitmap.width
         val h = bitmap.height
         if (w < 8 || h < 8 || bitmap.isRecycled) return null
         return try {
-            PageEdges(topColor(bitmap, w), bottomLuma(bitmap, w, h, bottomBandPx.coerceIn(8, h)))
+            PageEdges(topColor(bitmap, w, ground), bottomLuma(bitmap, w, h, bottomBandPx.coerceIn(8, h), ground))
         } catch (_: Exception) {
             null
         }
     }
 
     /** The dominant colour of the top rows; a busy image falls back to their average. */
-    private fun topColor(bitmap: Bitmap, w: Int): Color {
+    private fun topColor(bitmap: Bitmap, w: Int, ground: Color): Color {
         val rows = intArrayOf(1, 3, 6)
         val buckets = HashMap<Int, IntArray>()
         var sumR = 0
@@ -42,7 +45,7 @@ object PageColors {
         var n = 0
         for (y in rows) {
             for (i in 0 until COLUMNS) {
-                val px = bitmap.getPixel((i * (w - 1)) / (COLUMNS - 1), y)
+                val px = Color(bitmap.getPixel((i * (w - 1)) / (COLUMNS - 1), y)).compositeOver(ground).toArgb()
                 val r = (px shr 16) and 0xFF
                 val g = (px shr 8) and 0xFF
                 val b = px and 0xFF
@@ -66,7 +69,7 @@ object PageColors {
         }
     }
 
-    private fun bottomLuma(bitmap: Bitmap, w: Int, h: Int, band: Int): Float {
+    private fun bottomLuma(bitmap: Bitmap, w: Int, h: Int, band: Int, ground: Color): Float {
         var total = 0f
         var n = 0
         val top = h - band
@@ -74,7 +77,7 @@ object PageColors {
             val y = top + (row * (band - 1)) / 3
             for (i in 0 until COLUMNS) {
                 val px = bitmap.getPixel((i * (w - 1)) / (COLUMNS - 1), y.coerceIn(0, h - 1))
-                total += Color(px).luminance()
+                total += Color(px).compositeOver(ground).luminance()
                 n++
             }
         }

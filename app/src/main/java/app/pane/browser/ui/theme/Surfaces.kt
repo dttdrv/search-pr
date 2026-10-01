@@ -55,8 +55,8 @@ fun Modifier.floating(shape: Shape, shadow: Dp = FloatingElevation, fill: Color?
 /**
  * The page under the floating bar: [frostSource] records it once and keeps its bottom band blurred,
  * one blur shared by every [frosted] surface over it. The layers are null where blur isn't reliable
- * (RenderEffect needs Android 12, whose RenderNodes don't repaint when drawn in two places), and the
- * surfaces are then a plain tint.
+ * (RenderEffect needs Android 12, whose RenderNodes don't reliably repaint when drawn in two places),
+ * and the surfaces are then only their veil.
  */
 @Stable
 class Frost internal constructor(internal val page: GraphicsLayer?, internal val band: GraphicsLayer?) {
@@ -72,13 +72,14 @@ fun rememberFrost(): Frost {
     val blurs = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     val page = if (blurs) rememberGraphicsLayer() else null
     val band = if (blurs) rememberGraphicsLayer() else null
-    // nothing.tech's header blurs by 45px, a css standard deviation; an android radius r has sigma r / √3 + 0.5.
+    // nothing.tech's header blurs by 45px, a css standard deviation; an android blur radius r has
+    // sigma r / √3 + 0.5.
     val radius = with(LocalDensity.current) { (45.dp.toPx() - 0.5f) * sqrt(3f) }
     return remember(page, band, radius) {
         // the page renders offscreen once and is reused, so its WebView draws once a frame: drawn twice,
         // chromium rasters tiles only for the viewport of whichever draw came last.
         page?.compositingStrategy = CompositingStrategy.Offscreen
-        // DEBUG band?.renderEffect = BlurEffect(radius, radius)
+        band?.renderEffect = BlurEffect(radius, radius)
         band?.colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(FrostSaturation) })
         Frost(page, band)
     }
@@ -96,12 +97,17 @@ fun Modifier.frostSource(frost: Frost, band: Dp): Modifier {
     val blurred = frost.band
     if (page == null || blurred == null) return this
     val height = with(LocalDensity.current) { band.roundToPx() }
+    // a page without a background of its own shows the ground through its transparent WebView
+    val ground = PaneTheme.colors.background
     return onGloballyPositioned { frost.origin = it.positionInRoot() + Offset(0f, (it.size.height - height).toFloat()) }
         .drawWithContent {
             page.record { this@drawWithContent.drawContent() }
             drawLayer(page)
             val top = height - size.height
-            blurred.record(IntSize(size.width.roundToInt(), height)) { drawRect(Color.Red); translate(top = top) { drawLayer(page) } } // DEBUG red
+            blurred.record(IntSize(size.width.roundToInt(), height)) {
+                drawRect(ground)
+                translate(top = top) { drawLayer(page) }
+            }
         }
 }
 

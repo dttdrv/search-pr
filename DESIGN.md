@@ -2,7 +2,7 @@
 
 Pane is a white page, a few quiet greys and one blue. Small calm type, flat tones instead of
 outlines, centred layouts, generous space, glyphs instead of words where a glyph is enough, and one
-floating pill that is the product. There is no glass, no blur, no gradient, no card inside a card. The page is the interface; everything else is a thin, flat,
+floating pill that is the product. The floating bar is the one frosted surface; there is no other glass or blur, no gradient, no card inside a card. The page is the interface; everything else is a thin, flat,
 confident layer around it. The reference is the Mac browser *Search* (Drice Roland / Office
 Commun): take its restraint and polish, not its logo.
 
@@ -36,10 +36,11 @@ Commun): take its restraint and polish, not its logo.
 4. **Tiny muted labels.** A heading is a few small words in the muted grey, in sentence case:
    `SectionLabel("Privacy")`. No capitals, no letter-spacing. Secondary text is smaller and muted,
    never lighter or heavier.
-5. **The floating pill stays.** The address pill, its round buttons, menus and sheets float over the
-   page as flat solid surfaces (`Modifier.floating(shape)`): one fill, no outline, no glow. Over web
-   content they keep one standard platform elevation shadow (`FloatingElevation`, Material's menu
-   elevation) so a white pill still shows on a white page. They are the only things with a shadow:
+5. **The floating pill stays.** The address pill and its round buttons are frosted
+   (`Modifier.frosted(shape)`): the page behind them blurred, its colour deepened, under a white veil
+   (black over dark pages), with ink glyphs, no shadow and no outline. Menus and sheets float as flat
+   solid surfaces (`Modifier.floating(shape)`) with one standard platform elevation shadow
+   (`FloatingElevation`, Material's menu elevation). They are the only things with a shadow:
    cards, tiles and the start page sit flat on the grey ground, told apart by tone. The blue pill is
    the only solid fill on a screen.
 6. **Icons, or nothing.** Real, well-drawn glyphs from `PaneIcons`, all one weight, in the label
@@ -98,9 +99,9 @@ bouncy for its own sake. Honour `LocalReduceMotion`.
 
 ## Performance rules
 
-- Never put anything that has to read the page's pixels (blur, glass) over the page.
+- Only the floating bar reads the page's pixels (`Modifier.frosted`), and only its own band of them, rendered once per frame. Nothing else blurs the page.
 - No per-frame work in composition; nothing that redraws the whole window while the page scrolls.
-- No animated gradients, no blurs, no `graphicsLayer` with `renderEffect`.
+- No animated gradients, and no `renderEffect` outside `Modifier.frosted`.
 
 ## Building blocks
 

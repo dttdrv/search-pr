@@ -302,6 +302,7 @@ fun BrowserScreen() {
     PaneTheme(mode = settings.theme, private = private, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion) {
         val colors = PaneTheme.colors
         val onPage = tab != null && tab.url.isNotEmpty()
+        SideEffect { chrome.ground = colors.background }
 
         // The status area wears whatever the page shows along its top edge, so it always matches the
         // site. Until the page has painted, its theme-colour (or the plain background) stands in.
@@ -351,14 +352,13 @@ fun BrowserScreen() {
             val barInset = if (barRoom && onPage && !fullscreen && !keyboardForPage) (BarMetrics.zone + navBottom).value.toInt() else 0
             LaunchedEffect(barInset) { container.sessions.setBarInset(barInset) }
             val frost = rememberFrost()
-            val abFrost = (context as? Activity)?.intent?.getStringExtra("frost") != "off" // TEMP A/B
             Box(
                 Modifier
                     .fillMaxSize()
                     .padding(top = if (fullscreen) 0.dp else statusTop)
                     .then(if (keyboardForPage) Modifier.imePadding() else Modifier)
                     .onGloballyPositioned { chrome.pageRect = it.boundsInRoot() }
-                    .then(if (abFrost) Modifier.frostSource(frost, BarMetrics.zone + navBottom) else Modifier),
+                    .frostSource(frost, BarMetrics.zone + navBottom),
             ) {
                 EngineView(
                     tab = tab,
@@ -419,7 +419,7 @@ fun BrowserScreen() {
                 enter = slideInVertically(Motion.smooth()) { it } + fadeIn(Motion.fade()),
                 exit = slideOutVertically(Motion.smooth()) { it } + fadeOut(Motion.fade()),
             ) {
-                CompositionLocalProvider(LocalPaneColors provides barColors, LocalFrost provides frost.takeIf { abFrost }) {
+                CompositionLocalProvider(LocalPaneColors provides barColors, LocalFrost provides frost) {
                     BottomBar(
                         tab = tab,
                         tabs = sameMode,
