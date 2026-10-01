@@ -56,7 +56,10 @@ Commun): take its restraint and polish, not its logo.
 9. **Respect the site.** The page runs truly edge to edge, under the status bar and the floating
    pill. A soft veil in the page's own top colour (strongest at the very top, gone just below the
    icons) keeps the clock and battery legible and lets scrolled content fade out under them, as
-   in the native apps. Fixed footers stay clear of the floating pill.
+   in the native apps. The pill covers the bottom of the page's layout viewport, as on iOS: fixed and
+   sticky bottom ui, sheets and full-height boxes sit above it, the end of the page and of full-height
+   scrollers clears it, and the colour of a lifted box carries on beneath the pill so no unrelated
+   content shows through the gap. A dimmed backdrop keeps covering it.
 10. **Don't sell safety.** Pane blocks trackers and isolates cookies quietly. No counters, badges or
     slogans about privacy on the start page, in onboarding or at the top of Settings; nobody opens
     a browser for them. Private tabs exist and are labelled, and that is all.

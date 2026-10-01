@@ -2,7 +2,10 @@ package app.pane.browser.engine
 
 import android.content.Context
 import android.view.MotionEvent
+import android.view.WindowInsets
 import android.webkit.WebView
+import androidx.core.graphics.Insets
+import androidx.core.view.WindowInsetsCompat
 
 /**
  * One tab's page. A plain [WebView] that reports where it has scrolled and where it was last
@@ -16,6 +19,21 @@ class PaneWebView(window: Context) : WebView(window) {
     init {
         // The platform's stretch (Android 12+) at the page's edges, like every other scroller in the app.
         overScrollMode = OVER_SCROLL_ALWAYS
+    }
+
+    /**
+     * The page script lifts bottom ui above the floating bar, which already covers the navigation inset,
+     * so that inset is not passed on as the page's `env(safe-area-inset-bottom)`: a page that pads for it
+     * would count it twice.
+     */
+    override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
+        val compat = WindowInsetsCompat.toWindowInsetsCompat(insets, this)
+        val bars = compat.getInsets(WindowInsetsCompat.Type.systemBars())
+        val page = WindowInsetsCompat.Builder(compat)
+            .setInsets(WindowInsetsCompat.Type.systemBars(), Insets.of(bars.left, bars.top, bars.right, 0))
+            .build()
+        super.onApplyWindowInsets(page.toWindowInsets() ?: insets)
+        return insets
     }
 
     /** Called with the vertical scroll position whenever it changes. */

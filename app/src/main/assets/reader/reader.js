@@ -145,7 +145,7 @@ document.replaceChild(html, document.documentElement);
 try {
   var sheet = new CSSStyleSheet();
   sheet.replaceSync(OPTIONS.css);
-  document.adoptedStyleSheets = [sheet];
+  document.adoptedStyleSheets = document.adoptedStyleSheets.concat(sheet);
 } catch (e) {
   head.appendChild(element("style", null, OPTIONS.css));
 }

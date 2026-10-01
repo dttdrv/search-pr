@@ -61,6 +61,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.LocalAppContainer
 import app.pane.browser.engine.EngineEvent
+import app.pane.browser.ui.findinpage.FindBarZone
 import app.pane.browser.ui.findinpage.FindInPageBar
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.prompts.SiteInfoSheet
@@ -75,6 +76,7 @@ import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.PrivateColors
 import app.pane.browser.ui.theme.frostSource
 import app.pane.browser.ui.theme.rememberFrost
+import app.pane.core.browser.BarRoom
 import app.pane.core.tabs.TabState
 import app.pane.core.url.UrlDisplay
 import kotlinx.coroutines.CancellationException
@@ -344,13 +346,14 @@ fun BrowserScreen() {
         run {
         Box(Modifier.fillMaxSize().background(colors.background)) {
             // The page runs under the floating bar, so its content shows through around the pill. Pages keep
-            // the bar's height clear after their last line and above fixed bottom ui (see setBarInset), and
-            // the inset drops to 0 once the bar has melted away on scroll. While the page itself has the
-            // keyboard (a form field), the page ends on top of it instead.
-            val barRoom by remember { derivedStateOf { chrome.collapse.value < 0.5f } }
+            // the bar's height clear after their last line and above fixed bottom ui (see setBarInset).
+            val folded by remember { derivedStateOf { chrome.collapse.value >= 0.5f } }
             val keyboardForPage = WindowInsets.isImeVisible && !chrome.editing
-            val barInset = if (barRoom && onPage && !fullscreen && !keyboardForPage) (BarMetrics.zone + navBottom).value.toInt() else 0
-            LaunchedEffect(barInset) { container.sessions.setBarInset(barInset) }
+            val barRoom = BarRoom.of(
+                onPage, fullscreen, keyboardForPage, chrome.findInPage, folded,
+                bar = BarMetrics.zone.value, label = (BarMetrics.mini + BarMetrics.gap * 2).value, find = FindBarZone.value, nav = navBottom.value,
+            )
+            LaunchedEffect(barRoom) { container.sessions.setBarInset(barRoom.inset, barRoom.room) }
             val frost = rememberFrost()
             Box(
                 Modifier
