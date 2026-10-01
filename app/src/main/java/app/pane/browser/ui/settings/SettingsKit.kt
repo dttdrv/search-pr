@@ -38,7 +38,6 @@ import app.pane.browser.ui.components.SegmentedControl
 import app.pane.browser.ui.components.SheetHeader
 import app.pane.browser.ui.components.ToggleRow
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.navigation.Route
 import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.core.settings.BrowserSettings
@@ -209,95 +208,5 @@ internal fun ChoiceSheet(
                 row { ChoiceRow(option, selected = index == selectedIndex, onClick = { onSelect(index) }) }
             }
         }
-    }
-}
-
-/** One searchable setting: what it is called, which screen holds it, and other words for it. */
-internal data class SettingEntry(
-    val title: String,
-    val screen: String,
-    val route: Route,
-    val keywords: String = "",
-)
-
-/**
- * Every setting Pane has, flat, for the search field on the settings home. Tapping a result opens
- * the screen that holds it. Keep this in step with the screens.
- */
-internal val SettingsIndex: List<SettingEntry> = listOf(
-    // Privacy
-    SettingEntry("Block ads & trackers", "Privacy", Route.PrivacySettings, "ad blocker adblock trackers content blocking"),
-    SettingEntry("Filter lists", "Privacy", Route.FilterLists, "ublock easylist easyprivacy ad blocker update download rules"),
-    SettingEntry("Block third-party cookies", "Privacy", Route.PrivacySettings, "cookies cross-site"),
-    SettingEntry("Secure connections", "Privacy", Route.PrivacySettings, "https only prefer upgrade encrypted http"),
-    SettingEntry("Safe Browsing", "Privacy", Route.PrivacySettings, "phishing malware dangerous sites warning google"),
-    SettingEntry("Global Privacy Control", "Privacy", Route.PrivacySettings, "advanced gpc do not sell share sec-gpc"),
-    SettingEntry("Remove tracking parameters", "Privacy", Route.PrivacySettings, "utm fbclid query link strip"),
-    SettingEntry("Remember history", "Privacy", Route.PrivacySettings, "browsing history save"),
-    SettingEntry("Clear data on exit", "Privacy", Route.PrivacySettings, "quit close erase automatically"),
-    SettingEntry("Lock private tabs", "Privacy", Route.PrivacySettings, "biometric fingerprint face pin screen lock"),
-    SettingEntry("JavaScript", "Privacy", Route.PrivacySettings, "advanced scripts"),
-    SettingEntry("Block screenshots", "Privacy", Route.PrivacySettings, "advanced private tabs app switcher"),
-    // Search
-    SettingEntry("Search engine", "Search", Route.SearchSettings, "duckduckgo google bing qwant default"),
-    SettingEntry("Search suggestions", "Search", Route.SearchSettings, "autocomplete typing"),
-    SettingEntry("Suggestions in private tabs", "Search", Route.SearchSettings, "advanced"),
-    SettingEntry("Search shortcuts", "Search", Route.SearchSettings, "advanced keyword at wikipedia youtube"),
-    // Passwords
-    SettingEntry("Autofill service", "Passwords", Route.PasswordSettings, "password manager sign in logins"),
-    SettingEntry("Passkeys", "Passwords", Route.PasswordSettings, "credential provider webauthn"),
-    // Appearance
-    SettingEntry("Text size", "Appearance", Route.AppearanceSettings, "font larger bigger smaller zoom accessibility"),
-    SettingEntry("Theme", "Appearance", Route.AppearanceSettings, "dark light automatic mode"),
-    SettingEntry("Dark pages", "Appearance", Route.AppearanceSettings, "dark mode websites darken night force"),
-    SettingEntry("Reduce motion", "Appearance", Route.AppearanceSettings, "animations accessibility"),
-    SettingEntry("Haptics", "Appearance", Route.AppearanceSettings, "haptic feedback vibration"),
-    SettingEntry("Request desktop sites", "Appearance", Route.AppearanceSettings, "advanced desktop mode"),
-    SettingEntry("Allow zoom on every site", "Appearance", Route.AppearanceSettings, "advanced pinch"),
-    // Tabs & toolbar
-    SettingEntry("Hide toolbar while scrolling", "Tabs & toolbar", Route.TabsSettings, "bar address bottom"),
-    SettingEntry("Website tinting", "Tabs & toolbar", Route.TabsSettings, "toolbar color page tint"),
-    SettingEntry("Reopen tabs on launch", "Tabs & toolbar", Route.TabsSettings, "restore session start"),
-    SettingEntry("Close tabs after", "Tabs & toolbar", Route.TabsSettings, "days old unused stale automatically"),
-    // Start page
-    SettingEntry("Title", "Start page", Route.StartSettings, "start page home name clock time date heading"),
-    SettingEntry("Search field", "Start page", Route.StartSettings, "start page home pill address"),
-    SettingEntry("Favorites", "Start page", Route.StartSettings, "start page home tiles sites shortcuts bookmarks"),
-    SettingEntry("Number of favorites", "Start page", Route.StartSettings, "start page home tiles count how many"),
-    SettingEntry("Favorites from", "Start page", Route.StartSettings, "start page home most visited frequent bookmarks"),
-    // Site permissions
-    SettingEntry("Block pop-ups", "Site permissions", Route.SiteSettings, "windows"),
-    SettingEntry("Block auto-play", "Site permissions", Route.SiteSettings, "video sound media"),
-    SettingEntry("Site permissions", "Site permissions", Route.SiteSettings, "location camera microphone notifications sites"),
-    SettingEntry("Reset all permissions", "Site permissions", Route.SiteSettings, "advanced"),
-    // Clear data
-    SettingEntry("Clear browsing data", "Clear data", Route.ClearData, "history cookies cache erase delete"),
-    // About
-    SettingEntry("Version", "About", Route.About, "build webview engine android"),
-    SettingEntry("Reset settings", "About", Route.About, "defaults restore original"),
-    SettingEntry("Open source licenses", "About", Route.About, "advanced"),
-)
-
-/** The glyph of the screen that holds a setting, for the rows in search results. */
-internal fun settingsIconFor(route: Route): ImageVector = when (route) {
-    Route.PrivacySettings -> PaneIcons.Shield
-    Route.SearchSettings -> PaneIcons.Magnifier
-    Route.PasswordSettings -> PaneIcons.KeyRound
-    Route.AppearanceSettings -> PaneIcons.Palette
-    Route.TabsSettings -> PaneIcons.Tabs
-    Route.StartSettings -> PaneIcons.Home
-    Route.SiteSettings -> PaneIcons.Globe
-    Route.ClearData -> PaneIcons.Trash
-    Route.About -> PaneIcons.Info
-    else -> PaneIcons.Gear
-}
-
-/** Settings whose title, screen or keywords contain every word in [query]. */
-internal fun searchSettings(query: String): List<SettingEntry> {
-    val words = query.lowercase().split(' ').filter { it.isNotBlank() }
-    if (words.isEmpty()) return emptyList()
-    return SettingsIndex.filter { entry ->
-        val haystack = "${entry.title} ${entry.screen} ${entry.keywords}".lowercase()
-        words.all { it in haystack }
     }
 }

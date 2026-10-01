@@ -15,14 +15,12 @@ import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -35,9 +33,7 @@ import app.pane.browser.ui.components.GroupedSection
 import app.pane.browser.ui.components.LargeTitleScaffold
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PrimaryButton
-import app.pane.browser.ui.components.SearchField
 import app.pane.browser.ui.icons.PaneIcons
-import app.pane.browser.ui.library.EmptyState
 import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
@@ -48,7 +44,7 @@ import app.pane.core.search.SearchEngines
 import app.pane.core.settings.ThemeMode
 
 /**
- * The settings root: a search over every setting, then flat lists under small-caps headings.
+ * The settings root: flat lists under small-caps headings.
  * Nothing here is a control; each row opens the screen that holds its settings, led by a bare line
  * glyph.
  */
@@ -61,140 +57,107 @@ fun SettingsScreen() {
     val context = LocalContext.current
     var autofill by remember { mutableStateOf(AutofillStatus.read(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { autofill = AutofillStatus.read(context) }
-    var query by rememberSaveable { mutableStateOf("") }
-    val results = remember(query) { searchSettings(query) }
 
     LargeTitleScaffold(
         title = "Settings",
         onBack = navigator::pop,
         backLabel = backLabel,
-        header = {
-            Column(Modifier.arrive(0)) {
-                SearchField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = "Search settings",
-                    modifier = Modifier.padding(horizontal = Spacing.gutter, vertical = 8.dp),
-                )
-            }
-        },
     ) {
-        if (query.isNotBlank()) {
-            if (results.isEmpty()) {
-                item(key = "none") { EmptyState(title = "No matches", message = "Try another word.") }
-            } else {
-                item(key = "results") {
-                    GroupedSection(modifier = Modifier.arrive(0), separatorInset = GlyphInset) {
-                        results.forEach { entry ->
-                            row {
-                                NavRow(
-                                    entry.title,
-                                    icon = settingsIconFor(entry.route),
-                                    value = entry.screen,
-                                    onClick = { navigator.push(entry.route) },
-                                )
-                            }
-                        }
-                    }
+        item(key = "default") { DefaultBrowserButton(Modifier.arrive(0)) }
+        item(key = "browsing") {
+            GroupedSection(modifier = Modifier.arrive(1), header = "Browsing", separatorInset = GlyphInset) {
+                row {
+                    NavRow(
+                        "Search",
+                        large = true,
+                        icon = PaneIcons.Magnifier,
+                        value = engine.name,
+                        onClick = { navigator.push(Route.SearchSettings) },
+                    )
+                }
+                row {
+                    NavRow(
+                        "Passwords",
+                        large = true,
+                        icon = PaneIcons.KeyRound,
+                        // Whatever the phone has set up. Short names only: a long label would crowd the title.
+                        value = autofill.serviceLabel?.takeIf { it.length <= 12 } ?: if (autofill.enabled) "On" else "Not set",
+                        onClick = { navigator.push(Route.PasswordSettings) },
+                    )
+                }
+                row {
+                    NavRow(
+                        "Site permissions",
+                        large = true,
+                        icon = PaneIcons.Globe,
+                        onClick = { navigator.push(Route.SiteSettings) },
+                    )
                 }
             }
-        } else {
-            item(key = "default") { DefaultBrowserButton(Modifier.arrive(1)) }
-            item(key = "browsing") {
-                GroupedSection(modifier = Modifier.arrive(2), header = "Browsing", separatorInset = GlyphInset) {
-                    row {
-                        NavRow(
-                            "Search",
-                            large = true,
-                            icon = PaneIcons.Magnifier,
-                            value = engine.name,
-                            onClick = { navigator.push(Route.SearchSettings) },
-                        )
-                    }
-                    row {
-                        NavRow(
-                            "Passwords",
-                            large = true,
-                            icon = PaneIcons.KeyRound,
-                            // Whatever the phone has set up. Short names only: a long label would crowd the title.
-                            value = autofill.serviceLabel?.takeIf { it.length <= 12 } ?: if (autofill.enabled) "On" else "Not set",
-                            onClick = { navigator.push(Route.PasswordSettings) },
-                        )
-                    }
-                    row {
-                        NavRow(
-                            "Site permissions",
-                            large = true,
-                            icon = PaneIcons.Globe,
-                            onClick = { navigator.push(Route.SiteSettings) },
-                        )
-                    }
+        }
+        item(key = "look") {
+            GroupedSection(modifier = Modifier.arrive(2), header = "Look & feel", separatorInset = GlyphInset) {
+                row {
+                    NavRow(
+                        "Appearance",
+                        large = true,
+                        icon = PaneIcons.Palette,
+                        value = when (settings.theme) {
+                            ThemeMode.System -> "Automatic"
+                            ThemeMode.Light -> "Light"
+                            ThemeMode.Dark -> "Dark"
+                        },
+                        onClick = { navigator.push(Route.AppearanceSettings) },
+                    )
+                }
+                row {
+                    NavRow(
+                        "Start page",
+                        large = true,
+                        icon = PaneIcons.Home,
+                        onClick = { navigator.push(Route.StartSettings) },
+                    )
+                }
+                row {
+                    NavRow(
+                        "Tabs & toolbar",
+                        large = true,
+                        icon = PaneIcons.Tabs,
+                        onClick = { navigator.push(Route.TabsSettings) },
+                    )
                 }
             }
-            item(key = "look") {
-                GroupedSection(modifier = Modifier.arrive(3), header = "Look & feel", separatorInset = GlyphInset) {
-                    row {
-                        NavRow(
-                            "Appearance",
-                            large = true,
-                            icon = PaneIcons.Palette,
-                            value = when (settings.theme) {
-                                ThemeMode.System -> "Automatic"
-                                ThemeMode.Light -> "Light"
-                                ThemeMode.Dark -> "Dark"
-                            },
-                            onClick = { navigator.push(Route.AppearanceSettings) },
-                        )
-                    }
-                    row {
-                        NavRow(
-                            "Start page",
-                            large = true,
-                            icon = PaneIcons.Home,
-                            onClick = { navigator.push(Route.StartSettings) },
-                        )
-                    }
-                    row {
-                        NavRow(
-                            "Tabs & toolbar",
-                            large = true,
-                            icon = PaneIcons.Tabs,
-                            onClick = { navigator.push(Route.TabsSettings) },
-                        )
-                    }
+        }
+        item(key = "privacy") {
+            GroupedSection(modifier = Modifier.arrive(3), header = "Privacy & data", separatorInset = GlyphInset) {
+                row {
+                    NavRow(
+                        "Privacy",
+                        large = true,
+                        icon = PaneIcons.Shield,
+                        onClick = { navigator.push(Route.PrivacySettings) },
+                    )
+                }
+                row {
+                    NavRow(
+                        "Clear data",
+                        large = true,
+                        icon = PaneIcons.Trash,
+                        onClick = { navigator.push(Route.ClearData) },
+                    )
                 }
             }
-            item(key = "privacy") {
-                GroupedSection(modifier = Modifier.arrive(4), header = "Privacy & data", separatorInset = GlyphInset) {
-                    row {
-                        NavRow(
-                            "Privacy",
-                            large = true,
-                            icon = PaneIcons.Shield,
-                            onClick = { navigator.push(Route.PrivacySettings) },
-                        )
-                    }
-                    row {
-                        NavRow(
-                            "Clear data",
-                            large = true,
-                            icon = PaneIcons.Trash,
-                            onClick = { navigator.push(Route.ClearData) },
-                        )
-                    }
-                }
-            }
-            item(key = "about") {
-                GroupedSection(modifier = Modifier.arrive(5), header = "About", separatorInset = GlyphInset) {
-                    row {
-                        NavRow(
-                            "Pane",
-                            large = true,
-                            icon = PaneIcons.Info,
-                            value = BuildConfig.VERSION_NAME,
-                            onClick = { navigator.push(Route.About) },
-                        )
-                    }
+        }
+        item(key = "about") {
+            GroupedSection(modifier = Modifier.arrive(4), header = "About", separatorInset = GlyphInset) {
+                row {
+                    NavRow(
+                        "Pane",
+                        large = true,
+                        icon = PaneIcons.Info,
+                        value = BuildConfig.VERSION_NAME,
+                        onClick = { navigator.push(Route.About) },
+                    )
                 }
             }
         }
