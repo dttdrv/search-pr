@@ -3,7 +3,16 @@ package app.pane.core.settings
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class ThemeMode { System, Light, Dark }
+enum class ThemeMode {
+    System, Light, Dark;
+
+    /** Whether the app is dark: forced by the choice, or, for [System], whatever the system is. */
+    fun isDark(systemDark: Boolean): Boolean = when (this) {
+        System -> systemDark
+        Light -> false
+        Dark -> true
+    }
+}
 
 /**
  * What happens to a plain-http address. [First] tries the secure address and quietly falls back to

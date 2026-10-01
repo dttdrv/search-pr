@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Theme.Pane" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/pane_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
+        <!-- the page's text handles and the platform's own widgets take the accent, not the system's teal -->
+        <item name="android:colorAccent">@color/pane_accent</item>
+        <item name="android:colorControlActivated">@color/pane_accent</item>
+        <!-- Pane draws its own dark theme; a system that darkens light apps must not dim a light Pane. -->
+        <item name="android:forceDarkAllowed" tools:targetApi="29">false</item>
     </style>
 </resources>

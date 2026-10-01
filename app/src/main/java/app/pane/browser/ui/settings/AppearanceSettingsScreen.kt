@@ -86,7 +86,7 @@ fun AppearanceSettingsScreen() {
                 }
                 row {
                     // Pages are only darkened in a dark app, so the switch waits for one.
-                    val dark = settings.theme == ThemeMode.Dark || (settings.theme == ThemeMode.System && isSystemInDarkTheme())
+                    val dark = settings.theme.isDark(isSystemInDarkTheme())
                     SwitchRow(
                         title = "Dark pages",
                         subtitle = if (dark) null else "Applies in dark theme",

@@ -15,6 +15,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.imePadding
@@ -323,6 +324,20 @@ fun BrowserScreen() {
         chrome.back.snapTo(0f)
     }
 
+    val appDark = settings.theme.isDark(isSystemInDarkTheme())
+    // The theme or Dark pages repaints the page, in its own dark style or darkened: what was read from its edges no longer holds.
+    val look = appDark to settings.darkPages
+    var seenLook by remember { mutableStateOf(look) }
+    LaunchedEffect(look) {
+        if (look == seenLook) return@LaunchedEffect
+        seenLook = look
+        chrome.forgetEdges()
+        container.snapshots.clear()
+        val id = container.store.state.value.selectedTabId ?: return@LaunchedEffect
+        delay(500)
+        chrome.sampleEdges(id, dynamicPx.toInt()) { container.store.state.value.selectedTabId == id }
+    }
+
     PaneTheme(mode = settings.theme, private = private, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion) {
         val colors = PaneTheme.colors
         val onPage = tab != null && tab.url.isNotEmpty()
@@ -357,10 +372,14 @@ fun BrowserScreen() {
             private -> PrivateColors
             else -> DarkColors
         }
-        StatusBarAppearance(
-            lightStatusIcons = if (navigator.isEmpty) lightStatusIcons else colors.isDark,
-            lightNavIcons = if (navigator.isEmpty) barDark else colors.isDark,
+        val coverDark = coverIsDark(
+            pushed = !navigator.isEmpty || !settings.onboardingDone,
+            tabs = chrome.showTabs,
+            editing = chrome.editing,
+            privateGround = if (chrome.showTabs) chrome.showPrivateTabs else private,
+            appDark = appDark,
         )
+        StatusBarAppearance(lightStatusIcons = coverDark ?: lightStatusIcons, lightNavIcons = coverDark ?: barDark)
 
         val sameMode = state.tabsIn(private)
         val index = sameMode.indexOfFirst { it.id == tab?.id }

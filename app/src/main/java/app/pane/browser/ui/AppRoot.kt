@@ -1,5 +1,6 @@
 package app.pane.browser.ui
 
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -11,11 +12,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.drawable.toDrawable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.pane.browser.AppContainer
 import app.pane.browser.LocalAppContainer
@@ -46,6 +50,11 @@ fun AppRoot(container: AppContainer, navigator: Navigator) {
         LocalToasts provides toasts,
     ) {
         PaneTheme(mode = settings.theme, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion) {
+            // The window behind the UI keeps the ground it was made with unless told: stale after a theme change,
+            // it would show through whenever the window resizes or moves.
+            val ground = PaneTheme.colors.background
+            val window = LocalActivity.current?.window
+            SideEffect { window?.setBackgroundDrawable(ground.toArgb().toDrawable()) }
             // Edge to edge: everything draws under the status and navigation bars, and each screen
             // pads itself vertically. Sideways, in landscape, a navigation bar or camera cutout would
             // cover controls, so the whole UI keeps clear of them and the strips show the background.

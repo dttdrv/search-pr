@@ -32,11 +32,7 @@ fun PaneTheme(
     reduceMotion: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val dark = when (mode) {
-        ThemeMode.System -> isSystemInDarkTheme()
-        ThemeMode.Light -> false
-        ThemeMode.Dark -> true
-    }
+    val dark = mode.isDark(isSystemInDarkTheme())
     val colors = when {
         private -> PrivateColors
         dark -> DarkColors

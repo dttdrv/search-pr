@@ -70,6 +70,12 @@ class BrowserChrome(private val scope: CoroutineScope) {
         edgeCache.remove(tabId)
     }
 
+    /** The theme changed, so every page looks different now: nothing read before it holds. */
+    fun forgetEdges() {
+        edgeCache.clear()
+        edges = null
+    }
+
     /** Reads the page's edge colours from what is on screen. */
     suspend fun sampleEdges(tabId: String, bottomBandPx: Int, isCurrent: () -> Boolean) {
         val bitmap = snapshotSource?.invoke(160) ?: return
