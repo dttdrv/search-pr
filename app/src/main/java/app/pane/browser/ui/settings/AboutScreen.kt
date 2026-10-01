@@ -1,15 +1,24 @@
 package app.pane.browser.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.os.Build
 import android.webkit.WebView
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import app.pane.browser.BuildConfig
 import app.pane.browser.LocalAppContainer
@@ -20,11 +29,15 @@ import app.pane.browser.ui.components.LargeTitleScaffold
 import app.pane.browser.ui.components.ListRow
 import app.pane.browser.ui.components.LocalToasts
 import app.pane.browser.ui.components.PaneAlert
+import app.pane.browser.ui.components.RowMargin
 import app.pane.browser.ui.icons.PaneIcons
 import app.pane.browser.ui.library.arrive
 import app.pane.browser.ui.library.rememberBackLabel
 import app.pane.browser.ui.navigation.LocalNavigator
 import app.pane.browser.ui.navigation.Route
+import app.pane.browser.ui.theme.FrostCheck
+import app.pane.browser.ui.theme.PaneTheme
+import app.pane.browser.ui.theme.frostSummary
 import app.pane.browser.ui.theme.rememberHaptics
 
 /**
@@ -37,7 +50,8 @@ fun AboutScreen() {
     val navigator = LocalNavigator.current
     val backLabel = rememberBackLabel(Route.About)
     // The WebView implementation the phone currently uses (Chrome, Android System WebView, ...).
-    val webView = remember { WebView.getCurrentWebViewPackage()?.versionName ?: "System" }
+    val webViewPackage = remember { WebView.getCurrentWebViewPackage() }
+    val webView = webViewPackage?.versionName ?: "System"
     val toasts = LocalToasts.current
     val haptics = rememberHaptics()
     var confirmReset by remember { mutableStateOf(false) }
@@ -66,6 +80,31 @@ fun AboutScreen() {
                         )
                     }
                 }
+            }
+            item(key = "diagnostics") {
+                // what the owner can paste back: the frost's mode and self-test, the device, the WebView
+                val context = LocalContext.current
+                val density = LocalDensity.current.density
+                val verdict = FrostCheck.verdict
+                val report = listOf(
+                    frostSummary(verdict, density, Build.VERSION.SDK_INT),
+                    "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}",
+                    "WebView ${webViewPackage?.packageName} $webView",
+                ).joinToString("\n")
+                Text(
+                    report,
+                    style = PaneTheme.type.footnote,
+                    color = PaneTheme.colors.secondaryLabel,
+                    modifier = Modifier
+                        .arrive(1)
+                        .fillMaxWidth()
+                        .combinedClickable(onClick = {}, onLongClick = {
+                            context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Pane diagnostics", report))
+                            haptics.confirm()
+                            toasts.show("Copied", PaneIcons.Check)
+                        })
+                        .padding(horizontal = RowMargin, vertical = 12.dp),
+                )
             }
             item(key = "advanced") {
                 AdvancedSection(modifier = Modifier.arrive(1)) {

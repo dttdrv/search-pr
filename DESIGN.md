@@ -44,8 +44,11 @@ Commun): take its restraint and polish, not its logo.
    Private / Tabs switch and plus button; over the page, the menu sheet's panel (its cards stay
    solid, a wash of white on dark). Other menus and sheets float as flat solid surfaces
    (`Modifier.floating(shape)`) with one standard platform elevation shadow (`FloatingElevation`,
-   Material's menu elevation). Where the blur can't be trusted a frosted surface is the solid
-   floating one, never a veil over the sharp page. Only menus and sheets cast a shadow: cards, tiles
+   Material's menu elevation). Whether the blur can be trusted is decided on the device: a one-time
+   self-test (`FrostProbe`) blurs a striped test page the way the screen does, by the full radius and
+   then by halves of it, and the frost uses the first that works. The frost is solid until it has run, and
+   where none works a frosted surface is the solid floating one, never a veil over the sharp page.
+   About shows the result, for pasting back. Only menus and sheets cast a shadow: cards, tiles
    and the start page sit flat on the grey ground, told apart by tone. The blue pill is the only
    solid fill on a screen.
 6. **Icons, or nothing.** Real, well-drawn glyphs from `PaneIcons`, all one weight, in the label

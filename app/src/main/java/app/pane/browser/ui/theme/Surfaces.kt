@@ -1,6 +1,5 @@
 package app.pane.browser.ui.theme
 
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +35,7 @@ import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -74,23 +74,35 @@ class Frost internal constructor(internal val page: GraphicsLayer?, internal val
 /** The [Frost] that chrome floats over; none outside the bar. */
 val LocalFrost = staticCompositionLocalOf<Frost?> { null }
 
+/**
+ * The [Frost] for a screen. It is solid until the one-time self-test (see [FrostCheck]) finds a blur
+ * radius that works on this device, then blurs by that radius; and stays solid where none does.
+ */
 @Composable
 fun rememberFrost(): Frost {
-    val blurs = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-    val page = if (blurs) rememberGraphicsLayer() else null
-    val band = if (blurs) rememberGraphicsLayer() else null
-    // nothing.tech's header blurs by 45px, a css standard deviation; an android blur radius r has
-    // sigma r / √3 + 0.5.
-    val radius = with(LocalDensity.current) { (45.dp.toPx() - 0.5f) * sqrt(3f) }
+    val radius = rememberFrostRadius()
+    val page = if (radius != null) rememberGraphicsLayer() else null
+    val band = if (radius != null) rememberGraphicsLayer() else null
     return remember(page, band, radius) {
-        // the page renders offscreen once and is reused, so its WebView draws once a frame: drawn twice,
-        // chromium rasters tiles only for the viewport of whichever draw came last.
-        page?.compositingStrategy = CompositingStrategy.Offscreen
-        band?.renderEffect = BlurEffect(radius, radius)
-        band?.colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(FrostSaturation) })
+        page?.asFrostPage()
+        if (radius != null) band?.asFrostBand(radius)
         Frost(page, band)
     }
 }
+
+/** The page layer: it renders offscreen once and is reused, so its WebView draws once a frame (drawn twice, chromium rasters tiles only for the viewport of whichever draw came last). */
+internal fun GraphicsLayer.asFrostPage() {
+    compositingStrategy = CompositingStrategy.Offscreen
+}
+
+/** The band layer: [radius] of blur and the deepened colour. The self-test builds its band the same way. */
+internal fun GraphicsLayer.asFrostBand(radius: Float) {
+    renderEffect = BlurEffect(radius, radius)
+    colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(FrostSaturation) })
+}
+
+/** The full blur radius. nothing.tech's header blurs by 45px, a css standard deviation; an android blur radius r has sigma r / √3 + 0.5. */
+internal fun Density.frostRadius(): Float = (45.dp.toPx() - 0.5f) * sqrt(3f)
 
 // fitted to the owner's reference, an ios banner over grass: this saturation, then this much white,
 // turn the grass (131,149,63) into the banner's (175,191,113).
