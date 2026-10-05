@@ -1,6 +1,7 @@
 package app.pane.browser.ui.components
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -91,7 +92,8 @@ fun GroupedSection(
         }
         // One flat card per group on the grey ground, like the quick menu: rows are told apart by a
         // short hairline inside it and groups by the space between cards.
-        Column(Modifier.floating(CardShape, shadow = 0.dp, fill = colors.elevatedSurface)) {
+        // a row that comes or goes grows the card instead of snapping it
+        Column(Modifier.floating(CardShape, shadow = 0.dp, fill = colors.elevatedSurface).animateContentSize(Motion.sizeSpring)) {
             built.forEachIndexed { index, row ->
                 row()
                 if (index < built.lastIndex) Separator(Modifier.padding(start = separatorInset, end = RowMargin))
