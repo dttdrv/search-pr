@@ -87,6 +87,13 @@ class BrowserChrome(private val scope: CoroutineScope) {
         sampleTop(tabId, isCurrent)
     }
 
+    /** The page's own first word on its top colour: taken at once, and put right by the next reading of the screen. */
+    fun hintTop(tabId: String, top: Color) {
+        val now = (edges ?: PageEdges(top, ground.luminance())).copy(top = top)
+        edgeCache[tabId] = now
+        edges = now
+    }
+
     /** Reads only the colour at the status area, off the main thread, so it can follow the page while it scrolls. */
     fun sampleTop(tabId: String, isCurrent: () -> Boolean) {
         topSource?.invoke { top ->

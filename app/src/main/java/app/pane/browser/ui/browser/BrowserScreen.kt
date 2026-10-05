@@ -169,14 +169,14 @@ fun BrowserScreen() {
     val swipeCapture = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
     chrome.snapshotSource = { side -> container.sessions.capture(container.store.state.value.selectedTabId.orEmpty(), side) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    // the strip of the page just under the status veil: what is about to pass beneath it, not yet tinted by it
+    // the strip of the page just under the status area: what the screen shows where the page meets it
     val window = LocalActivity.current?.window
     val reader = remember(window) { window?.let(::TopReader) }
     DisposableEffect(reader) { onDispose { reader?.close() } }
-    val veilEnd = with(density) { (statusTop * VeilReach).roundToPx() }
+    val statusPx = with(density) { statusTop.roundToPx() }
     val stripRows = with(density) { TopStrip.roundToPx() }
     chrome.topSource = { onColor ->
-        reader?.read(android.graphics.Rect(0, veilEnd, chrome.pageRect.width.toInt(), veilEnd + stripRows), chrome.ground, onColor)
+        reader?.read(android.graphics.Rect(0, statusPx, chrome.pageRect.width.toInt(), statusPx + stripRows), chrome.ground, onColor)
     }
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // The floating bar takes this much of the screen; the page ends above it until the bar melts away.
@@ -196,10 +196,9 @@ fun BrowserScreen() {
             val previous = last
             last = update.scrollY
             chrome.scrolled = update.scrollY > 8
-            // the page says what it shows under the status area; where it can't (a picture, a gradient) the
-            // screen is read as the page moves
+            // the screen is read as the page moves, for the colour passing under the status area
             val now = android.os.SystemClock.uptimeMillis()
-            if (id !in container.sessions.topColors.value && now - read >= TopReadEveryMs) {
+            if (now - read >= TopReadEveryMs) {
                 read = now
                 chrome.sampleTop(id) { container.store.state.value.selectedTabId == id }
             }
@@ -372,10 +371,16 @@ fun BrowserScreen() {
         // The status area wears whatever the page shows along its top edge, so it always matches the
         // site. Until the page has painted, its theme-colour (or the plain background) stands in.
         val themeTint = tab?.themeColor?.takeIf { onPage }?.let { Color(it) }
-        val told by container.sessions.topColors.collectAsStateWithLifecycle()
+        val pageTop = container.sessions.pageTops.collectAsStateWithLifecycle().value[tab?.id]
+        // the page's own word comes first and is taken at once; the screen has the last word
+        LaunchedEffect(tab?.id, pageTop) {
+            val id = tab?.id ?: return@LaunchedEffect
+            pageTop?.color?.let { chrome.hintTop(id, Color(it)) }
+            chrome.sampleTop(id) { container.store.state.value.selectedTabId == id }
+        }
         val statusTarget = when {
             !onPage || !settings.tintToolbarWithPage -> colors.background
-            else -> told[tab?.id]?.let { Color(it) } ?: chrome.edges?.top ?: themeTint ?: colors.background
+            else -> chrome.edges?.top ?: themeTint ?: colors.background
         }
         // Read in the draw phase, so the colour can glide without recomposing the screen each frame.
         val statusColorState = animateColorAsState(statusTarget, Motion.fade(280), label = "statusColor")
@@ -468,7 +473,7 @@ fun BrowserScreen() {
             }
 
             // The page passes under the status area; a fade in the colour it shows there keeps the clock and battery readable.
-            if (!fullscreen) StatusVeil(statusTop, frost, dark = { statusDark.value }) { statusColorState.value }
+            if (!fullscreen) StatusVeil(statusTop, frost, held = onPage && pageTop?.held == true, dark = { statusDark.value }) { statusColorState.value }
 
             // A fullscreen video brings its own view; it goes above everything.
             val customView by container.sessions.customView.collectAsStateWithLifecycle()

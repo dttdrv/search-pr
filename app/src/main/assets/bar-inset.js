@@ -4,7 +4,7 @@ function (inset, room, head) {
   head = head || 0;
   var sheet = new CSSStyleSheet(), moved = false, timer = 0;
   var queue = new Set(), scrollers = new Set(), stickies = new Set(), fixeds = new Set(), ends = new Set(), shell = false;
-  var told, framed = false;
+  var told, framed = false, held = false;
   try {
     CSS.registerProperty({ name: '--pane-inset', syntax: '<length>', inherits: true, initialValue: '0px' });
   } catch (e) {}
@@ -13,7 +13,7 @@ function (inset, room, head) {
   // (as with a shrunk viewport), the end of the document and of full-height scrollers clears it, a page that
   // doesn't scroll ends above it, and the colour of what was moved carries on beneath it. the status area
   // covers `head` at the top the same way: the document starts below it and scrolls up under it, boxes held
-  // at the top are held below it, and their colour carries on above them
+  // at the top are held below it, and the app is told when the page holds something there
   function css() {
     return ':root{--pane-inset:' + inset + 'px;--pane-room:' + room + 'px' + (moved ? ';transition:--pane-inset .2s' : '') + '}' +
       'html{scroll-padding-bottom:var(--pane-inset)}' +
@@ -127,15 +127,19 @@ function (inset, room, head) {
     if (box.width >= innerWidth * 0.9 && box.height >= innerHeight * 0.9 && (inert(el, cs) || (!el.firstElementChild && !el.matches('iframe,video,canvas,img,embed,object,svg')))) return [null, false];
     var tall = height.unit === 'percent' ? height.value * innerHeight / 100 : height.unit === 'px' ? height.value : 0;
     fixeds.add(el);
-    // held from the top and starting in the status area: starts below it
-    var drop = head > 0 && pinned && box.height > 0 && box.top - (el.getAttribute('data-pane-drop') === '' ? head : 0) < head ? '' : null;
+    // the status area moves the top edge down: a box held a length from that edge moves with it, whatever the
+    // length (boxes a site stacks under one another stay stacked), and one placed by a share of the viewport
+    // only when it would start in the status area
+    var drop = head > 0 && pinned && box.height > 0 && (from.unit === 'px' || box.top - (el.getAttribute('data-pane-drop') === '' ? head : 0) < head) ? '' : null;
     // a sheet whose own scroller reaches its bottom edge runs under the bar the way the page does
     var last = topAt(box.left + box.width / 2, box.bottom - 2);
     if (last && last !== el && inside(last, el) && flows(last, el)) return [null, false, drop];
     if (anchored || tall > innerHeight - inset) return [anchored ? '' : null, tall > innerHeight - inset, drop];
     // placed from the top yet ending at the bottom edge: moved up whole, when it has the room to go
     var own = shift(el);
-    return [inset > 0 && box.height > 0 && box.bottom - own > innerHeight - 1 && box.top - own >= inset + head ? 't' : null, false, drop];
+    var whole = inset > 0 && box.height > 0 && box.bottom - own > innerHeight - 1 && box.top - own >= inset + head;
+    // a box moved up from the bottom edge isn't also moved down from the top one
+    return [whole ? 't' : null, false, whole ? null : drop];
   }
   function flush() {
     timer = 0;
@@ -184,9 +188,12 @@ function (inset, room, head) {
     // in a page that doesn't scroll nothing passes under the status area, so what starts the page colours it
     if (!dropped && shell && first && first !== root && first !== body && !flows(first)) dropped = body;
     var ground = (body && paint(body)) || paint(root) || 'Canvas';
-    var ext = tone(hit, lifted, body, ground, line - 2, 'data-pane-lift'), above = tone(first, dropped, body, ground, head + 2, 'data-pane-drop');
-    var bands = band(above, 'top', head + 'px').concat(band(ext, 'bottom', 'var(--pane-inset)')).join(',') || 'none';
-    [['--pane-ext', ext], ['--pane-ext-top', above], ['--pane-bands', bands]].forEach(function (v) {
+    var ext = tone(hit, lifted, body, ground, line - 2, 'data-pane-lift');
+    // what the page holds at the top spans the width (a narrow box is a floating button): the app then carries
+    // on above it whatever the screen shows there, which no box's colour can be trusted to say
+    held = !!dropped && (dropped === body || dropped.getBoundingClientRect().width >= innerWidth * 0.9);
+    var bands = band(ext, 'bottom', 'var(--pane-inset)').join(',') || 'none';
+    [['--pane-ext', ext], ['--pane-held', held ? '1' : '0'], ['--pane-bands', bands]].forEach(function (v) {
       if (root.style.getPropertyValue(v[0]) !== v[1]) root.style.setProperty(v[0], v[1]);
     });
     tell();
@@ -257,26 +264,22 @@ function (inset, room, head) {
       });
     });
   }
-  // the colour the page shows under the status area, as far as its boxes say; '' where a picture, a gradient or
-  // a see-through box decides it and only the screen can tell
+  // a first word on the colour passing under the status area, ahead of the screen being read: the colour of
+  // the box there, or '' where a picture, a gradient or nothing but the canvas is there and no box can say
   function seen(root) {
-    if (!head) return '';
-    var band = root.style.getPropertyValue('--pane-ext-top');
-    if (band && band !== 'none') return band;
-    for (var e = topAt(innerWidth / 2, head / 2); e; e = up(e)) {
+    if (!head || held) return '';
+    for (var e = topAt(innerWidth / 2, head / 2); e && e !== root && e !== document.body; e = up(e)) {
       var cs = getComputedStyle(e);
       if (cs.backgroundImage !== 'none' || e.matches('img,video,canvas,svg,iframe,picture')) return '';
       if (!/^rgba\(.*, 0\)$|^transparent/.test(cs.backgroundColor)) return cs.backgroundColor;
     }
-    // nothing there but the canvas, which a root that paints nothing takes from the body
-    var body = document.body && getComputedStyle(document.body);
-    return body && body.backgroundImage === 'none' ? paint(document.body) : '';
+    return '';
   }
-  // tells the app when that colour changes
+  // tells the app when what is at the top changes: whether the page holds something there, then that colour
   function tell() {
     var port = window.__paneTop, root = document.documentElement;
     if (!port || !root) return;
-    var now = seen(root);
+    var now = (held ? '1' : '0') + '\t' + seen(root);
     if (now === told) return;
     told = now;
     port.postMessage(now);

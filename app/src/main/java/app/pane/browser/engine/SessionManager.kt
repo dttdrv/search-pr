@@ -155,9 +155,9 @@ class SessionManager(
     private val _scroll = MutableSharedFlow<ScrollUpdate>(extraBufferCapacity = 64)
     val scroll: SharedFlow<ScrollUpdate> = _scroll.asSharedFlow()
 
-    /** Tab -> the colour its page says it shows under the status area; a tab is absent while its page can't say. */
-    private val _topColors = MutableStateFlow<Map<String, Int>>(emptyMap())
-    val topColors: StateFlow<Map<String, Int>> = _topColors
+    /** Tab -> what its page last said about its top (see [PageTop]). */
+    private val _pageTops = MutableStateFlow<Map<String, PageTop>>(emptyMap())
+    val pageTops: StateFlow<Map<String, PageTop>> = _pageTops
 
     /** A fullscreen video's own view, while there is one. The screen puts it above everything. */
     private val _customView = MutableStateFlow<View?>(null)
@@ -273,7 +273,7 @@ class SessionManager(
     private val privateIds = HashSet<String>()
 
     private fun release(tabId: String) {
-        _topColors.value -= tabId
+        _pageTops.value -= tabId
         backEntries.remove(tabId)
         upgraded.remove(tabId)
         httpOffers.remove(tabId)
@@ -655,7 +655,7 @@ class SessionManager(
         page.webViewClient = Client(tabId, private)
         page.webChromeClient = Chrome(tabId, private)
         bridge.attach(page)
-        TopColorBridge.attach(page) { color -> _topColors.value = if (color == null) _topColors.value - tabId else _topColors.value + (tabId to color) }
+        TopColorBridge.attach(page) { top -> _pageTops.value += tabId to top }
         page.setDownloadListener { url, userAgent, disposition, mime, length ->
             val request = DownloadRequest(tabId, url, userAgent, disposition, mime, length, private, page.url, bridge.reader(page))
             bridge.about(page, url) { name, form -> onDownload(request.copy(name = name, form = form)) }
