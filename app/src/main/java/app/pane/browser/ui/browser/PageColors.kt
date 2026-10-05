@@ -23,6 +23,9 @@ data class PageEdges(
 object PageColors {
     private const val COLUMNS = 48
 
+    /** How wide a capture of the top rows needs to be for [top]: two pixels to each column read. */
+    const val StripWidth = COLUMNS * 2
+
     /** [ground] shows through where the page paints nothing, so those pixels count as the ground. */
     fun sample(bitmap: Bitmap, bottomBandPx: Int, ground: Color): PageEdges? {
         val w = bitmap.width
@@ -35,9 +38,13 @@ object PageColors {
         }
     }
 
+    /** The colour along the top of [strip], a capture of just the page's first rows. */
+    fun top(strip: Bitmap, ground: Color): Color? =
+        if (strip.width < 8 || strip.height < 2 || strip.isRecycled) null else runCatching { topColor(strip, strip.width, ground) }.getOrNull()
+
     /** The dominant colour of the top rows; a busy image falls back to their average. */
     private fun topColor(bitmap: Bitmap, w: Int, ground: Color): Color {
-        val rows = intArrayOf(1, 3, 6)
+        val rows = intArrayOf(1, 3, 6).filter { it < bitmap.height }
         val buckets = HashMap<Int, IntArray>()
         var sumR = 0
         var sumG = 0

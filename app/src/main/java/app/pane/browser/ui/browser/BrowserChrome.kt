@@ -3,6 +3,7 @@ package app.pane.browser.ui.browser
 import android.graphics.Bitmap
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -53,6 +54,9 @@ class BrowserChrome(private val scope: CoroutineScope) {
     /** Draws the page on screen into a bitmap whose longer side is at most the given size; set by the screen. */
     var snapshotSource: ((maxSide: Int) -> Bitmap?)? = null
 
+    /** Reads the colour of the page where it is about to pass under the status area, from the screen itself. */
+    var topSource: ((onColor: (Color) -> Unit) -> Unit)? = null
+
     /** Whether the page has scrolled away from its top; the status area then dissolves into it. */
     var scrolled by mutableStateOf(false)
 
@@ -80,6 +84,17 @@ class BrowserChrome(private val scope: CoroutineScope) {
     suspend fun sampleEdges(tabId: String, bottomBandPx: Int, isCurrent: () -> Boolean) {
         val bitmap = snapshotSource?.invoke(160) ?: return
         if (isCurrent()) applyEdges(tabId, bitmap, bottomBandPx)
+        sampleTop(tabId, isCurrent)
+    }
+
+    /** Reads only the colour at the status area, off the main thread, so it can follow the page while it scrolls. */
+    fun sampleTop(tabId: String, isCurrent: () -> Boolean) {
+        topSource?.invoke { top ->
+            if (!isCurrent()) return@invoke
+            val now = (edges ?: PageEdges(top, ground.luminance())).copy(top = top)
+            edgeCache[tabId] = now
+            edges = now
+        }
     }
 
     /** What shows through where the page paints nothing: the theme's ground, set by the screen. */
@@ -88,7 +103,9 @@ class BrowserChrome(private val scope: CoroutineScope) {
     /** [bottomBandPx] is in the page's own pixels, so it is scaled to the (smaller) bitmap before it is read. */
     fun applyEdges(tabId: String, bitmap: Bitmap, bottomBandPx: Int) {
         val band = if (pageRect.height > 0f) (bottomBandPx * bitmap.height / pageRect.height).roundToInt() else bottomBandPx
-        val sampled = PageColors.sample(bitmap, band, ground) ?: return
+        val read = PageColors.sample(bitmap, band, ground) ?: return
+        // the top is followed from the screen where that can be read; this capture then only settles the bottom
+        val sampled = edges?.takeIf { topSource != null }?.let { read.copy(top = it.top) } ?: read
         edgeCache[tabId] = sampled
         edges = sampled
     }

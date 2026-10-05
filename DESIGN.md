@@ -62,9 +62,11 @@ Commun): take its restraint and polish, not its logo.
    people need, in plain words, 56dp rows. The rest sits under an "Advanced" row that expands in
    place. Nothing is removed, only tiered.
 9. **Respect the site.** The page runs truly edge to edge, under the status bar and the floating
-   pill. A soft veil in the page's own top colour (strongest at the very top, gone just below the
-   icons) keeps the clock and battery legible and lets scrolled content fade out under them, as
-   in the native apps. The pill covers the bottom of the page's layout viewport, as on iOS: fixed and
+   pill. Under the status bar the page itself shows through a soft veil, blurred and lightly tinted
+   (whole behind the icons, gone just below them; a fade in the page's own top colour where the
+   device can't blur), so the clock and battery stay legible and scrolled content fades out under
+   them, as in the native apps. The page still starts below the status bar and scrolls up under it,
+   and headers a site holds at the top stay below it with their colour carried on above. The pill covers the bottom of the page's layout viewport, as on iOS: fixed and
    sticky bottom ui, sheets and full-height boxes sit above it, the end of the page and of full-height
    scrollers clears it, and the colour of a lifted box carries on beneath the pill so no unrelated
    content shows through the gap. A dimmed backdrop keeps covering it.

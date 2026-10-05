@@ -22,15 +22,15 @@ class PaneWebView(window: Context) : WebView(window) {
     }
 
     /**
-     * The page script lifts bottom ui above the floating bar, which already covers the navigation inset,
-     * so that inset is not passed on as the page's `env(safe-area-inset-bottom)`: a page that pads for it
-     * would count it twice.
+     * The page script keeps the page clear of the floating bar (which already covers the navigation inset)
+     * and of the status area, so neither is passed on as the page's `env(safe-area-inset-*)`: a page that
+     * pads for them would count them twice.
      */
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
         val compat = WindowInsetsCompat.toWindowInsetsCompat(insets, this)
         val bars = compat.getInsets(WindowInsetsCompat.Type.systemBars())
         val page = WindowInsetsCompat.Builder(compat)
-            .setInsets(WindowInsetsCompat.Type.systemBars(), Insets.of(bars.left, bars.top, bars.right, 0))
+            .setInsets(WindowInsetsCompat.Type.systemBars(), Insets.of(bars.left, 0, bars.right, 0))
             .build()
         super.onApplyWindowInsets(page.toWindowInsets() ?: insets)
         return insets

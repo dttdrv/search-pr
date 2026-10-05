@@ -105,23 +105,26 @@ class SessionManager(
     private val barInsetScripts = java.util.WeakHashMap<PaneWebView, ScriptHandler>()
     private var barInset = 0
     private var barRoom = 0
+    private var barHead = 0
     private val barInsetJs by lazy { context.assets.open("bar-inset.js").bufferedReader().use { it.readText() } }
 
     /**
      * What the floating bar covers at the bottom of the page, in css pixels. Pages run under the bar, so
      * fixed and sticky bottom ui sits [inset] above the page's bottom edge, and the end of the page keeps
      * [room] clear (the full bar, so it doesn't jump when the bar folds to its label). Both are 0 when the
-     * bar is away.
+     * bar is away. [head] is what the status area covers at the top: the page starts below it, scrolls up
+     * under it, and keeps what it holds at the top below it.
      */
-    fun setBarInset(inset: Int, room: Int) {
-        if (inset == barInset && room == barRoom) return
+    fun setBarInset(inset: Int, room: Int, head: Int) {
+        if (inset == barInset && room == barRoom && head == barHead) return
         barInset = inset
         barRoom = room
+        barHead = head
         pages.values.forEach(::applyBarInset)
     }
 
     private fun applyBarInset(page: PaneWebView) {
-        val script = "($barInsetJs)($barInset,$barRoom)"
+        val script = "($barInsetJs)($barInset,$barRoom,$barHead)"
         page.evaluateJavascript(script, null)
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
         barInsetScripts.remove(page)?.remove()
@@ -151,6 +154,10 @@ class SessionManager(
 
     private val _scroll = MutableSharedFlow<ScrollUpdate>(extraBufferCapacity = 64)
     val scroll: SharedFlow<ScrollUpdate> = _scroll.asSharedFlow()
+
+    /** Tab -> the colour its page says it shows under the status area; a tab is absent while its page can't say. */
+    private val _topColors = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val topColors: StateFlow<Map<String, Int>> = _topColors
 
     /** A fullscreen video's own view, while there is one. The screen puts it above everything. */
     private val _customView = MutableStateFlow<View?>(null)
@@ -266,6 +273,7 @@ class SessionManager(
     private val privateIds = HashSet<String>()
 
     private fun release(tabId: String) {
+        _topColors.value -= tabId
         backEntries.remove(tabId)
         upgraded.remove(tabId)
         httpOffers.remove(tabId)
@@ -450,6 +458,8 @@ class SessionManager(
             Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { bitmap ->
                 val canvas = android.graphics.Canvas(bitmap)
                 canvas.scale(scale, scale)
+                // a view draws in its own scrolled coordinates; its parent is what brings the part on screen back to the origin
+                canvas.translate(-page.scrollX.toFloat(), -page.scrollY.toFloat())
                 page.draw(canvas)
             }
         }.getOrNull()
@@ -645,6 +655,7 @@ class SessionManager(
         page.webViewClient = Client(tabId, private)
         page.webChromeClient = Chrome(tabId, private)
         bridge.attach(page)
+        TopColorBridge.attach(page) { color -> _topColors.value = if (color == null) _topColors.value - tabId else _topColors.value + (tabId to color) }
         page.setDownloadListener { url, userAgent, disposition, mime, length ->
             val request = DownloadRequest(tabId, url, userAgent, disposition, mime, length, private, page.url, bridge.reader(page))
             bridge.about(page, url) { name, form -> onDownload(request.copy(name = name, form = form)) }

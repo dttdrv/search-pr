@@ -36,6 +36,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -91,6 +92,12 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+
+/** How often the colour under the status area is read while the page scrolls: every third frame at 60 Hz. */
+private const val TopReadEveryMs = 50L
+
+/** How deep a strip of the page that read takes. */
+private val TopStrip = 8.dp
 
 /**
  * The browser itself: page, start page, bottom chrome, and the overlays that grow out of it
@@ -162,6 +169,15 @@ fun BrowserScreen() {
     val swipeCapture = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
     chrome.snapshotSource = { side -> container.sessions.capture(container.store.state.value.selectedTabId.orEmpty(), side) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    // the strip of the page just under the status veil: what is about to pass beneath it, not yet tinted by it
+    val window = LocalActivity.current?.window
+    val reader = remember(window) { window?.let(::TopReader) }
+    DisposableEffect(reader) { onDispose { reader?.close() } }
+    val veilEnd = with(density) { (statusTop * VeilReach).roundToPx() }
+    val stripRows = with(density) { TopStrip.roundToPx() }
+    chrome.topSource = { onColor ->
+        reader?.read(android.graphics.Rect(0, veilEnd, chrome.pageRect.width.toInt(), veilEnd + stripRows), chrome.ground, onColor)
+    }
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // The floating bar takes this much of the screen; the page ends above it until the bar melts away.
     val dynamicPx = with(density) { (BarMetrics.zone + navBottom).toPx() }
@@ -174,11 +190,19 @@ fun BrowserScreen() {
         chrome.expand()
         val id = tab?.id ?: return@LaunchedEffect
         var last = -1
+        var read = 0L
         container.sessions.scroll.collect { update ->
             if (update.tabId != id) return@collect
             val previous = last
             last = update.scrollY
             chrome.scrolled = update.scrollY > 8
+            // the page says what it shows under the status area; where it can't (a picture, a gradient) the
+            // screen is read as the page moves
+            val now = android.os.SystemClock.uptimeMillis()
+            if (id !in container.sessions.topColors.value && now - read >= TopReadEveryMs) {
+                read = now
+                chrome.sampleTop(id) { container.store.state.value.selectedTabId == id }
+            }
             when {
                 update.scrollY <= 0 -> chrome.expand()
                 previous >= 0 && container.settings.current.hideToolbarOnScroll -> chrome.onScroll(update.scrollY - previous, dynamicPx)
@@ -348,13 +372,16 @@ fun BrowserScreen() {
         // The status area wears whatever the page shows along its top edge, so it always matches the
         // site. Until the page has painted, its theme-colour (or the plain background) stands in.
         val themeTint = tab?.themeColor?.takeIf { onPage }?.let { Color(it) }
+        val told by container.sessions.topColors.collectAsStateWithLifecycle()
         val statusTarget = when {
             !onPage || !settings.tintToolbarWithPage -> colors.background
-            else -> chrome.edges?.top ?: themeTint ?: colors.background
+            else -> told[tab?.id]?.let { Color(it) } ?: chrome.edges?.top ?: themeTint ?: colors.background
         }
         // Read in the draw phase, so the colour can glide without recomposing the screen each frame.
         val statusColorState = animateColorAsState(statusTarget, Motion.fade(280), label = "statusColor")
-        val lightStatusIcons by remember { derivedStateOf { statusColorState.value.luminance() < 0.5f } }
+        // the icons and the veil's tone follow the page at once; only the plain colour glides
+        val lightStatusIcons = statusTarget.luminance() < 0.5f
+        val statusDark = rememberUpdatedState(lightStatusIcons)
 
         // Glass reads best when its tone follows the page behind it: dark glass over dark pages. Over a
         // page of luminance 0.18 a black and a white veil give their ink the same contrast; a margin
@@ -396,15 +423,16 @@ fun BrowserScreen() {
                 onPage, fullscreen, keyboardForPage, chrome.findInPage, folded,
                 bar = BarMetrics.zone.value, label = (BarMetrics.mini + BarMetrics.gap * 2).value, find = FindBarZone.value, nav = navBottom.value,
             )
-            LaunchedEffect(barRoom) { container.sessions.setBarInset(barRoom.inset, barRoom.room) }
+            // the page runs under the status area too: it starts below it and scrolls up beneath it
+            val head = if (onPage && !fullscreen) statusTop.value.toInt() else 0
+            LaunchedEffect(barRoom, head) { container.sessions.setBarInset(barRoom.inset, barRoom.room, head) }
             val frost = rememberFrost()
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(top = if (fullscreen) 0.dp else statusTop)
                     .then(if (keyboardForPage) Modifier.imePadding() else Modifier)
                     .onGloballyPositioned { chrome.pageRect = it.boundsInRoot() }
-                    .frostSource(frost, BarMetrics.zone + navBottom),
+                    .frostSource(frost, BarMetrics.zone + navBottom, crown = if (fullscreen) 0.dp else statusTop * VeilReach),
             ) {
                 EngineView(
                     tab = tab,
@@ -414,7 +442,7 @@ fun BrowserScreen() {
                 if (tab == null || tab.url.isEmpty()) {
                     HomePage(
                         private = private,
-                        contentPadding = PaddingValues(bottom = BarMetrics.zone + navBottom + 16.dp),
+                        contentPadding = PaddingValues(top = statusTop, bottom = BarMetrics.zone + navBottom + 16.dp),
                         onOpen = { container.browser.submit(it) },
                         onSearch = {
                             if (locked) {
@@ -439,10 +467,8 @@ fun BrowserScreen() {
                 }
             }
 
-            // The status area wears the page's own top colour, so the clock and battery sit on the site's header.
-            if (!fullscreen) {
-                Box(Modifier.fillMaxWidth().height(statusTop).drawBehind { drawRect(statusColorState.value) })
-            }
+            // The page passes under the status area; a fade in the colour it shows there keeps the clock and battery readable.
+            if (!fullscreen) StatusVeil(statusTop, frost, dark = { statusDark.value }) { statusColorState.value }
 
             // A fullscreen video brings its own view; it goes above everything.
             val customView by container.sessions.customView.collectAsStateWithLifecycle()

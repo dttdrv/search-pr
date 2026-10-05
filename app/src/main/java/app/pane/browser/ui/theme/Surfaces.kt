@@ -58,12 +58,12 @@ fun Modifier.floating(shape: Shape, shadow: Dp = FloatingElevation, fill: Color?
 
 /**
  * What chrome floats over: [frostSource] records it once and keeps its bottom band blurred, one blur
- * shared by every [frosted] surface over it. The layers are null where blur isn't reliable
- * (RenderEffect needs Android 12, whose RenderNodes don't reliably repaint when drawn in two places),
- * and the surfaces are then solid.
+ * shared by every [frosted] surface over it, and its top band ([crown]) blurred for the status area.
+ * The layers are null where blur isn't reliable (RenderEffect needs Android 12, whose RenderNodes
+ * don't reliably repaint when drawn in two places), and the surfaces are then solid.
  */
 @Stable
-class Frost internal constructor(internal val page: GraphicsLayer?, internal val band: GraphicsLayer?) {
+class Frost internal constructor(internal val page: GraphicsLayer?, internal val band: GraphicsLayer?, internal val crown: GraphicsLayer?) {
     /** The source's top-left in the root. */
     internal var origin by mutableStateOf(Offset.Zero)
 
@@ -83,10 +83,14 @@ fun rememberFrost(): Frost {
     val radius = rememberFrostRadius()
     val page = if (radius != null) rememberGraphicsLayer() else null
     val band = if (radius != null) rememberGraphicsLayer() else null
-    return remember(page, band, radius) {
+    val crown = if (radius != null) rememberGraphicsLayer() else null
+    return remember(page, band, crown, radius) {
         page?.asFrostPage()
-        if (radius != null) band?.asFrostBand(radius)
-        Frost(page, band)
+        if (radius != null) {
+            band?.asFrostBand(radius)
+            crown?.asFrostBand(radius)
+        }
+        Frost(page, band, crown)
     }
 }
 
@@ -119,13 +123,15 @@ internal fun frostTint(dark: Boolean): Color {
     return pole.copy(alpha = FrostShade).compositeOver(veil.copy(alpha = FrostVeil))
 }
 
-/** Draws this through [frost]'s page layer and keeps the bottom [band] of it blurred. */
+/** Draws this through [frost]'s page layer and keeps the bottom [band] and the top [crown] of it blurred. */
 @Composable
-fun Modifier.frostSource(frost: Frost, band: Dp): Modifier {
+fun Modifier.frostSource(frost: Frost, band: Dp, crown: Dp = 0.dp): Modifier {
     val page = frost.page
     val blurred = frost.band
-    if (page == null || blurred == null) return this
+    val above = frost.crown
+    if (page == null || blurred == null || above == null) return this
     val height = with(LocalDensity.current) { band.roundToPx() }
+    val head = with(LocalDensity.current) { crown.roundToPx() }
     // a page without a background of its own shows the ground through its transparent WebView
     val ground = PaneTheme.colors.background
     return onGloballyPositioned { frost.origin = it.positionInRoot() }
@@ -138,6 +144,10 @@ fun Modifier.frostSource(frost: Frost, band: Dp): Modifier {
             blurred.record(IntSize(size.width.roundToInt(), rows)) {
                 drawRect(ground)
                 translate(top = (rows - full).toFloat()) { drawLayer(page) }
+            }
+            if (head > 0) above.record(IntSize(size.width.roundToInt(), head)) {
+                drawRect(ground)
+                drawLayer(page)
             }
         }
 }
