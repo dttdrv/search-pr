@@ -5,9 +5,6 @@ import android.view.View
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.webkit.WebViewCompat
-import app.pane.browser.engine.PageTop
-import app.pane.browser.engine.TopColorBridge
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -47,7 +44,7 @@ class BarInsetTest {
      * in slices after a short delay, so each step waits.
      */
     @SuppressLint("SetJavaScriptEnabled")
-    private fun measure(body: String, inset: Int = 90, head: Int = 0, act: String = "", told: MutableList<String>? = null, probe: String): JSONObject {
+    private fun measure(body: String, inset: Int = 90, head: Int = 0, act: String = "", probe: String): JSONObject {
         val loaded = CountDownLatch(1)
         lateinit var web: WebView
         instrumentation.runOnMainSync {
@@ -56,8 +53,6 @@ class BarInsetTest {
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView, url: String) = loaded.countDown()
                 }
-                // what the page tells the app it shows under the status area, in the order it said it
-                if (told != null) WebViewCompat.addWebMessageListener(this, "__paneTop", setOf("*")) { _, message, _, _, _ -> synchronized(told) { told.add(message.data.orEmpty()) } }
                 val density = resources.displayMetrics.density
                 measure(View.MeasureSpec.makeMeasureSpec((400 * density).toInt(), View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec((800 * density).toInt(), View.MeasureSpec.EXACTLY))
                 layout(0, 0, measuredWidth, measuredHeight)
@@ -79,14 +74,48 @@ class BarInsetTest {
 
     private val line = "innerHeight - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pane-inset'))"
     private fun bottom(id: String) = "document.getElementById('$id').getBoundingClientRect().bottom"
+    /** where the box's content ends, above its bottom padding */
+    private fun content(id: String) = "(${bottom(id)} - parseFloat(getComputedStyle(document.getElementById('$id')).paddingBottom))"
     private fun top(id: String) = "document.getElementById('$id').getBoundingClientRect().top"
-    private val held = "document.documentElement.style.getPropertyValue('--pane-held')"
 
     @Test
     fun bottomBarSitsAboveTheBar() {
-        val r = measure("<div id=nav style='position:fixed;left:0;right:0;bottom:0;height:56px;background:#fff'></div><div style='height:3000px'></div>",
+        val r = measure("<div id=nav style='position:fixed;left:0;right:0;bottom:0;height:56px'></div><div style='height:3000px'></div>",
             probe = "{nav: ${bottom("nav")}, line: $line}")
         assertEquals(r.getDouble("line"), r.getDouble("nav"), 1.0)
+    }
+
+    @Test
+    fun aBottomBarThatPaintsItselfRunsOnUnderTheBarWithItsContentAboveIt() {
+        for (paint in listOf("background:rgb(10,20,30)", "background:linear-gradient(90deg,red,blue)", "padding-bottom:8px;background:#fff;box-sizing:border-box")) {
+            val r = measure("<div id=nav style='position:fixed;left:0;right:0;bottom:0;height:56px;$paint'><p style='margin:0'>home</p></div><div style='height:3000px'></div>",
+                probe = "{nav: ${bottom("nav")}, content: ${content("nav")}, height: ${bottom("nav")} - ${top("nav")}, line: $line, h: innerHeight, inset: innerHeight - $line, ext: document.documentElement.style.getPropertyValue('--pane-ext')}")
+            assertEquals("$paint: its paint reaches the bottom edge", r.getDouble("h"), r.getDouble("nav"), 1.0)
+            val pad = if ("padding-bottom" in paint) 8.0 else 0.0
+            assertEquals("$paint: its content ends at the bar", r.getDouble("line") - pad, r.getDouble("content"), 1.0)
+            assertEquals("$paint: it grows by the bar and no more", 56 + r.getDouble("inset"), r.getDouble("height"), 1.0)
+            assertEquals("$paint: no colour is carried for it", "none", r.getString("ext"))
+        }
+    }
+
+    @Test
+    fun aFloatingCardOrButtonKeepsItsShape() {
+        for (box in listOf("left:12px;right:12px;bottom:12px;height:80px;border-radius:12px", "right:16px;bottom:0;width:56px;height:56px")) {
+            val r = measure("<div id=b style='position:fixed;$box;background:#fff'></div><div style='height:3000px'></div>",
+                probe = "{b: ${bottom("b")}, height: ${bottom("b")} - ${top("b")}, line: $line}")
+            val gap = if ("bottom:12px" in box) 12.0 else 0.0
+            assertEquals(box, r.getDouble("line") - gap, r.getDouble("b"), 1.0)
+            assertEquals(box, if (gap > 0) 80.0 else 56.0, r.getDouble("height"), 1.0)
+        }
+    }
+
+    @Test
+    fun theBarFoldingMovesWhatIsLiftedAndNothingElseTakesItsLength() {
+        val r = measure("<div id=nav style='position:fixed;left:0;right:0;bottom:0;height:56px'></div><p id=p>text</p><div style='height:3000px'></div>",
+            act = "__paneBar(40, 90, 0)",
+            probe = "{nav: ${bottom("nav")}, h: innerHeight, p: getComputedStyle(document.getElementById('p')).getPropertyValue('--pane-inset')}")
+        assertEquals("the lift follows the folded bar", r.getDouble("h") - 40, r.getDouble("nav"), 1.0)
+        assertEquals("the page's own boxes don't inherit the lift, so a fold restyles only what wears it", "0px", r.getString("p"))
     }
 
     @Test
@@ -109,11 +138,11 @@ class BarInsetTest {
         val r = measure(
             "<div id=dim style='position:fixed;inset:0;background:#0007'></div>" +
                 "<div id=sheet style='position:fixed;left:0;right:0;bottom:0;height:200px;background:rgb(10,20,30)'></div>",
-            probe = "{dim: ${bottom("dim")}, sheet: ${bottom("sheet")}, line: $line, h: innerHeight, ext: document.documentElement.style.getPropertyValue('--pane-ext')}",
+            probe = "{dim: ${bottom("dim")}, sheet: ${bottom("sheet")}, content: ${content("sheet")}, line: $line, h: innerHeight}",
         )
         assertEquals(r.getDouble("h"), r.getDouble("dim"), 1.0)
-        assertEquals(r.getDouble("line"), r.getDouble("sheet"), 1.0)
-        assertEquals("the sheet's colour continues under the bar", "rgb(10, 20, 30)", r.getString("ext"))
+        assertEquals("the sheet runs on under the bar", r.getDouble("h"), r.getDouble("sheet"), 1.0)
+        assertEquals("what the sheet holds ends at the bar", r.getDouble("line"), r.getDouble("content"), 1.0)
     }
 
     @Test
@@ -151,7 +180,7 @@ class BarInsetTest {
     }
 
     @Test
-    fun aPageThatDoesNotScrollEndsAboveTheBarHoweverItIsBuilt() {
+    fun aPageThatDoesNotScrollRunsOnUnderTheBarWithWhatItHoldsAboveItHoweverItIsBuilt() {
         val bar = "<div id=nav style='height:56px;background:rgb(10,20,30)'></div>"
         val shells = mapOf(
             "flex at 100%" to "<style>html,body{height:100%}body{display:flex;flex-direction:column}main{flex:1;overflow:auto}</style><main><div style='height:3000px'></div></main>$bar",
@@ -162,18 +191,32 @@ class BarInsetTest {
             "placed against the viewport" to "<style>html,body{height:100%}main{height:100%;overflow:auto}#nav{position:absolute;left:0;right:0;bottom:0}</style><main><div style='height:3000px'></div></main>$bar",
         )
         for ((name, page) in shells) {
-            val r = measure(page, probe = "{nav: ${bottom("nav")}, line: $line, ext: document.documentElement.style.getPropertyValue('--pane-ext'), root: document.documentElement.scrollHeight - innerHeight}")
-            assertEquals(name, r.getDouble("line"), r.getDouble("nav"), 1.0)
-            assertEquals("$name: the bar's colour continues under the floating bar", "rgb(10, 20, 30)", r.getString("ext"))
+            val r = measure(page, probe = "{nav: ${bottom("nav")}, content: ${content("nav")}, line: $line, h: innerHeight, ext: document.documentElement.style.getPropertyValue('--pane-ext'), root: document.documentElement.scrollHeight - innerHeight}")
+            assertEquals("$name: what it holds ends at the bar", r.getDouble("line"), r.getDouble("content"), 1.0)
+            assertEquals("$name: its paint reaches the bottom edge", r.getDouble("h"), r.getDouble("nav"), 1.0)
+            assertEquals("$name: no colour is carried for it", "none", r.getString("ext"))
             assertEquals("$name: the page must not start to scroll", 0.0, r.getDouble("root"), 1.0)
         }
     }
 
     @Test
-    fun aFramedPageEndsAboveTheBar() {
+    fun aGroundThatTakesTheWholePageRunsOnUnderTheBarAndKeepsItsHeight() {
+        val r = measure("<style>html,body{height:100%}</style><div id=g style='height:100%;display:grid;place-items:center;background:linear-gradient(red,blue)'><button id=b style='height:40px'>sign up</button></div>",
+            probe = "{g: ${bottom("g")}, height: ${bottom("g")} - ${top("g")}, content: ${content("g")}, b: ${bottom("b")}, line: $line, h: innerHeight, ext: document.documentElement.style.getPropertyValue('--pane-ext'), root: document.documentElement.scrollHeight - innerHeight}")
+        assertEquals("its paint reaches the bottom edge", r.getDouble("h"), r.getDouble("g"), 1.0)
+        assertEquals("it keeps the page's height", r.getDouble("h"), r.getDouble("height"), 1.0)
+        assertEquals("what it holds is centred in what the bar leaves", (r.getDouble("line") + 40) / 2, r.getDouble("b"), 1.0)
+        assertEquals("no colour is carried for it", "none", r.getString("ext"))
+        assertEquals("the page must not start to scroll", 0.0, r.getDouble("root"), 1.0)
+    }
+
+    @Test
+    fun aFramedPageReachesTheEdgeAndItsViewportEndsAtTheBar() {
         val r = measure("<style>html,body{height:100%}iframe{border:0;width:100%;height:100%;display:block}</style><iframe id=f srcdoc='<p>inner</p>'></iframe>",
-            probe = "{f: ${bottom("f")}, line: $line}")
-        assertEquals(r.getDouble("line"), r.getDouble("f"), 1.0)
+            probe = "{f: ${bottom("f")}, content: ${content("f")}, line: $line, h: innerHeight, root: document.documentElement.scrollHeight - innerHeight}")
+        assertEquals(r.getDouble("h"), r.getDouble("f"), 1.0)
+        assertEquals(r.getDouble("line"), r.getDouble("content"), 1.0)
+        assertEquals("the page must not start to scroll", 0.0, r.getDouble("root"), 1.0)
     }
 
     @Test
@@ -209,9 +252,8 @@ class BarInsetTest {
     @Test
     fun theDocumentStartsBelowTheStatusAreaAndScrollsUpUnderIt() {
         val page = "<div id=first style='height:40px'></div><div style='height:3000px'></div>"
-        val still = measure(page, head = 30, probe = "{first: ${top("first")}, held: $held}")
+        val still = measure(page, head = 30, probe = "{first: ${top("first")}}")
         assertEquals(30.0, still.getDouble("first"), 1.0)
-        assertEquals("nothing is held at the top, so what passes under the status area is left to show", "0", still.getString("held"))
         val moved = measure(page, head = 30, act = "scrollTo(0, 200)", probe = "{first: ${top("first")}}")
         assertEquals(30.0 - 200, moved.getDouble("first"), 1.0)
     }
@@ -223,15 +265,25 @@ class BarInsetTest {
     }
 
     @Test
-    fun aHeaderHeldAtTheTopSitsBelowTheStatusAreaAndThePageSaysItHoldsIt() {
+    fun aHeaderHeldAtTheTopSitsBelowTheStatusArea() {
         val headers = mapOf(
             "fixed" to "<div id=h style='position:fixed;top:0;left:0;right:0;height:56px;background:rgb(10,20,30)'></div>",
             "sticky" to "<div id=h style='position:sticky;top:0;height:56px;background:rgb(10,20,30)'></div>",
         )
         for ((name, header) in headers) {
-            val r = measure("$header<div style='height:3000px'></div>", head = 30, act = "scrollTo(0, 500)", probe = "{h: ${top("h")}, held: $held}")
+            val r = measure("$header<div style='height:3000px'></div>", head = 30, act = "scrollTo(0, 500)", probe = "{h: ${top("h")}}")
             assertEquals(name, 30.0, r.getDouble("h"), 1.0)
-            assertEquals(name, "1", r.getString("held"))
+        }
+    }
+
+    @Test
+    fun aHeaderTheSiteSlidesAwayGoesOutAtTheStatusAreasEdge() {
+        for (place in listOf("position:fixed;top:0;left:0;right:0", "position:sticky;top:0")) {
+            val r = measure("<div id=h style='$place;height:56px'></div><div style='height:3000px'></div>", head = 30,
+                act = "scrollTo(0, 500); h.style.transform = 'translateY(-100%)'",
+                probe = "{top: ${top("h")}, cut: parseFloat(h.getAttribute('data-pane-cut'))}")
+            assertEquals("$place: it slid up by its own height from below the status area", 30.0 - 56, r.getDouble("top"), 1.0)
+            assertEquals("$place: what is left of it starts at the status area's edge", 30.0, r.getDouble("top") + r.getDouble("cut"), 1.0)
         }
     }
 
@@ -268,49 +320,13 @@ class BarInsetTest {
             "<style>html,body{height:100%}body{display:flex;flex-direction:column}main{flex:1;overflow:auto}</style>" +
                 "<div id=h style='height:56px;background:rgb(10,20,30)'></div><main><div style='height:3000px'></div></main><div id=nav style='height:56px;background:rgb(40,50,60)'></div>",
             head = 30,
-            probe = "{h: ${top("h")}, nav: ${bottom("nav")}, line: $line, held: $held, below: document.documentElement.style.getPropertyValue('--pane-ext'), root: document.documentElement.scrollHeight - innerHeight}",
+            probe = "{h: ${top("h")}, nav: ${bottom("nav")}, content: ${content("nav")}, line: $line, edge: innerHeight, below: document.documentElement.style.getPropertyValue('--pane-ext'), root: document.documentElement.scrollHeight - innerHeight}",
         )
         assertEquals(30.0, r.getDouble("h"), 1.0)
-        assertEquals(r.getDouble("line"), r.getDouble("nav"), 1.0)
-        assertEquals("1", r.getString("held"))
-        assertEquals("rgb(40, 50, 60)", r.getString("below"))
+        assertEquals(r.getDouble("line"), r.getDouble("content"), 1.0)
+        assertEquals(r.getDouble("edge"), r.getDouble("nav"), 1.0)
+        assertEquals("none", r.getString("below"))
         assertEquals("the page must not start to scroll", 0.0, r.getDouble("root"), 1.0)
-    }
-
-    @Test
-    fun thePageTellsTheAppWhatItShowsUnderTheStatusAreaAsItScrolls() {
-        val told = mutableListOf<String>()
-        measure(
-            "<style>body{background:rgb(250,250,250)}</style><div style='height:1000px'></div><div style='height:3000px;background:rgb(10,20,30)'></div>",
-            head = 30, act = "scrollTo(0, 1500)", told = told, probe = "{}",
-        )
-        // at the top only the canvas is there, which no box speaks for; then the dark box is
-        assertEquals(listOf("0\t", "0\trgb(10, 20, 30)"), synchronized(told) { told.toList() })
-    }
-
-    @Test
-    fun thePageTellsTheAppWhenItHoldsAHeaderAtTheTop() {
-        val told = mutableListOf<String>()
-        measure(
-            "<div style='position:fixed;top:0;left:0;right:0;height:56px;background:rgb(10,20,30)'></div><div style='height:3000px;background:rgb(250,250,250)'></div>",
-            head = 30, act = "scrollTo(0, 500)", told = told, probe = "{}",
-        )
-        assertEquals("1\t", synchronized(told) { told.last() })
-    }
-
-    @Test
-    fun aPictureUnderTheStatusAreaIsLeftForTheScreenToRead() {
-        val told = mutableListOf<String>()
-        measure("<div style='height:3000px;background:linear-gradient(red,blue)'></div>", head = 30, told = told, probe = "{}")
-        assertEquals(listOf("0\t"), synchronized(told) { told.toList() })
-    }
-
-    @Test
-    fun whatThePageSaysIsReadAsHeldAndAnOpaqueColour() {
-        assertEquals(PageTop(held = false, color = 0xFF0A141E.toInt()), TopColorBridge.parse("0\trgb(10, 20, 30)"))
-        assertEquals(PageTop(held = true, color = null), TopColorBridge.parse("1\t"))
-        assertEquals("a see-through colour is no colour", PageTop(held = false, color = null), TopColorBridge.parse("0\trgba(10, 20, 30, 0.5)"))
-        for (not in listOf("", "rgb(10, 20, 30)", "2\t", null)) assertEquals(not.toString(), null, TopColorBridge.parse(not))
     }
 
     @Test
@@ -329,13 +345,6 @@ class BarInsetTest {
         val r = measure("<div id=m style='position:fixed;top:50%;left:10%;width:80%;height:100px'></div><div style='height:3000px'></div>",
             head = 30, probe = "{m: ${top("m")}, h: innerHeight}")
         assertEquals(r.getDouble("h") / 2, r.getDouble("m"), 1.0)
-    }
-
-    @Test
-    fun aButtonFloatingAtTheTopIsNotThePageHoldingItsTop() {
-        val r = measure("<div style='position:fixed;top:8px;right:8px;width:48px;height:48px;background:red'></div><div style='height:3000px'></div>",
-            head = 30, probe = "{held: $held}")
-        assertEquals("0", r.getString("held"))
     }
 
     @Test

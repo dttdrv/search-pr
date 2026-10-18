@@ -169,15 +169,14 @@ private fun EditorContent(
     LaunchedEffect(open) {
         when {
             reduceMotion -> rise.animateTo(if (open) 1f else 0f, Motion.fade(160))
-            open -> rise.animateTo(1f, Motion.snappy())
-            else -> rise.animateTo(0f, Motion.snappy())
+            open -> rise.animateTo(1f, Motion.smooth())
+            else -> rise.animateTo(0f, Motion.smooth())
         }
     }
     val hasOrigin = origin.width > 1f && origin.height > 1f
-    // Where the field first lands, measured once, before the keyboard moves it. The field rides the
-    // keyboard up by itself (imePadding); if the flight from the bar tracked that movement too, the
-    // two would add up and the pill would jump. So the flight only covers the gap that exists at
-    // the start, and the keyboard supplies the rest.
+    // Where the field is docked right now: it rides the keyboard up (imePadding), so this moves as the
+    // keyboard does. The pill is drawn part way from the bar's pill to there, one blend of the two, so the
+    // flight and the keyboard make a single motion instead of one stacked on the other.
     var target by remember { mutableStateOf(Rect.Zero) }
 
     var field by remember { mutableStateOf(TextFieldValue(initialText, TextRange(0, initialText.length))) }
@@ -329,7 +328,7 @@ private fun EditorContent(
                 Modifier
                     .weight(1f)
                     .height(56.dp)
-                    .onGloballyPositioned { if (target == Rect.Zero) target = it.boundsInRoot() }
+                    .onGloballyPositioned { target = it.boundsInRoot() }
                     .graphicsLayer {
                         if (hasOrigin && target.width > 1f) {
                             // Start as the bar's pill: same place, same size; end as the field.

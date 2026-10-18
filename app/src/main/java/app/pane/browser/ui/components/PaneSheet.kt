@@ -130,7 +130,16 @@ fun PaneSheet(
 
     if (!shown) return
 
+    // where a drag has taken the card so far: every step adds to this, not to a value its own snap hasn't reached yet
+    var held by remember { mutableStateOf<Float?>(null) }
+    fun hold(by: Float) {
+        val to = ((held ?: offset.value) + by).coerceAtLeast(0f)
+        held = to
+        scope.launch { offset.snapTo(to) }
+    }
+
     fun settle(velocity: Float) {
+        held = null
         scope.launch {
             if (offset.value > sheetHeight * 0.3f || velocity > 1400f) {
                 dismissNow()
@@ -145,9 +154,10 @@ fun PaneSheet(
     val nested = remember {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y < 0 && offset.value > 0f) {
-                    val consumed = maxOf(available.y, -offset.value)
-                    scope.launch { offset.snapTo(offset.value + consumed) }
+                val lowered = held ?: offset.value
+                if (available.y < 0 && lowered > 0f) {
+                    val consumed = maxOf(available.y, -lowered)
+                    hold(consumed)
                     return Offset(0f, consumed)
                 }
                 return Offset.Zero
@@ -155,14 +165,14 @@ fun PaneSheet(
 
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
                 if (available.y > 0 && source == NestedScrollSource.UserInput) {
-                    scope.launch { offset.snapTo(offset.value + available.y) }
+                    hold(available.y)
                     return Offset(0f, available.y)
                 }
                 return Offset.Zero
             }
 
             override suspend fun onPreFling(available: Velocity): Velocity {
-                if (offset.value > 0f) {
+                if ((held ?: offset.value) > 0f) {
                     settle(available.y)
                     return available
                 }

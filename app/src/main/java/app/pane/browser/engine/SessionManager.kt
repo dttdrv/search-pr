@@ -117,18 +117,22 @@ class SessionManager(
      */
     fun setBarInset(inset: Int, room: Int, head: Int) {
         if (inset == barInset && room == barRoom && head == barHead) return
+        // the bar folding to its label only moves the lift: pages already running are told, and what pages load with stays
+        val folded = room == barRoom && head == barHead
         barInset = inset
         barRoom = room
         barHead = head
-        pages.values.forEach(::applyBarInset)
+        pages.values.forEach { page ->
+            if (folded) page.evaluateJavascript("window.__paneBar && __paneBar($barInset,$barRoom,$barHead)", null) else applyBarInset(page)
+        }
     }
 
     private fun applyBarInset(page: PaneWebView) {
-        val script = "($barInsetJs)($barInset,$barRoom,$barHead)"
-        page.evaluateJavascript(script, null)
+        page.evaluateJavascript("($barInsetJs)($barInset,$barRoom,$barHead)", null)
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
         barInsetScripts.remove(page)?.remove()
-        runCatching { WebViewCompat.addDocumentStartJavaScript(page, script, setOf("*")) }
+        // a page loads with the bar open (a load opens it), whatever it is now
+        runCatching { WebViewCompat.addDocumentStartJavaScript(page, "($barInsetJs)($barRoom,$barRoom,$barHead)", setOf("*")) }
             .onSuccess { barInsetScripts[page] = it }
     }
 
@@ -155,9 +159,6 @@ class SessionManager(
     private val _scroll = MutableSharedFlow<ScrollUpdate>(extraBufferCapacity = 64)
     val scroll: SharedFlow<ScrollUpdate> = _scroll.asSharedFlow()
 
-    /** Tab -> what its page last said about its top (see [PageTop]). */
-    private val _pageTops = MutableStateFlow<Map<String, PageTop>>(emptyMap())
-    val pageTops: StateFlow<Map<String, PageTop>> = _pageTops
 
     /** A fullscreen video's own view, while there is one. The screen puts it above everything. */
     private val _customView = MutableStateFlow<View?>(null)
@@ -273,7 +274,6 @@ class SessionManager(
     private val privateIds = HashSet<String>()
 
     private fun release(tabId: String) {
-        _pageTops.value -= tabId
         backEntries.remove(tabId)
         upgraded.remove(tabId)
         httpOffers.remove(tabId)
@@ -655,7 +655,7 @@ class SessionManager(
         page.webViewClient = Client(tabId, private)
         page.webChromeClient = Chrome(tabId, private)
         bridge.attach(page)
-        TopColorBridge.attach(page) { top -> _pageTops.value += tabId to top }
+        PressFeedback.attach(page)
         page.setDownloadListener { url, userAgent, disposition, mime, length ->
             val request = DownloadRequest(tabId, url, userAgent, disposition, mime, length, private, page.url, bridge.reader(page))
             bridge.about(page, url) { name, form -> onDownload(request.copy(name = name, form = form)) }
@@ -737,7 +737,6 @@ class SessionManager(
                     // A new document (a reload included) is no longer showing an article.
                     readerable = false, inReaderMode = false,
                     security = if (url.startsWith("https://")) SecurityState.Secure else SecurityState.Insecure,
-                    themeColor = if (sameDocument(it.url, url)) it.themeColor else null,
                 )
             }
             syncNavigation(view)
@@ -746,7 +745,6 @@ class SessionManager(
         override fun onPageFinished(view: WebView, url: String) {
             store.updateTab(tabId) { it.copy(loading = false, progress = 100) }
             syncNavigation(view)
-            readThemeColor(view)
             detectReader(view, url)
             _events.tryEmit(EngineEvent.PageSettled(tabId))
         }
@@ -940,14 +938,6 @@ class SessionManager(
         if (store.state.value.tab(tabId)?.isPrivate != true) schedulePersist()
     }
 
-    private fun readThemeColor(view: WebView) {
-        val tabId = (view as? PaneWebView)?.tabId ?: return
-        view.evaluateJavascript("(document.querySelector('meta[name=theme-color]')||{}).content||''") { raw ->
-            val css = raw?.trim('"').orEmpty()
-            if (css.isNotEmpty()) parseCssColor(css)?.let { c -> store.updateTab(tabId) { it.copy(themeColor = c) } }
-        }
-    }
-
     // region Reader
 
     private val readerScripts by lazy { ReaderScripts(context) }
@@ -975,19 +965,15 @@ class SessionManager(
      * Shows the page's article in place of the page, or brings the page back. The article replaces
      * the document without navigating, so Back leaves it; leaving Reader reloads the page.
      */
-    /** The ground the reader page is drawn on (light or dark, following the app theme), as an ARGB int. */
-    private fun readerGround(): Int = if (appDark()) 0xFF131313.toInt() else 0xFFF3F3F4.toInt()
-
     /** The app changed between light and dark while an article is showing: the article follows. */
     private fun recolorReader(tabId: String, page: PaneWebView) {
         page.evaluateJavascript("document.documentElement.setAttribute('data-theme','${ReaderScripts.themeName(appDark())}')", null)
-        store.updateTab(tabId) { it.copy(themeColor = readerGround()) }
     }
 
     fun toggleReader(tabId: String) {
         val tab = store.state.value.tab(tabId) ?: return
         if (tab.inReaderMode) {
-            store.updateTab(tabId) { it.copy(inReaderMode = false, themeColor = null) }
+            store.updateTab(tabId) { it.copy(inReaderMode = false) }
             reload(tabId)
             return
         }
@@ -996,8 +982,7 @@ class SessionManager(
         page.evaluateJavascript(script) { raw ->
             if (pages[tabId] !== page) return@evaluateJavascript
             when (raw?.trim('"')) {
-                // The status area and the bar take the reader's own ground, not the article site's colour.
-                "ok", "active" -> store.updateTab(tabId) { it.copy(inReaderMode = true, readerable = true, themeColor = readerGround()) }
+                "ok", "active" -> store.updateTab(tabId) { it.copy(inReaderMode = true, readerable = true) }
                 else -> _events.tryEmit(EngineEvent.Message(tabId, "Reader isn’t available for this page."))
             }
         }
@@ -1153,28 +1138,5 @@ class SessionManager(
         /** True when two URLs only differ by fragment. */
         fun sameDocument(a: String, b: String): Boolean = a.substringBefore('#') == b.substringBefore('#')
 
-        /** `#rgb`, `#rrggbb`, `rgb(r, g, b)` → opaque ARGB. */
-        fun parseCssColor(css: String): Int? {
-            val s = css.trim().lowercase()
-            return try {
-                when {
-                    s.startsWith("#") && s.length == 4 -> {
-                        val r = s[1].digitToInt(16) * 17
-                        val g = s[2].digitToInt(16) * 17
-                        val b = s[3].digitToInt(16) * 17
-                        (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-                    }
-                    s.startsWith("#") && s.length >= 7 -> (0xFF shl 24) or s.substring(1, 7).toInt(16)
-                    s.startsWith("rgb") -> {
-                        val parts = s.substringAfter('(').substringBefore(')').split(',', ' ', '/').filter { it.isNotBlank() }
-                        val (r, g, b) = parts.take(3).map { it.trim().toFloat().toInt().coerceIn(0, 255) }
-                        (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-                    }
-                    else -> null
-                }
-            } catch (_: Exception) {
-                null
-            }
-        }
     }
 }

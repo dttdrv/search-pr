@@ -1,9 +1,6 @@
 package app.pane.browser.ui.browser
 
 import android.graphics.Bitmap
-import kotlin.math.roundToInt
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -54,68 +51,8 @@ class BrowserChrome(private val scope: CoroutineScope) {
     /** Draws the page on screen into a bitmap whose longer side is at most the given size; set by the screen. */
     var snapshotSource: ((maxSide: Int) -> Bitmap?)? = null
 
-    /** Reads the colour of the page where it is about to pass under the status area, from the screen itself. */
-    var topSource: ((onColor: (Color) -> Unit) -> Unit)? = null
-
     /** Whether the page has scrolled away from its top; the status area then dissolves into it. */
     var scrolled by mutableStateOf(false)
-
-    /** The colours along the page's edges for the tab on screen; null until the page has painted. */
-    var edges by mutableStateOf<PageEdges?>(null)
-        private set
-    private val edgeCache = HashMap<String, PageEdges>()
-
-    /** Switching tabs shows that tab's last known colours straight away instead of the old page's. */
-    fun restoreEdges(tabId: String?) {
-        edges = tabId?.let(edgeCache::get)
-    }
-
-    fun forgetEdges(tabId: String) {
-        edgeCache.remove(tabId)
-    }
-
-    /** The theme changed, so every page looks different now: nothing read before it holds. */
-    fun forgetEdges() {
-        edgeCache.clear()
-        edges = null
-    }
-
-    /** Reads the page's edge colours from what is on screen. */
-    suspend fun sampleEdges(tabId: String, bottomBandPx: Int, isCurrent: () -> Boolean) {
-        val bitmap = snapshotSource?.invoke(160) ?: return
-        if (isCurrent()) applyEdges(tabId, bitmap, bottomBandPx)
-        sampleTop(tabId, isCurrent)
-    }
-
-    /** The page's own first word on its top colour: taken at once, and put right by the next reading of the screen. */
-    fun hintTop(tabId: String, top: Color) {
-        val now = (edges ?: PageEdges(top, ground.luminance())).copy(top = top)
-        edgeCache[tabId] = now
-        edges = now
-    }
-
-    /** Reads only the colour at the status area, off the main thread, so it can follow the page while it scrolls. */
-    fun sampleTop(tabId: String, isCurrent: () -> Boolean) {
-        topSource?.invoke { top ->
-            if (!isCurrent()) return@invoke
-            val now = (edges ?: PageEdges(top, ground.luminance())).copy(top = top)
-            edgeCache[tabId] = now
-            edges = now
-        }
-    }
-
-    /** What shows through where the page paints nothing: the theme's ground, set by the screen. */
-    var ground: Color = Color.White
-
-    /** [bottomBandPx] is in the page's own pixels, so it is scaled to the (smaller) bitmap before it is read. */
-    fun applyEdges(tabId: String, bitmap: Bitmap, bottomBandPx: Int) {
-        val band = if (pageRect.height > 0f) (bottomBandPx * bitmap.height / pageRect.height).roundToInt() else bottomBandPx
-        val read = PageColors.sample(bitmap, band, ground) ?: return
-        // the top is followed from the screen where that can be read; this capture then only settles the bottom
-        val sampled = edges?.takeIf { topSource != null }?.let { read.copy(top = it.top) } ?: read
-        edgeCache[tabId] = sampled
-        edges = sampled
-    }
 
     /** Horizontal tab-swipe progress from the address bar, -1…1 (negative = towards the next tab). */
     var tabSwipe by mutableFloatStateOf(0f)
@@ -128,28 +65,30 @@ class BrowserChrome(private val scope: CoroutineScope) {
 
     val anyOverlay: Boolean get() = editing || showTabs || showMenu || findInPage || siteInfo
 
-    fun expand() {
+    fun expand() = head(0f)
+
+    /** Sends the bar towards [target] on one spring; a new target takes over its motion, speed and all, without a seam. */
+    private fun head(target: Float) {
         settleJob?.cancel()
-        settleJob = scope.launch { collapse.animateTo(0f, Motion.snappy()) }
+        settleJob = scope.launch { collapse.animateTo(target, Motion.smooth()) }
     }
 
     /**
-     * Follows page scrolling: the bar melts away as content moves up and returns as it moves down.
-     * Called for every scroll event, so it only writes a float; nothing is launched here.
+     * Follows page scrolling: the bar melts away as content moves up and returns as it moves down. The
+     * scroll moves where the bar is heading and the bar follows on a spring, so a fling can't snap it away
+     * in a frame or two.
      */
     fun onScroll(deltaY: Int, range: Float) {
-        if (anyOverlay) return
-        settleJob?.cancel()
-        if (range > 0f) collapse.snap(collapse.value + deltaY / range)
+        if (anyOverlay || range <= 0f) return
+        val target = (collapse.target + deltaY / range).coerceIn(0f, 1f)
+        if (target != collapse.target) head(target)
     }
 
     /** Scrolling has paused: finish whichever way the bar was heading. */
     fun settle() {
         if (anyOverlay) return
-        val target = if (collapse.value > 0.45f) 1f else 0f
-        if (collapse.value == target) return
-        settleJob?.cancel()
-        settleJob = scope.launch { collapse.animateTo(target, Motion.snappy()) }
+        val target = if (collapse.target > 0.45f) 1f else 0f
+        if (collapse.target != target) head(target)
     }
 
     /** Grabs the visible page; null if nothing is drawn. The timeout is kept for callers but a draw is immediate. */
@@ -168,21 +107,19 @@ class BrowserChrome(private val scope: CoroutineScope) {
     }
 }
 
-/**
- * How melted the bar is. A plain float in snapshot state (not an Animatable) so scroll events can
- * write it directly, without a coroutine per event; [animateTo] springs it home when scrolling stops.
- */
+/** How melted the bar is, and where it is heading. */
 @Stable
 class Collapse {
-    var value by mutableFloatStateOf(0f)
+    private val motion = Animatable(0f)
+    val value: Float get() = motion.value
+
+    var target = 0f
         private set
 
-    fun snap(v: Float) {
-        value = v.coerceIn(0f, 1f)
-    }
-
+    /** Keeps the speed it already has, so one motion hands off to the next. */
     suspend fun animateTo(target: Float, spec: androidx.compose.animation.core.AnimationSpec<Float>) {
-        androidx.compose.animation.core.animate(value, target, animationSpec = spec) { v, _ -> value = v }
+        this.target = target.coerceIn(0f, 1f)
+        motion.animateTo(this.target, spec)
     }
 }
 

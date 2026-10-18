@@ -61,7 +61,6 @@ data class BrowserSettings(
     /** Darken pages that have no dark style of their own; only in a dark theme. */
     val darkPages: Boolean = false,
     val hideToolbarOnScroll: Boolean = true,
-    val tintToolbarWithPage: Boolean = true,
     val textScale: Float = 1.0f,
     val forceZoom: Boolean = true,
     val desktopModeByDefault: Boolean = false,

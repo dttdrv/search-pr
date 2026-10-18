@@ -38,9 +38,10 @@ Commun): take its restraint and polish, not its logo.
    never lighter or heavier.
 5. **The floating pill stays.** The address pill and its round buttons are frosted
    (`Modifier.frosted(shape)`): the page behind them blurred, its colour deepened, under a white veil
-   (black over dark pages) and then 10% of the opposite pole (a light bar reads 10% darker than a
+   (black in the dark theme) and then 10% of the opposite pole (a light bar reads 10% darker than a
    white page, a dark one 10% lighter than a black page, so it never melts into either), with ink
-   glyphs, no shadow and no outline. The same frost, over the tab grid, is the tab overview's
+   glyphs, no shadow and no outline. The bar and the status area wear the app's theme and nothing
+   else: no colour is ever read from the site, which only shows through the frost. The same frost, over the tab grid, is the tab overview's
    Private / Tabs switch and plus button; over the page, the menu sheet's panel (its cards stay
    solid, a wash of white on dark). Other menus and sheets float as flat solid surfaces
    (`Modifier.floating(shape)`) with one standard platform elevation shadow (`FloatingElevation`,
@@ -63,14 +64,20 @@ Commun): take its restraint and polish, not its logo.
    place. Nothing is removed, only tiered.
 9. **Respect the site.** The page runs truly edge to edge, under the status bar and the floating
    pill. Under the status bar the page itself shows through a light veil with no edge to it,
-   blurred and lightly tinted (a fade in the colour the screen shows there where the device can't
-   blur), strongest at the very top and gone just below the icons, as in the Play Store. The page
-   still starts below the status bar and scrolls up under it. What a site holds at the top (a
-   header, and whatever it stacks under it) stays below the status bar, and the status area then
-   carries on the pixels at its edge, read from the screen, never guessed from the page's styles. The pill covers the bottom of the page's layout viewport, as on iOS: fixed and
-   sticky bottom ui, sheets and full-height boxes sit above it, the end of the page and of full-height
-   scrollers clears it, and the colour of a lifted box carries on beneath the pill so no unrelated
-   content shows through the gap. A dimmed backdrop keeps covering it.
+   blurred and tinted in the app's tone (a fade in the app's ground where the device can't blur),
+   strongest at the very top and gone just below the icons, as in the Play Store. The page still
+   starts below the status bar and scrolls up under it. What a site holds at the top (a header,
+   and whatever it stacks under it) stays below the status bar, and when the site slides it away it
+   goes out at the status bar's edge, as under an opaque one, never resting in it. The pill covers
+   the bottom of the page's layout viewport, as on iOS: fixed and sticky bottom ui, sheets and
+   full-height boxes sit above it, the end of the page and of full-height scrollers clears it.
+   A page that doesn't scroll runs on under the pill too: the box across its bottom keeps its
+   paint to the edge and what it holds ends above the pill. A bar or sheet along the bottom edge that paints itself runs on beneath the pill in
+   its own paint (gradient, picture or blur included) with its content above it, as sites already do for the
+   iPhone's home indicator; floating buttons and cards keep their shape, and where a lifted box paints nothing
+   of its own its colour carries on beneath the pill, so no unrelated content shows through the gap. A dimmed backdrop keeps covering it.
+   A press on the page is the platform's own: no flat tap highlight, but Android's ripple in the pressed
+   control's shape and its own content colour, after the platform's tap timeout (`press.js`).
 10. **Don't sell safety.** Pane blocks trackers and isolates cookies quietly. No counters, badges or
     slogans about privacy on the start page, in onboarding or at the top of Settings; nobody opens
     a browser for them. Private tabs exist and are labelled, and that is all.

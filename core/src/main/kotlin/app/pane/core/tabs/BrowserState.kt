@@ -18,8 +18,6 @@ data class TabState(
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val security: SecurityState = SecurityState.Unknown,
-    /** Page-provided `theme-color`, as ARGB, used to tint the chrome. */
-    val themeColor: Int? = null,
     val desktopMode: Boolean = false,
     val fullscreen: Boolean = false,
     val mediaPlaying: Boolean = false,

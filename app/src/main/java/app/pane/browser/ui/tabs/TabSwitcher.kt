@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -48,6 +49,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -71,6 +73,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -107,6 +110,7 @@ import app.pane.core.tabs.TabState
 import app.pane.core.url.UrlDisplay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.sign
 import kotlin.math.roundToInt
 
 /** Where a piece of the cluster is, [c] of the way from [from] (the bar's matching piece) to [rest]: scaled and moved about its own centre. */
@@ -133,6 +137,9 @@ private class Flight(val tabId: String?, val bitmap: Bitmap?, val card: Rect, va
 
 /** Corner radius shared by the cards and the flying snapshot, so the hand-off has no seam. */
 private val CardRadius = 22.dp
+
+/** The platform's own swipe-to-dismiss speed (frameworks/base item_touch_helper_swipe_escape_velocity). */
+private val SwipeEscapeVelocity = 120.dp
 
 /** The floating control cluster: its height, the gap under it, and how far below the screen it waits. */
 private val ClusterHeight = 58.dp
@@ -249,7 +256,7 @@ fun TabSwitcher(
                 null
             }
             flight?.bitmap?.let { chrome.overlay = app.pane.browser.ui.browser.PageOverlay(it, null, kind = app.pane.browser.ui.browser.PageOverlay.Kind.Cover) }
-            launch { cluster.animateTo(0f, if (settings.reduceMotion) Motion.fade(0) else Motion.snappy()) }
+            launch { cluster.animateTo(0f, if (settings.reduceMotion) Motion.fade(0) else Motion.push()) }
             progress.animateTo(0f, if (settings.reduceMotion) Motion.fade(0) else Motion.push())
             flight = null
             shown = false
@@ -478,26 +485,32 @@ private fun TabCard(
     val thumb by produceState<Bitmap?>(container.thumbnails.get(tab.id), tab.id, tab.thumbnailVersion) {
         value = container.thumbnails.load(tab.id)
     }
-    val swipe = remember { Animatable(0f) }
+    // where the card is dragged to, under the finger exactly; a release hands it to a spring with the finger's speed
+    var swipe by remember { mutableFloatStateOf(0f) }
+    var bounds by remember { mutableStateOf(Rect.Zero) }
+    val escape = with(LocalDensity.current) { SwipeEscapeVelocity.toPx() }
+    val screen = LocalWindowInfo.current.containerSize.width.toFloat()
+    // off the screen on the side it was going, from where the card sits
+    fun away(side: Float) = if (side > 0) screen - bounds.left else -bounds.right
+    suspend fun fly(to: Float, velocity: Float = 0f) = animate(swipe, to, velocity, Motion.smooth()) { v, _ -> swipe = v }
 
     BoxWithConstraints(modifier) {
         val width = constraints.maxWidth.toFloat()
         Column(
             Modifier
+                .onGloballyPositioned { bounds = it.boundsInRoot() }
                 .graphicsLayer {
-                    translationX = swipe.value
-                    alpha = 1f - (abs(swipe.value) / width).coerceIn(0f, 1f) * 0.8f
+                    translationX = swipe
+                    alpha = 1f - (abs(swipe) / width).coerceIn(0f, 1f) * 0.8f
                 }
                 .draggable(
                     orientation = Orientation.Horizontal,
-                    state = rememberDraggableState { delta -> scope.launch { swipe.snapTo(swipe.value + delta) } },
+                    state = rememberDraggableState { delta -> swipe += delta },
                     onDragStopped = { velocity ->
-                        if (abs(swipe.value) > width * 0.35f || abs(velocity) > 1200f) {
-                            swipe.animateTo(if (swipe.value + velocity * 0.1f > 0) width * 1.3f else -width * 1.3f, Motion.snappy(), initialVelocity = velocity)
-                            onClose()
-                        } else {
-                            swipe.animateTo(0f, Motion.smooth(), initialVelocity = velocity)
-                        }
+                        // the platform's own rule (ItemTouchHelper): past half its width, or flung its own way fast enough
+                        val gone = abs(swipe) > width / 2 || abs(velocity) >= escape && sign(velocity) == sign(swipe)
+                        fly(if (gone) away(sign(swipe)) else 0f, velocity)
+                        if (gone) onClose()
                     },
                 ),
         ) {
@@ -547,7 +560,7 @@ private fun TabCard(
                         .semantics { contentDescription = "Close tab" }
                         .pressScale(pressedScale = 0.9f) {
                             scope.launch {
-                                swipe.animateTo(-width * 1.3f, Motion.snappy())
+                                fly(away(-1f))
                                 onClose()
                             }
                         },

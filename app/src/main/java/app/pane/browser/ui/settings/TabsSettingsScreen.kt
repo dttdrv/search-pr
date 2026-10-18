@@ -54,13 +54,6 @@ fun TabsSettingsScreen() {
                             onCheckedChange = { on -> update { it.copy(hideToolbarOnScroll = on) } },
                         )
                     }
-                    row {
-                        SwitchRow(
-                            title = "Website tinting",
-                            checked = settings.tintToolbarWithPage,
-                            onCheckedChange = { on -> update { it.copy(tintToolbarWithPage = on) } },
-                        )
-                    }
                 }
             }
 

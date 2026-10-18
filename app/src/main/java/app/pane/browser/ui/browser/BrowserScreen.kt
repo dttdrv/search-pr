@@ -6,7 +6,6 @@ import androidx.activity.BackEventCompat
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,7 +35,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -50,7 +48,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -92,12 +89,6 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-
-/** How often the colour under the status area is read while the page scrolls: every third frame at 60 Hz. */
-private const val TopReadEveryMs = 50L
-
-/** How deep a strip of the page that read takes. */
-private val TopStrip = 8.dp
 
 /**
  * The browser itself: page, start page, bottom chrome, and the overlays that grow out of it
@@ -169,15 +160,6 @@ fun BrowserScreen() {
     val swipeCapture = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
     chrome.snapshotSource = { side -> container.sessions.capture(container.store.state.value.selectedTabId.orEmpty(), side) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    // the strip of the page just under the status area: what the screen shows where the page meets it
-    val window = LocalActivity.current?.window
-    val reader = remember(window) { window?.let(::TopReader) }
-    DisposableEffect(reader) { onDispose { reader?.close() } }
-    val statusPx = with(density) { statusTop.roundToPx() }
-    val stripRows = with(density) { TopStrip.roundToPx() }
-    chrome.topSource = { onColor ->
-        reader?.read(android.graphics.Rect(0, statusPx, chrome.pageRect.width.toInt(), statusPx + stripRows), chrome.ground, onColor)
-    }
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // The floating bar takes this much of the screen; the page ends above it until the bar melts away.
     val dynamicPx = with(density) { (BarMetrics.zone + navBottom).toPx() }
@@ -185,66 +167,47 @@ fun BrowserScreen() {
 
     // Toolbar collapses with the page.
     LaunchedEffect(tab?.id, dynamicPx) {
-        chrome.restoreEdges(tab?.id)
         chrome.scrolled = false
         chrome.expand()
         val id = tab?.id ?: return@LaunchedEffect
         var last = -1
-        var read = 0L
         container.sessions.scroll.collect { update ->
             if (update.tabId != id) return@collect
             val previous = last
             last = update.scrollY
             chrome.scrolled = update.scrollY > 8
-            // the screen is read as the page moves, for the colour passing under the status area
-            val now = android.os.SystemClock.uptimeMillis()
-            if (now - read >= TopReadEveryMs) {
-                read = now
-                chrome.sampleTop(id) { container.store.state.value.selectedTabId == id }
-            }
             when {
                 update.scrollY <= 0 -> chrome.expand()
                 previous >= 0 && container.settings.current.hideToolbarOnScroll -> chrome.onScroll(update.scrollY - previous, dynamicPx)
             }
         }
     }
-    // Once the page stops moving: finish the bar's motion, then read the colours the page is showing
-    // so the chrome can follow them.
-    LaunchedEffect(tab?.id, dynamicPx) {
+    // Once the page stops moving: finish the bar's motion.
+    LaunchedEffect(tab?.id) {
         val id = tab?.id ?: return@LaunchedEffect
         container.sessions.scroll
             .filter { it.tabId == id }
             .debounce(150)
-            .collect {
-                chrome.settle()
-                delay(120)
-                if (chrome.overlay == null && !chrome.showTabs) {
-                    chrome.sampleEdges(id, dynamicPx.toInt()) { container.store.state.value.selectedTabId == id }
-                }
-            }
+            .collect { chrome.settle() }
     }
     LaunchedEffect(tab?.loading, tab?.url) { if (tab?.loading == true) chrome.expand() }
     LaunchedEffect(settings.hideToolbarOnScroll) { if (!settings.hideToolbarOnScroll) chrome.expand() }
 
     // Snapshots for the tab overview and back gesture, and clearing covers on first paint.
-    LaunchedEffect(dynamicPx) {
+    LaunchedEffect(Unit) {
         container.sessions.events.collect { event ->
             when (event) {
                 is EngineEvent.PageSettled -> scope.launch {
                     delay(350)
                     val current = container.store.state.value.selectedTab
                     if (current?.id == event.tabId && chrome.overlay == null && !chrome.showTabs) {
-                        captureInto(container, chrome, current, dynamicPx.toInt())
+                        captureInto(container, chrome, current)
                     }
                 }
                 is EngineEvent.FirstPaint -> if (event.tabId == container.store.state.value.selectedTabId) {
                     if (chrome.overlay?.kind == PageOverlay.Kind.Cover) {
                         delay(60)
                         chrome.overlay = null
-                    }
-                    scope.launch {
-                        delay(160)
-                        chrome.sampleEdges(event.tabId, dynamicPx.toInt()) { container.store.state.value.selectedTabId == event.tabId }
                     }
                 }
                 is EngineEvent.ShowToolbar -> if (event.tabId == container.store.state.value.selectedTabId) chrome.expand()
@@ -350,57 +313,21 @@ fun BrowserScreen() {
     }
 
     val appDark = settings.theme.isDark(isSystemInDarkTheme())
-    // The theme or Dark pages repaints the page, in its own dark style or darkened: what was read from its edges no longer holds.
+    // The theme or Dark pages repaints the page, in its own dark style or darkened: its snapshots no longer hold.
     val look = appDark to settings.darkPages
     var seenLook by remember { mutableStateOf(look) }
     LaunchedEffect(look) {
         if (look == seenLook) return@LaunchedEffect
         seenLook = look
-        chrome.forgetEdges()
         container.snapshots.clear()
-        val id = container.store.state.value.selectedTabId ?: return@LaunchedEffect
-        delay(500)
-        chrome.sampleEdges(id, dynamicPx.toInt()) { container.store.state.value.selectedTabId == id }
     }
 
     PaneTheme(mode = settings.theme, private = private, hapticsEnabled = settings.haptics, reduceMotion = settings.reduceMotion) {
         val colors = PaneTheme.colors
         val onPage = tab != null && tab.url.isNotEmpty()
-        SideEffect { chrome.ground = colors.background }
-
-        // The status area wears whatever the page shows along its top edge, so it always matches the
-        // site. Until the page has painted, its theme-colour (or the plain background) stands in.
-        val themeTint = tab?.themeColor?.takeIf { onPage }?.let { Color(it) }
-        val pageTop = container.sessions.pageTops.collectAsStateWithLifecycle().value[tab?.id]
-        // the page's own word comes first and is taken at once; the screen has the last word
-        LaunchedEffect(tab?.id, pageTop) {
-            val id = tab?.id ?: return@LaunchedEffect
-            pageTop?.color?.let { chrome.hintTop(id, Color(it)) }
-            chrome.sampleTop(id) { container.store.state.value.selectedTabId == id }
-        }
-        val statusTarget = when {
-            !onPage || !settings.tintToolbarWithPage -> colors.background
-            else -> chrome.edges?.top ?: themeTint ?: colors.background
-        }
-        // Read in the draw phase, so the colour can glide without recomposing the screen each frame.
-        val statusColorState = animateColorAsState(statusTarget, Motion.fade(280), label = "statusColor")
-        // the icons and the veil's tone follow the page at once; only the plain colour glides
-        val lightStatusIcons = statusTarget.luminance() < 0.5f
-        val statusDark = rememberUpdatedState(lightStatusIcons)
-
-        // Glass reads best when its tone follows the page behind it: dark glass over dark pages. Over a
-        // page of luminance 0.18 a black and a white veil give their ink the same contrast; a margin
-        // either side keeps the bar from flickering.
-        val behindLuma = chrome.edges?.bottomLuma?.takeIf { onPage }
-        var barDark by remember { mutableStateOf(colors.isDark) }
-        LaunchedEffect(behindLuma, colors.isDark) {
-            barDark = when {
-                behindLuma == null -> colors.isDark
-                behindLuma < 0.15f -> true
-                behindLuma > 0.21f -> false
-                else -> barDark
-            }
-        }
+        // the chrome wears the app's own tone, never one read from the site: the frost alone carries the page
+        val barDark = colors.isDark
+        val lightStatusIcons = barDark
         val barColors = when {
             !barDark -> LightColors
             private -> PrivateColors
@@ -472,8 +399,8 @@ fun BrowserScreen() {
                 }
             }
 
-            // The page passes under the status area; a fade in the colour it shows there keeps the clock and battery readable.
-            if (!fullscreen) StatusVeil(statusTop, frost, held = onPage && pageTop?.held == true, dark = { statusDark.value }) { statusColorState.value }
+            // The page passes under the status area; the frost in the app's tone keeps the clock and battery readable.
+            if (!fullscreen) StatusVeil(statusTop, frost, dark = barDark, ground = colors.background)
 
             // A fullscreen video brings its own view; it goes above everything.
             val customView by container.sessions.customView.collectAsStateWithLifecycle()
@@ -489,12 +416,17 @@ fun BrowserScreen() {
                 )
             }
 
-            // Floating bar.
+            // Floating bar. The address field grows out of its pill and goes back into it, so when the field
+            // takes the bar's place the bar only fades where it is; anything else sends it off the bottom.
+            var fieldTookIt by remember { mutableStateOf(false) }
+            LaunchedEffect(chrome.editing, fullscreen, chrome.findInPage) {
+                if (chrome.editing) fieldTookIt = true else if (fullscreen || chrome.findInPage) fieldTookIt = false
+            }
             AnimatedVisibility(
                 visible = !fullscreen && !chrome.findInPage && !chrome.editing,
                 modifier = Modifier.align(Alignment.BottomCenter),
-                enter = slideInVertically(Motion.smooth()) { it } + fadeIn(Motion.fade()),
-                exit = slideOutVertically(Motion.smooth()) { it } + fadeOut(Motion.fade()),
+                enter = if (fieldTookIt) fadeIn(Motion.fade()) else slideInVertically(Motion.smooth()) { it } + fadeIn(Motion.fade()),
+                exit = if (chrome.editing) fadeOut(Motion.fade()) else slideOutVertically(Motion.smooth()) { it } + fadeOut(Motion.fade()),
             ) {
                 CompositionLocalProvider(LocalPaneColors provides barColors, LocalFrost provides frost) {
                     BottomBar(
@@ -630,11 +562,10 @@ fun BrowserScreen() {
     }
 }
 
-private suspend fun captureInto(container: app.pane.browser.AppContainer, chrome: BrowserChrome, tab: TabState, bandPx: Int) {
+private suspend fun captureInto(container: app.pane.browser.AppContainer, chrome: BrowserChrome, tab: TabState) {
     val bitmap = chrome.capture() ?: return
     val current = container.store.state.value.selectedTab
     if (current?.id != tab.id || current.url != tab.url) return
-    chrome.applyEdges(tab.id, bitmap, bandPx)
     container.snapshots.put(tab.id, tab.url, bitmap)
     container.thumbnails.put(tab.id, bitmap, tab.isPrivate)
     container.store.updateTab(tab.id) { it.copy(thumbnailVersion = it.thumbnailVersion + 1) }

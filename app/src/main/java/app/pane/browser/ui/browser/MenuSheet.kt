@@ -42,21 +42,20 @@ import app.pane.browser.ui.theme.floating
 import app.pane.browser.ui.prompts.FlatSection
 import app.pane.browser.ui.theme.PaneTheme
 import app.pane.browser.ui.theme.Spacing
-import app.pane.browser.ui.theme.entrance
 import app.pane.browser.ui.theme.rememberHaptics
 import app.pane.core.privacy.TrackingParams
 import app.pane.core.tabs.TabState
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
-/** One page action at the top of the menu: a familiar glyph in a hairline circle, its name under it. */
+/** One action in the menu: a familiar glyph on a soft circle, its name under it. */
 private class PageAction(val icon: ImageVector, val label: String, val haptic: Boolean = true, val onClick: () -> Unit)
 
 /**
- * The "…" menu: a row of page actions (glyph over name, no fill), then everything
- * else as flat rows with hairlines between them. One sheet, no nested menus; its contents arrive
- * one after another a beat behind the card. A [locked] private page gets no page actions at all, so
- * nothing can share, copy or search it.
+ * The "…" menu: rows of glyphs with their names under them (what to do with the page, the tabs, the
+ * places), and between them the page's few switches as flat rows. One sheet, no nested menus; it grows
+ * out of its button and what it holds fades in with it. A [locked] private page gets no page actions
+ * or switches at all, so nothing can share, copy or search it.
  */
 @Composable
 fun MenuSheet(
@@ -141,29 +140,28 @@ fun MenuSheet(
         )
     }
 
-    // Beats for the staggered arrival: page actions first, then each list in turn. entrance() caps
-    // its delay, so the tail of a long menu lands together.
-    val actionBeat = 1
-    val pageBeat = actionBeat + pageActions.size
-    val tabBeat = pageBeat + if (isPage) 2 else 0
-    val libraryBeat = tabBeat + 2
+    val tabActions = listOf(
+        PageAction(PaneIcons.Tabs, if (tabCount == 1) "1 Tab" else "$tabCount Tabs") { onDismiss(); onTabs() },
+        PageAction(PaneIcons.Plus, "New Tab") { onDismiss(); onNewTab(false) },
+        PageAction(PaneIcons.Private, "Private") { onDismiss(); onNewTab(true) },
+    )
+    val places = listOf(
+        PageAction(PaneIcons.Book, "Bookmarks") { go(Route.Bookmarks) },
+        PageAction(PaneIcons.Clock, "History") { go(Route.History) },
+        PageAction(PaneIcons.Download, "Downloads") { go(Route.Downloads) },
+        PageAction(PaneIcons.Gear, "Settings") { go(Route.Settings) },
+    )
+    // every row of glyphs keeps the same columns, so they line up down the sheet
+    val columns = maxOf(pageActions.size, tabActions.size, places.size)
 
+    // The sheet itself is the motion: it grows out of the button and what it holds fades in as one, with no
+    // second wave of rows arriving after it.
     PaneSheet(visible = visible, onDismiss = onDismiss, origin = origin, maxHeightFraction = 0.9f) {
         FadingColumn(Modifier.weight(1f, fill = false)) {
             if (pageActions.isNotEmpty()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(start = Spacing.gutter, end = Spacing.gutter, top = 4.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    pageActions.forEachIndexed { i, action ->
-                        PageActionView(action, Modifier.weight(1f).entrance(actionBeat + i))
-                    }
-                }
-            }
-
-            if (isPage) {
+                ActionRow(pageActions, columns)
                 MenuDivider()
-                FlatSection(entranceIndex = pageBeat, separatorInset = GlyphInset) {
+                FlatSection(separatorInset = GlyphInset) {
                     row {
                         FlatRow(
                             "Desktop Site",
@@ -197,22 +195,24 @@ fun MenuSheet(
                         )
                     }
                 }
+                MenuDivider()
             }
-
-            if (isPage) MenuDivider()
-            FlatSection(entranceIndex = tabBeat, separatorInset = GlyphInset) {
-                row { FlatRow("Tabs", icon = PaneIcons.Tabs, value = tabCount.toString(), chevron = true, onClick = { onDismiss(); onTabs() }) }
-                row { FlatRow("New Tab", icon = PaneIcons.Plus, onClick = { onDismiss(); onNewTab(false) }) }
-                row { FlatRow("New Private Tab", icon = PaneIcons.Private, onClick = { onDismiss(); onNewTab(true) }) }
-            }
+            ActionRow(tabActions, columns)
             MenuDivider()
-            FlatSection(entranceIndex = libraryBeat, separatorInset = GlyphInset) {
-                row { FlatRow("Bookmarks", icon = PaneIcons.Bookmark, chevron = true, onClick = { go(Route.Bookmarks) }) }
-                row { FlatRow("History", icon = PaneIcons.Clock, chevron = true, onClick = { go(Route.History) }) }
-                row { FlatRow("Downloads", icon = PaneIcons.Download, chevron = true, onClick = { go(Route.Downloads) }) }
-                row { FlatRow("Settings", icon = PaneIcons.Gear, chevron = true, onClick = { go(Route.Settings) }) }
-            }
+            ActionRow(places, columns)
         }
+    }
+}
+
+/** A row of glyph actions in [columns] equal columns, from the left. */
+@Composable
+private fun ActionRow(actions: List<PageAction>, columns: Int) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = Spacing.gutter, end = Spacing.gutter, top = 4.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        actions.forEach { PageActionView(it, Modifier.weight(1f)) }
+        repeat(columns - actions.size) { Spacer(Modifier.weight(1f)) }
     }
 }
 
