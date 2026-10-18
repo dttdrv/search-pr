@@ -524,7 +524,6 @@ fun BrowserScreen() {
                     locked = locked,
                     onDismiss = { chrome.showMenu = false },
                     onFindInPage = { chrome.findInPage = true },
-                    tabCount = sameMode.size,
                     onTabs = { chrome.showTabs = true },
                     onNewTab = { p ->
                         scope.launch {

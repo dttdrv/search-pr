@@ -65,7 +65,6 @@ fun MenuSheet(
     locked: Boolean,
     onDismiss: () -> Unit,
     onFindInPage: () -> Unit,
-    tabCount: Int,
     onTabs: () -> Unit,
     onNewTab: (private: Boolean) -> Unit,
 ) {
@@ -141,7 +140,7 @@ fun MenuSheet(
     }
 
     val tabActions = listOf(
-        PageAction(PaneIcons.Tabs, if (tabCount == 1) "1 Tab" else "$tabCount Tabs") { onDismiss(); onTabs() },
+        PageAction(PaneIcons.Tabs, "Tabs") { onDismiss(); onTabs() },
         PageAction(PaneIcons.Plus, "New Tab") { onDismiss(); onNewTab(false) },
         PageAction(PaneIcons.Private, "Private") { onDismiss(); onNewTab(true) },
     )

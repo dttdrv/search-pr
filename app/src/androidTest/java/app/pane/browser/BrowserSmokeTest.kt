@@ -120,7 +120,7 @@ class BrowserSmokeTest {
             shot("13-landscape")
             device.setOrientationNatural()
             node(By.desc("Menu"))
-            menu("New Private Tab")
+            menu("Private")
             if (device.wait(Until.hasObject(By.desc("Cancel")), 2_000)) {
                 assertTrue("Private editor exposed normal browsing history", device.wait(Until.gone(By.text("Recent")), 5_000))
                 tap(By.desc("Cancel"))
