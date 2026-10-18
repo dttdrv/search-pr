@@ -52,6 +52,9 @@ jobs:
         run: |
           pip install --quiet pillow
           python3 .github/scripts/print_shots.py 360
+          # the outcome last, where the end of the log shows it
+          tail -n 40 shots/instrumentation.txt || true
+          grep -E 'FATAL EXCEPTION|ANR in app.pane.browser|AndroidRuntime' -A 12 shots/logcat.txt | head -60 || true
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
