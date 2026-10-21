@@ -48,8 +48,8 @@ class BrowserChrome(private val scope: CoroutineScope) {
     /** Snapshot drawn over the page while a gesture or transition is in flight. */
     var overlay by mutableStateOf<PageOverlay?>(null)
 
-    /** Draws the page on screen into a bitmap whose longer side is at most the given size; set by the screen. */
-    var snapshotSource: ((maxSide: Int) -> Bitmap?)? = null
+    /** Draws the page on screen into a bitmap at full resolution; set by the screen. */
+    var snapshotSource: (suspend () -> Bitmap?)? = null
 
     /** Whether the page has scrolled away from its top; the status area then dissolves into it. */
     var scrolled by mutableStateOf(false)
@@ -84,16 +84,15 @@ class BrowserChrome(private val scope: CoroutineScope) {
         if (target != collapse.target) head(target)
     }
 
-    /** Scrolling has paused: finish whichever way the bar was heading. */
+    /** The page was let go and has stopped: finish whichever way the bar was heading. */
     fun settle() {
         if (anyOverlay) return
         val target = if (collapse.target > 0.45f) 1f else 0f
         if (collapse.target != target) head(target)
     }
 
-    /** Grabs the visible page; null if nothing is drawn. The timeout is kept for callers but a draw is immediate. */
-    @Suppress("UNUSED_PARAMETER")
-    fun capture(timeoutMs: Long = 250): Bitmap? = snapshotSource?.invoke(960)
+    /** Grabs the visible page; null if nothing is drawn. */
+    suspend fun capture(): Bitmap? = snapshotSource?.invoke()
 
     companion object {
         /**

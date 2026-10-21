@@ -1,22 +1,34 @@
-function (inset, room, head) {
+function (inset, room, head, fall, blur, veil, cover) {
   if (window !== window.top) return;
-  if (window.__paneBar) return window.__paneBar(inset, room, head);
+  if (window.__paneBar) return window.__paneBar(inset, room, head, fall, blur, veil, cover);
   head = head || 0;
-  var sheet = new CSSStyleSheet(), timer = 0;
+  fall = fall || 0;
+  blur = blur || 0;
+  veil = veil || 0;
+  cover = cover || 0;
+  var sheet = new CSSStyleSheet(), timer = 0, settled = true, edge = null, tone = '', mixer = null, left = false;
   var queue = new Set(), scrollers = new Set(), stickies = new Set(), fixeds = new Set(), ends = new Set(), tops = new Set(), shell = false;
   var seen = new WeakMap(), grown = new Set(), moving = 0;
   // a box can run on under the bar only where attr() carries the length it had; elsewhere it is lifted whole
   var grows = CSS.supports('height', 'calc(attr(data-pane-tall px, 0px) + 1px)');
-  try {
-    // not inherited, so a change restyles only the few boxes that wear it, not the whole page
-    CSS.registerProperty({ name: '--pane-inset', syntax: '<length>', inherits: false, initialValue: '0px' });
-  } catch (e) {}
+  // the soft edge deepens with the first stretch of scrolling, so nothing at rest sits in it
+  var sliding = CSS.supports('animation-timeline', 'scroll()');
+  // not inherited, so a change restyles only the few boxes that wear them, not the whole page
+  ['--pane-inset', '--pane-fall'].forEach(function (name) {
+    try {
+      CSS.registerProperty({ name: name, syntax: '<length>', inherits: false, initialValue: '0px' });
+    } catch (e) {}
+  });
 
   // the bar covers the bottom of the layout viewport: fixed and sticky boxes that reach the bottom sit above it
   // (as with a shrunk viewport), the end of the document and of full-height scrollers clears it, a page that
   // doesn't scroll ends above it, and the colour of what was moved carries on beneath it. the status area
   // covers `head` at the top the same way: the document starts below it and scrolls up under it, and boxes held
-  // at the top are held below it
+  // at the top are held below it. what shows under the status area follows webkit (LocalFrameView::fixedContainerEdges
+  // and the scroll edge effect): a header held at the top carries its colour on up, and otherwise what passes under
+  // it is blurred progressively under a `veil` of the page's own background, as the start page's status veil is: by
+  // `blur` near the top and half that further down, each thinning from `cover` to nothing, the lighter one reaching
+  // `fall` further down once scrolled
   function css() {
     return ':root{--pane-room:' + room + 'px}' +
       ':root,html::before,[data-pane-lift],[data-pane-pad],[data-pane-tall],[data-pane-fit],[data-pane-end]{--pane-inset:' + inset + 'px}' +
@@ -28,7 +40,9 @@ function (inset, room, head) {
       // placed against the viewport itself, so the document's new start doesn't carry it down
       '[data-pane-drop=a]{translate:0 ' + head + 'px!important}' +
       '[data-pane-drop=s]{top:' + head + 'px!important;top:calc(' + head + 'px + attr(data-pane-stick px,0px))!important}' +
-      '[data-pane-cut]{clip-path:inset(attr(data-pane-cut px,0px) 0 0 0)!important}' +
+      // nothing a box held at the top holds shows above the status area's edge (a site slides the header, or only
+      // what is in it, up out of view), while what drops from its sides or bottom still shows
+      '[data-pane-drop=""],[data-pane-drop=s]{clip-path:inset(0 -100vw -100vh)!important;clip-path:inset(attr(data-pane-cut px,0px) -100vw -100vh)!important}' +
       'html::after{content:"";display:block;height:var(--pane-room)}html[data-pane-clip]::after,html[data-pane-shell]::after{display:none}' +
       'html::before{content:"";position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:var(--pane-bands,none)}' +
       '[data-pane-lift=""]{margin-bottom:var(--pane-inset)!important}' +
@@ -43,7 +57,17 @@ function (inset, room, head) {
       // a box that reached the bottom edge ends at the bar instead, whatever gave it its height; the second
       // pair takes the box's own top off as well, where attr() can carry a length
       '[data-pane-end]{--pane-end:calc(100vh - var(--pane-inset));--pane-end:calc(100vh - var(--pane-inset) - attr(data-pane-end px,0px));min-height:var(--pane-end)!important;max-height:var(--pane-end)!important}' +
-      '[data-pane-room]::after{content:""!important;display:block!important;flex:none!important;grid-column:1/-1!important;height:var(--pane-room)!important}';
+      '[data-pane-room]::after{content:""!important;display:block!important;flex:none!important;grid-column:1/-1!important;height:var(--pane-room)!important}' +
+      (head ? 'pane-edge{all:initial!important;color-scheme:inherit!important;color:var(--pane-ground)!important;display:block!important;position:fixed!important;inset:0 0 auto!important;' +
+        'height:' + (head + fall) + 'px!important;z-index:2147483647!important;pointer-events:none!important;contain:strict!important' +
+        (sliding ? ';animation:pane-fall linear both!important;animation-timeline:scroll(root)!important;animation-range:0 ' + fall + 'px!important' : '') + '}' +
+        '@keyframes pane-fall{to{--pane-fall:' + fall + 'px}}' +
+        // the layers blur what is behind the edge only while the edge itself neither blurs nor masks
+        'pane-edge::before,pane-edge::after{content:""!important;position:absolute!important;inset:0!important}' +
+        'pane-edge::before{--pane-fall:inherit!important;background:color-mix(in srgb,var(--pane-ground) ' + veil * 100 + '%,transparent)!important;backdrop-filter:blur(' + blur / 2 + 'px)!important;' +
+        'mask-image:linear-gradient(rgb(0 0 0/' + cover + '),transparent calc(' + head + 'px + var(--pane-fall)))!important}' +
+        'pane-edge::after{backdrop-filter:blur(' + blur + 'px)!important;mask-image:linear-gradient(rgb(0 0 0/' + cover + '),transparent ' + head + 'px)!important}' +
+        'pane-edge[data-held]{animation:none!important;background:var(--pane-top)!important}pane-edge[data-held]::before,pane-edge[data-held]::after{display:none!important}' : 'pane-edge{display:none!important}');
   }
   function toggle(el, name, value) {
     if (value === null || value === false) el.removeAttribute(name);
@@ -178,12 +202,15 @@ function (inset, room, head) {
     var start = performance.now(), done = [];
     for (var el of queue) {
       queue.delete(el);
-      if (el.isConnected) done.push(el, check(el));
+      if (el.isConnected && el !== edge) done.push(el, check(el));
       if (performance.now() - start > 8) break;
     }
     wear(done);
     follow();
     if (queue.size) return schedule(16);
+    // a scroll only moves sticky boxes against their scrollport; nothing else needs looking at again
+    if (settled) return;
+    settled = true;
     // what a fixed box holds changes without the box itself changing (a sheet's list loading), so they are looked at again
     var again = [];
     fixeds.forEach(function (e) { if (e.isConnected) again.push(e); });
@@ -212,6 +239,7 @@ function (inset, room, head) {
   function refresh() {
     var root = document.documentElement, body = document.body, line = innerHeight - inset;
     if (!root) return;
+    if (head && (!edge || edge.parentNode !== root)) root.appendChild(edge = edge || document.createElement('pane-edge'));
     var y = getComputedStyle(root).overflowY, by = body ? getComputedStyle(body).overflowY : '';
     toggle(root, 'data-pane-clip', /hidden|clip/.test(y === 'visible' ? by : y));
     settle(root, body);
@@ -221,46 +249,119 @@ function (inset, room, head) {
       var padded = s.hasAttribute('data-pane-room');
       toggle(s, 'data-pane-room', inset > 0 && s.getBoundingClientRect().bottom > line + 1 && s.scrollHeight - (padded ? room : 0) > s.clientHeight + 1);
     });
-    var hit = inset > 0 && topAt(innerWidth / 2, line - 2), lifted = hit && hit.closest('[data-pane-lift]');
-    // in a page that ends above the bar, whatever sits at its new end was moved there
-    if (!lifted && ends.size && hit && hit !== root && hit !== body && !flows(hit)) lifted = body;
     var ground = (body && paint(body)) || paint(root) || 'Canvas';
-    // what shows at the very bottom is a box running on under the bar in its own paint: no colour is carried for it
-    for (var e = inset > 0 && topAt(innerWidth / 2, innerHeight - 1), painted = false, runs = false; e && e !== root; e = up(e)) {
-      painted = painted || paints(e, getComputedStyle(e));
-      if (e.hasAttribute('data-pane-pad')) {
-        runs = painted;
-        break;
-      }
-    }
-    var ext = runs ? 'none' : tone(hit, lifted, body, ground, line - 2, 'data-pane-lift');
-    var bands = band(ext, 'bottom', 'var(--pane-inset)').join(',') || 'none';
+    // under the bar, a box lifted above it carries its colour on down as a header does up under the status area
+    var lifted = [];
+    if (inset > 0) [fixeds, stickies].forEach(function (set) { set.forEach(function (e) { if (e.hasAttribute('data-pane-lift')) lifted.push(e); }); });
+    var below = (inset > 0 && kept(lifted, innerWidth / 2, line - 4)) || [];
+    var layers = below.length ? below.concat(ground).map(function (c) { return 'linear-gradient(' + c + ',' + c + ')'; }) : [];
+    var ext = layers.join(',') || 'none';
+    if (edge) edge.style.setProperty('--pane-ground', ground);
+    crest(ground);
+    var bands = layers.map(function (l) { return l + ' bottom/100% var(--pane-inset) no-repeat'; }).join(',') || 'none';
     [['--pane-ext', ext], ['--pane-bands', bands]].forEach(function (v) {
       if (root.style.getPropertyValue(v[0]) !== v[1]) root.style.setProperty(v[0], v[1]);
     });
   }
-  // the colour a moved box carries on past the edge it was moved from, as a css background, or 'none'
-  function tone(hit, moved, body, ground, y, worn) {
-    // only a box that spans the width carries its colour on (a narrow one is a floating button or toast)
-    if (!moved || (moved !== body && moved.getBoundingClientRect().width < innerWidth * 0.9)) return 'none';
-    for (var e = hit, c = ''; e && e !== body; e = up(e)) {
-      c = c || paint(e);
-      if (e === moved) break;
+  // the colours a header held at the top carries up under the status area, topmost first (see kept); at rest the page's
+  // first row goes on up the same way, as safari tints it by webkit's sampled top colour, unless that row is in a box
+  // scrolled away from its own top
+  function held() {
+    var x = innerWidth / 2, y = head + 4, top = kept(tops, x, y);
+    if (top || scrollY > 0) return top || [];
+    for (var e = topAt(x, y); e && e !== document.body && e !== document.documentElement; e = up(e)) {
+      if (e.scrollTop > 0) return [];
+      var c = e.getBoundingClientRect().width >= innerWidth * 0.9 && paint(e);
+      if (c) return carried(e, c, x, y);
     }
-    // the colour may sit on a moved box that takes no touches (a painted plate behind the buttons), which no hit finds
-    if (!c) fixeds.forEach(function (f) {
-      var box = f.hasAttribute(worn) && !c && f.getBoundingClientRect();
-      if (box && box.top <= y && box.bottom >= y && box.width >= innerWidth * 0.9) c = paint(f);
-    });
-    return !c ? ground : /^rgb\(/.test(c) ? c : 'linear-gradient(' + c + ',' + c + '),' + ground;
+    return [];
   }
-  // that colour as layers of the one overlay, along `edge` and `size` deep
-  function band(tone, edge, size) {
-    if (tone === 'none') return [];
-    var over = /^linear-gradient\((.*?),\1\),(.*)$/.exec(tone);
-    return (over ? [over[1], over[2]] : [tone]).map(function (c) {
-      return 'linear-gradient(' + c + ',' + c + ') ' + edge + '/100% ' + size + ' no-repeat';
+  // the colours a box kept at an edge carries on past it, topmost first, picked as webkit picks the box at that edge
+  // (LocalFrameView::fixedContainerEdges): of `boxes` across the width at x, y, painted last first, the colour painted
+  // there, under whatever dims the whole viewport over it, and over what shows through it. none where the box blurs
+  // what is behind it or paints its own way on past the edge; null where no box is kept there
+  function kept(boxes, x, y) {
+    var found = [], hit = topAt(x, y);
+    boxes.forEach(function (e) {
+      var box = e.isConnected && e.getBoundingClientRect(), cs = box && getComputedStyle(e);
+      if (!box || box.top > y || box.bottom <= y || box.left > x || box.right < x) return;
+      if (box.width < innerWidth * 0.9 || box.height >= innerHeight * 0.9 || cs.visibility !== 'visible' || +cs.opacity < 0.1) return;
+      found.push([e, cs]);
     });
+    // painted last first: the higher stack level, then the later in the document
+    found.sort(function (a, b) {
+      return ((parseInt(b[1].zIndex) || 0) - (parseInt(a[1].zIndex) || 0)) || (a[0].compareDocumentPosition(b[0]) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1);
+    });
+    for (var i = 0; i < found.length; i++) {
+      var box = found[i][0];
+      if (found[i][1].backdropFilter !== 'none' || box.hasAttribute('data-pane-pad')) return [];
+      // what the box shows there, though something over it (a backdrop) takes the touches
+      var start = hit && inside(hit, box) ? hit : document.elementsFromPoint(x, y).find(function (e) { return inside(e, box); }) || box;
+      for (var e = start, c = ''; e && !c; e = e === box ? null : up(e)) {
+        if (e.getBoundingClientRect().width >= innerWidth * 0.9) c = paint(e);
+      }
+      if (c) return carried(box, c, x, y);
+      // it shows there what the page can't read (a frame, a picture, a video): it is let alone, and nothing under it is taken
+      if (start.matches('iframe,img,video,canvas,embed,object,svg')) return [];
+    }
+    return null;
+  }
+  function carried(box, c, x, y) {
+    var over = dims(box, x, y);
+    return over ? over.concat(c, rgba(c)[3] === 255 ? [] : beneath(box, x, y)) : [];
+  }
+  // what is painted over `box` at x, y across the whole viewport: the colours of the layers dimming it, or null where
+  // one hides it (that one shows through the blur instead)
+  function dims(box, x, y) {
+    var out = [], stack = document.elementsFromPoint(x, y);
+    for (var i = 0; i < stack.length; i++) {
+      var e = stack[i], r = e.getBoundingClientRect();
+      if (inside(e, box)) break;
+      if (r.width < innerWidth * 0.9 || r.height < innerHeight * 0.9) continue;
+      // a layer of the page itself rather than one over it: the header is above it
+      if (getComputedStyle(e).position !== 'fixed') break;
+      var c = paint(e);
+      if (!c) continue;
+      if (rgba(c)[3] === 255) return null;
+      out.push(c);
+    }
+    return out;
+  }
+  // the colours painted across the width under `box` at x, y, down to the first solid one
+  function beneath(box, x, y) {
+    var out = [], stack = document.elementsFromPoint(x, y);
+    for (var i = 0; i < stack.length; i++) {
+      var e = stack[i], c = e !== edge && !inside(e, box) && e.getBoundingClientRect().width >= innerWidth * 0.9 && paint(e);
+      if (!c) continue;
+      out.push(c);
+      if (rgba(c)[3] === 255) break;
+    }
+    return out;
+  }
+  function rgba(c) {
+    mixer = mixer || new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true });
+    mixer.clearRect(0, 0, 1, 1);
+    mixer.fillStyle = c;
+    mixer.fillRect(0, 0, 1, 1);
+    return mixer.getImageData(0, 0, 1, 1).data;
+  }
+  // shows what is under the status area and tells the app its colour, for the status icons, when it changes
+  function crest(ground) {
+    if (!edge) return;
+    var top = held(), layers = top.map(function (c) { return 'linear-gradient(' + c + ',' + c + ')'; });
+    edge.style.setProperty('--pane-top', layers.length ? layers.concat(ground).join(',') : 'none');
+    toggle(edge, 'data-held', layers.length > 0);
+    var port = window.__paneTone;
+    if (!port) return;
+    rgba(getComputedStyle(edge).color);
+    top.reverse().forEach(function (c) {
+      mixer.fillStyle = c;
+      mixer.fillRect(0, 0, 1, 1);
+    });
+    var px = mixer.getImageData(0, 0, 1, 1).data, now = String((px[0] << 16) | (px[1] << 8) | px[2]);
+    if (now === tone) return;
+    tone = now;
+    port.postMessage(now);
   }
   // a page whose document doesn't scroll is laid out to the viewport, so what reaches the bottom edge there is
   // the page's own bottom ui or ground (a flex, grid or full-height shell): the innermost box across the width that
@@ -276,7 +377,7 @@ function (inset, room, head) {
       shell = now;
       // boxes placed against the viewport are judged differently in a page that doesn't scroll
       if (body) add(body);
-      schedule();
+      unsettle();
     }
     ends.forEach(function (e) {
       if (shell && e.isConnected) return;
@@ -322,7 +423,9 @@ function (inset, room, head) {
       seen.set(e, top);
       toggle(e, 'data-pane-cut', top < head - 0.5 ? String(head - top) : null);
     });
-    if (changed) follow();
+    if (!changed) return;
+    if (edge) crest(edge.style.getPropertyValue('--pane-ground'));
+    follow();
   }
   function follow() {
     if (!moving && tops.size) moving = requestAnimationFrame(trim);
@@ -330,14 +433,20 @@ function (inset, room, head) {
   function schedule(ms) {
     if (!timer) timer = setTimeout(flush, ms || 60);
   }
+  // something other than a scroll changed: every box is looked at again
+  function unsettle() {
+    settled = false;
+    schedule();
+  }
 
   var options = { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] };
   var observer = new MutationObserver(function (records) {
     records.forEach(function (r) {
+      if (r.target === edge) return;
       if (r.type === 'attributes') queue.add(r.target);
-      else r.addedNodes.forEach(function (node) { if (node.nodeType === 1) add(node); });
+      else r.addedNodes.forEach(function (node) { if (node.nodeType === 1 && node !== edge) add(node); });
     });
-    schedule();
+    unsettle();
   });
   // an element and everything under it, shadow trees included, goes to be checked
   function add(node) {
@@ -356,7 +465,7 @@ function (inset, room, head) {
   }
   function scan() {
     if (document.documentElement) add(document.documentElement);
-    schedule();
+    unsettle();
   }
 
   sheet.replaceSync(css());
@@ -368,17 +477,21 @@ function (inset, room, head) {
     root.animate(frames, { duration: 200, easing: 'ease', pseudoElement: '::before' });
     [fixeds, stickies, grown, ends].forEach(function (set) { set.forEach(function (e) { if (e.isConnected) e.animate(frames, timing); }); });
   }
-  window.__paneBar = function (n, r, h) {
+  window.__paneBar = function (n, r, h, f, b, v, c) {
     var folded = r === room && (h || 0) === head, from = inset;
     inset = n;
     room = r;
     head = h || 0;
+    fall = f || 0;
+    blur = b || 0;
+    veil = v || 0;
+    cover = c || 0;
     sheet.replaceSync(css());
     if (from !== inset) glide(from);
     if (!folded) return scan();
     // the bar folding to its label and back moves only what is lifted or sized for it
     [fixeds, stickies, grown, tops].forEach(function (set) { set.forEach(function (e) { queue.add(e); }); });
-    schedule();
+    unsettle();
   };
   var attach = Element.prototype.attachShadow;
   Element.prototype.attachShadow = function (init) {
@@ -395,10 +508,20 @@ function (inset, room, head) {
     scan();
   }, { passive: true });
   addEventListener('scroll', function () {
-    if (stickies.size) schedule();
+    // leaving the top lets go of the page's first row, and coming back to it takes it up again
+    if (edge && (scrollY > 0) !== left) {
+      left = !left;
+      crest(edge.style.getPropertyValue('--pane-ground'));
+    }
+    if (stickies.size) {
+      stickies.forEach(function (e) { queue.add(e); });
+      schedule();
+    }
     follow();
   }, { passive: true, capture: true });
   ['transitionrun', 'animationstart'].forEach(function (name) { addEventListener(name, follow, true); });
-  ['transitionend', 'animationend'].forEach(function (name) { addEventListener(name, function () { schedule(); }, true); });
+  ['transitionend', 'animationend'].forEach(function (name) { addEventListener(name, unsettle, true); });
+  // what moved while the page scrolled is looked at once it comes to rest
+  addEventListener('scrollend', unsettle, { passive: true, capture: true });
   scan();
 }

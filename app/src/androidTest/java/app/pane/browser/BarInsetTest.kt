@@ -44,7 +44,7 @@ class BarInsetTest {
      * in slices after a short delay, so each step waits.
      */
     @SuppressLint("SetJavaScriptEnabled")
-    private fun measure(body: String, inset: Int = 90, head: Int = 0, act: String = "", probe: String): JSONObject {
+    private fun measure(body: String, inset: Int = 90, head: Int = 0, fall: Int = 0, act: String = "", probe: String): JSONObject {
         val loaded = CountDownLatch(1)
         lateinit var web: WebView
         instrumentation.runOnMainSync {
@@ -60,7 +60,7 @@ class BarInsetTest {
             }
         }
         assertTrue("page did not load", loaded.await(20, TimeUnit.SECONDS))
-        evaluate(web, "($script)($inset,$inset,$head)")
+        evaluate(web, "($script)($inset,$inset,$head,$fall,10,0.1,0.75)")
         Thread.sleep(700)
         if (act.isNotEmpty()) {
             evaluate(web, act)
@@ -72,11 +72,22 @@ class BarInsetTest {
         return JSONObject(JSONObject("{\"v\":$answer}").getString("v"))
     }
 
-    private val line = "innerHeight - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pane-inset'))"
+    private val line = "(innerHeight - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pane-inset')))"
     private fun bottom(id: String) = "document.getElementById('$id').getBoundingClientRect().bottom"
     /** where the box's content ends, above its bottom padding */
     private fun content(id: String) = "(${bottom(id)} - parseFloat(getComputedStyle(document.getElementById('$id')).paddingBottom))"
     private fun top(id: String) = "document.getElementById('$id').getBoundingClientRect().top"
+
+    /** what the status area shows: whether a header holds it, the background drawn there, and the last tone the app was told */
+    private val edge = "{held: document.querySelector('pane-edge').hasAttribute('data-held'), " +
+        "paint: getComputedStyle(document.querySelector('pane-edge')).backgroundImage + getComputedStyle(document.querySelector('pane-edge')).backgroundColor, " +
+        "told: (window.__told || []).slice(-1)[0] || ''}"
+
+    /** listens as the app does for the tone, then makes the script look at the page again */
+    private val listen = "window.__told = []; window.__paneTone = {postMessage: m => __told.push(m)}; dispatchEvent(new Event('resize'))"
+
+    /** a css rgb colour as the page posts it to the app: (r << 16) | (g << 8) | b */
+    private fun tone(r: Int, g: Int, b: Int) = ((r shl 16) or (g shl 8) or b).toString()
 
     @Test
     fun bottomBarSitsAboveTheBar() {
@@ -96,6 +107,38 @@ class BarInsetTest {
             assertEquals("$paint: it grows by the bar and no more", 56 + r.getDouble("inset"), r.getDouble("height"), 1.0)
             assertEquals("$paint: no colour is carried for it", "none", r.getString("ext"))
         }
+    }
+
+    // under the bar the same rule as under the status area: a bar lifted above it across the width carries its colour on
+    // down, as it shows (dimmed by a backdrop over it); nothing does where the bar blurs, floats clear of the edge or
+    // paints its own way on down
+
+    private val under = "{ext: document.documentElement.style.getPropertyValue('--pane-ext')}"
+
+    @Test
+    fun aBarLiftedAboveThePillCarriesItsPaintedColourDownUnderIt() {
+        // a sticky bar is lifted rather than run on under the pill, and a fixed one may paint only what it holds
+        val bars = listOf(
+            "<div style='height:3000px'></div><div style='position:sticky;bottom:0;height:56px;background:rgb(10,20,30)'></div>",
+            "<div style='position:fixed;left:0;right:0;bottom:0;height:56px'><div style='height:100%;background:rgb(10,20,30)'></div></div><div style='height:3000px'></div>",
+        )
+        for (bar in bars) {
+            assertEquals(bar, "linear-gradient(rgb(10, 20, 30),rgb(10, 20, 30)),linear-gradient(Canvas,Canvas)", measure(bar, probe = under).getString("ext"))
+            val dimmed = measure("$bar<div style='position:fixed;inset:0;z-index:2;background:rgba(0,0,0,.5)'></div>", probe = under).getString("ext")
+            assertTrue("a backdrop over it dims it there too: $dimmed", dimmed.startsWith("linear-gradient(rgba(0, 0, 0, 0.5),rgba(0, 0, 0, 0.5)),linear-gradient(rgb(10, 20, 30)"))
+        }
+    }
+
+    @Test
+    fun nothingIsCarriedUnderThePillForABarThatBlursOrFloatsClearOfTheEdge() {
+        for (bar in listOf("bottom:0;backdrop-filter:blur(8px)", "bottom:12px")) {
+            val r = measure("<div style='position:fixed;left:0;right:0;$bar;height:56px'><div style='height:100%;background:rgb(10,20,30)'></div></div><div style='height:3000px'></div>", probe = under)
+            assertEquals(bar, "none", r.getString("ext"))
+        }
+        // bbc's shape: a consent sheet in a frame over a painted bar; what the frame shows can't be read
+        val framed = measure("<div style='height:3000px'></div><div style='position:sticky;bottom:0;height:56px;background:rgb(10,20,30)'></div>" +
+            "<div style='position:fixed;left:0;right:0;bottom:0;height:200px;z-index:3'><iframe style='display:block;width:100%;height:100%;border:0' srcdoc='<body style=background:#888>'></iframe></div>", probe = under)
+        assertEquals("none", framed.getString("ext"))
     }
 
     @Test
@@ -262,6 +305,101 @@ class BarInsetTest {
     fun withNoStatusAreaTheDocumentStartsWhereItDid() {
         val r = measure("<div id=first style='height:40px'></div><div style='height:3000px'></div>", probe = "{first: ${top("first")}}")
         assertEquals(0.0, r.getDouble("first"), 0.5)
+    }
+
+    // webkit's rule for the top edge (LocalFrameView::fixedContainerEdges): a fixed or sticky box held at the edge
+    // that spans the width carries its background colour on under the browser's own ui; nothing else does
+
+    @Test
+    fun aHeaderHeldAtTheTopCarriesItsColourUpUnderTheStatusArea() {
+        for (place in listOf("position:fixed;top:0;left:0;right:0", "position:sticky;top:0")) {
+            val r = measure("<div style='$place;height:56px;background:rgb(200,0,0)'></div><div style='height:3000px'></div>", head = 30, act = listen, probe = edge)
+            assertTrue(place, r.getBoolean("held"))
+            assertTrue(place, "rgb(200, 0, 0)" in r.getString("paint"))
+            assertEquals(place, tone(200, 0, 0), r.getString("told"))
+        }
+    }
+
+    @Test
+    fun aHeaderPaintedByAPlateBehindItCarriesThePlatesColour() {
+        // youtube's shape: an untouchable plate holds the colour, and the header over it holds the buttons
+        val r = measure("<div style='position:fixed;top:0;left:0;right:0;height:48px;background:rgb(15,15,15);pointer-events:none'></div>" +
+            "<div style='position:fixed;top:0;left:0;right:0;height:48px;z-index:1;pointer-events:none'><button style='pointer-events:auto'>menu</button></div>" +
+            "<div style='height:3000px'></div>", head = 30, act = listen, probe = edge)
+        assertTrue(r.getBoolean("held"))
+        assertEquals(tone(15, 15, 15), r.getString("told"))
+    }
+
+    /** [told] is the source-over blend [over] at [alpha] on [under], to within the canvas's 8-bit rounding */
+    private fun assertBlend(over: Int, alpha: Double, under: Int, told: String) {
+        val expected = over * alpha + under * (1 - alpha)
+        listOf(16, 8, 0).forEach { assertEquals(told, expected, ((told.toInt() shr it) and 0xFF).toDouble(), 1.0) }
+    }
+
+    @Test
+    fun aSheetDimmingTheHeaderDimsWhatTheStatusAreaCarries() {
+        val r = measure("<div style='position:fixed;top:0;left:0;right:0;height:56px;background:#fff'></div>" +
+            "<div style='position:fixed;inset:0;z-index:2;background:rgba(0,0,0,.5)'></div><div style='height:3000px'></div>", head = 30, act = listen, probe = edge)
+        assertTrue(r.getBoolean("held"))
+        assertBlend(0, 0.5, 255, r.getString("told"))
+    }
+
+    @Test
+    fun aHeaderThatLetsThePageThroughCarriesWhatShowsThroughIt() {
+        // youtube's watch page: a translucent black header over the black player, on a white page
+        for ((under, color) in listOf(0 to "#000", 255 to "#fff")) {
+            val r = measure("<div style='position:fixed;top:0;left:0;right:0;height:56px;background:rgba(0,0,0,.5)'></div>" +
+                "<div style='height:300px;background:$color'></div><div style='height:3000px'></div>", head = 30, act = listen, probe = edge)
+            assertTrue(color, r.getBoolean("held"))
+            assertBlend(0, 0.5, under, r.getString("told"))
+        }
+    }
+
+    @Test
+    fun atRestThePagesFirstRowGoesOnUpUnderTheStatusArea() {
+        // the guardian's shape: a dark masthead in the page's flow, on a white page
+        val page = "<div style='height:56px;background:rgb(2,15,37)'></div><div style='height:3000px'></div>"
+        val rest = measure(page, head = 30, act = listen, probe = edge)
+        assertTrue(rest.getBoolean("held"))
+        assertEquals(tone(2, 15, 37), rest.getString("told"))
+        assertFalse("scrolled, the page shows through", measure(page, head = 30, act = "$listen; scrollTo(0, 500)", probe = edge).getBoolean("held"))
+    }
+
+    @Test
+    fun withNothingHeldThePageItselfShowsThroughBlurredUnderItsOwnBackground() {
+        val page = "<style>body{background:rgb(250,250,250)}</style><div style='height:3000px'></div>"
+        for (top in listOf("", "<div style='position:fixed;top:0;left:0;right:0;height:56px;background:rgba(255,255,255,.8);backdrop-filter:blur(8px)'></div>",
+            "<div style='position:fixed;top:0;right:0;width:56px;height:56px;background:rgb(200,0,0)'></div>")) {
+            val r = measure(top + page, head = 30, act = listen, probe = edge)
+            assertFalse(top, r.getBoolean("held"))
+            assertEquals(top, tone(250, 250, 250), r.getString("told"))
+        }
+    }
+
+    @Test
+    fun aHeaderTheSiteSlidesAwayLetsGoOfTheStatusArea() {
+        // a WebView off screen runs no transitions, so the site's slide is taken to its end at once
+        val page = "<div id=h style='position:fixed;top:0;left:0;right:0;height:56px;background:rgb(200,0,0)'></div><div style='height:3000px'></div>"
+        assertTrue(measure(page, head = 30, probe = edge).getBoolean("held"))
+        assertFalse(measure(page, head = 30, act = "document.getElementById('h').style.transform = 'translateY(-100%)'", probe = edge).getBoolean("held"))
+    }
+
+    @Test
+    fun whatAHeaderSlidesUpInsideItselfGoesOutAtTheStatusAreasEdge() {
+        // x's shape: the sticky header stays where it is held and only what it holds is moved up out of view
+        val r = measure("<div style='position:sticky;top:0;height:56px'><div id=inner style='height:56px;background:#000;transform:translateY(-40px)'></div>" +
+            "<div id=menu style='position:absolute;top:56px;left:0;width:200px;height:100px;background:#fff'></div></div><div style='height:3000px'></div>",
+            head = 30, probe = "{above: (document.elementFromPoint(200, 25) || {}).id || '', below: (document.elementFromPoint(100, 30 + 56 + 50) || {}).id || ''}")
+        assertFalse("nothing it holds shows over the status area", r.getString("above") == "inner")
+        assertEquals("what drops from it still shows", "menu", r.getString("below"))
+    }
+
+    @Test
+    fun theEdgeFadesPastTheStatusAreaOnlyOnceThePageScrolls() {
+        val page = "<p>first</p><div style='height:3000px'></div>"
+        val reach = "{fall: parseFloat(getComputedStyle(document.querySelector('pane-edge')).getPropertyValue('--pane-fall'))}"
+        assertEquals("at rest the page's first line is not faded", 0.0, measure(page, head = 30, fall = 15, probe = reach).getDouble("fall"), 0.5)
+        assertEquals(15.0, measure(page, head = 30, fall = 15, act = "scrollTo(0, 500)", probe = reach).getDouble("fall"), 0.5)
     }
 
     @Test

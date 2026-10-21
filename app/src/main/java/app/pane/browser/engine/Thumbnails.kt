@@ -33,11 +33,14 @@ class Thumbnails(context: Context) {
 
     /** Stores a snapshot, downscaled to at most [MAX_WIDTH] wide. */
     suspend fun put(tabId: String, bitmap: Bitmap, private: Boolean) {
-        val scaled = if (bitmap.width > MAX_WIDTH) {
-            val h = (bitmap.height * (MAX_WIDTH.toFloat() / bitmap.width)).toInt().coerceAtLeast(1)
-            bitmap.scale(MAX_WIDTH, h)
-        } else {
-            bitmap
+        val scaled = withContext(Dispatchers.Default) {
+            // a snapshot the gpu drew is read back once, to be scaled and written
+            val readable = if (bitmap.config == Bitmap.Config.HARDWARE) bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
+            if (readable.width > MAX_WIDTH) {
+                readable.scale(MAX_WIDTH, (readable.height * (MAX_WIDTH.toFloat() / readable.width)).toInt().coerceAtLeast(1))
+            } else {
+                readable
+            }
         }
         memory.put(tabId, scaled)
         if (private) {

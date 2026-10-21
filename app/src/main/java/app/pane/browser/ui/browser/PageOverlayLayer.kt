@@ -25,9 +25,47 @@ import app.pane.browser.ui.theme.Motion
 import app.pane.browser.ui.theme.PaneTheme
 
 /**
- * Draws page snapshots over the live engine view while a gesture is in flight: the iOS-style
- * back swipe (current page slides away revealing the previous one with parallax), sideways tab
- * swipes, and a cover that holds the destination still until the page paints it.
+ * What a back step reveals under the live page as it slides away (see [backSlide]): the page before it,
+ * drifting in from a third of the way over and lightening as it comes.
+ */
+@Composable
+fun BackReveal(chrome: BrowserChrome) {
+    val overlay = chrome.overlay?.takeIf { it.kind == PageOverlay.Kind.Back && it.current == null } ?: return
+    val colors = PaneTheme.colors
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { translationX = -backDirection(chrome) * size.width * 0.3f * (1f - chrome.back.value) }
+            .background(colors.background),
+    ) {
+        val behind = overlay.behind
+        if (behind != null) {
+            Snapshot(behind)
+        } else if (!overlay.behindTitle.isNullOrBlank()) {
+            Text(
+                overlay.behindTitle,
+                style = PaneTheme.type.title3,
+                color = colors.tertiaryLabel,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.Center).padding(32.dp),
+            )
+        }
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.18f * (1f - chrome.back.value) }.background(Color.Black))
+    }
+}
+
+/** The live page following a back step: moved by the gpu as it draws, so it keeps its own resolution and frames. */
+fun Modifier.backSlide(chrome: BrowserChrome): Modifier = graphicsLayer {
+    val p = if (chrome.overlay?.let { it.kind == PageOverlay.Kind.Back && it.current == null } == true) chrome.back.value else 0f
+    translationX = backDirection(chrome) * size.width * p
+    shadowElevation = if (p > 0f) 18.dp.toPx() * (1f - p) else 0f
+}
+
+private fun backDirection(chrome: BrowserChrome) = if (chrome.backFromRight) -1f else 1f
+
+/**
+ * Draws page snapshots over the live engine view while a transition is in flight: a page leaving as a new tab
+ * takes its place, sideways tab swipes, and a cover that holds the destination still until the page paints it.
  */
 @Composable
 fun PageOverlayLayer(
@@ -37,12 +75,13 @@ fun PageOverlayLayer(
     modifier: Modifier = Modifier,
 ) {
     val overlay = chrome.overlay
-    // Keep the last cover around while it fades out.
+    // Keep the last cover around while it fades out; a cover with nothing to show holds the page's ground.
+    val covering = overlay?.kind == PageOverlay.Kind.Cover
     val lastCover = remember { mutableStateOf<Bitmap?>(null) }
-    if (overlay?.kind == PageOverlay.Kind.Cover && overlay.current != null) lastCover.value = overlay.current
+    if (covering) lastCover.value = overlay?.current
     val coverAlpha by animateFloatAsState(
-        if (overlay?.kind == PageOverlay.Kind.Cover) 1f else 0f,
-        Motion.fade(if (overlay?.kind == PageOverlay.Kind.Cover) 0 else 180),
+        if (covering) 1f else 0f,
+        Motion.fade(if (covering) 0 else 180),
         label = "cover",
         finishedListener = { if (it == 0f) lastCover.value = null },
     )
@@ -51,40 +90,18 @@ fun PageOverlayLayer(
     BoxWithConstraints(modifier.fillMaxSize()) {
         val width = constraints.maxWidth.toFloat()
         when (overlay?.kind) {
-            PageOverlay.Kind.Back -> {
-                val p = chrome.back.value
-                val dir = if (chrome.backFromRight) -1f else 1f
-                // What's revealed underneath, drifting in from a third of the way over.
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { translationX = -dir * width * 0.3f * (1f - p) }
-                        .background(colors.background),
-                ) {
-                    val behind = overlay.behind
-                    if (behind != null) {
-                        Snapshot(behind)
-                    } else if (!overlay.behindTitle.isNullOrBlank()) {
-                        Text(
-                            overlay.behindTitle,
-                            style = PaneTheme.type.title3,
-                            color = colors.tertiaryLabel,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.align(Alignment.Center).padding(32.dp),
-                        )
-                    }
-                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.18f * (1f - p) }.background(Color.Black))
-                }
+            PageOverlay.Kind.Back -> overlay.current?.let { leaving ->
+                // the page leaving as another takes its place; the live one is already underneath
                 Box(
                     Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            translationX = dir * width * p
-                            shadowElevation = 18.dp.toPx() * (1f - p)
+                            translationX = backDirection(chrome) * width * chrome.back.value
+                            shadowElevation = 18.dp.toPx() * (1f - chrome.back.value)
                         }
                         .background(colors.background),
                 ) {
-                    overlay.current?.let { Snapshot(it) }
+                    Snapshot(leaving)
                 }
             }
             PageOverlay.Kind.TabSwipe -> {
@@ -111,9 +128,10 @@ fun PageOverlayLayer(
             }
             else -> Unit
         }
-        val cover = lastCover.value
-        if (cover != null && coverAlpha > 0f) {
-            Box(Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha }) { Snapshot(cover) }
+        if (coverAlpha > 0f) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = coverAlpha }.background(colors.background)) {
+                lastCover.value?.let { Snapshot(it) }
+            }
         }
     }
 }

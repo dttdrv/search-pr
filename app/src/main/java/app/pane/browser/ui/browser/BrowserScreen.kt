@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -88,6 +89,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 
 /**
@@ -158,7 +160,7 @@ fun BrowserScreen() {
     }
 
     val swipeCapture = remember { arrayOfNulls<kotlinx.coroutines.Job>(1) }
-    chrome.snapshotSource = { side -> container.sessions.capture(container.store.state.value.selectedTabId.orEmpty(), side) }
+    chrome.snapshotSource = { container.sessions.capture(container.store.state.value.selectedTabId.orEmpty()) }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // The floating bar takes this much of the screen; the page ends above it until the bar melts away.
@@ -182,18 +184,18 @@ fun BrowserScreen() {
             }
         }
     }
-    // Once the page stops moving: finish the bar's motion.
+    // Once the page is let go and stops moving: finish the bar's motion. A finger resting mid-scroll keeps it where it is.
     LaunchedEffect(tab?.id) {
         val id = tab?.id ?: return@LaunchedEffect
         container.sessions.scroll
             .filter { it.tabId == id }
             .debounce(150)
-            .collect { chrome.settle() }
+            .collect { if (!it.held) chrome.settle() }
     }
     LaunchedEffect(tab?.loading, tab?.url) { if (tab?.loading == true) chrome.expand() }
     LaunchedEffect(settings.hideToolbarOnScroll) { if (!settings.hideToolbarOnScroll) chrome.expand() }
 
-    // Snapshots for the tab overview and back gesture, and clearing covers on first paint.
+    // Snapshots for the tab overview, of a page as it is left for the back gesture, and clearing covers on first paint.
     LaunchedEffect(Unit) {
         container.sessions.events.collect { event ->
             when (event) {
@@ -203,6 +205,11 @@ fun BrowserScreen() {
                     if (current?.id == event.tabId && chrome.overlay == null && !chrome.showTabs) {
                         captureInto(container, chrome, current)
                     }
+                }
+                // a step back returns to the page as it was left, scrolled where it was
+                is EngineEvent.Leaving -> if (event.tabId == container.store.state.value.selectedTabId) {
+                    // recorded at once, while the page still shows; the image follows from the render thread
+                    scope.launch(start = CoroutineStart.UNDISPATCHED) { chrome.capture()?.let { container.snapshots.put(event.tabId, event.url, it) } }
                 }
                 is EngineEvent.FirstPaint -> if (event.tabId == container.store.state.value.selectedTabId) {
                     if (chrome.overlay?.kind == PageOverlay.Kind.Cover) {
@@ -263,18 +270,31 @@ fun BrowserScreen() {
     }
 
     // The page slides away the way the back gesture's does, [act] having already switched what's underneath.
-    suspend fun slideAway(fromRight: Boolean, behind: Bitmap?, title: String? = null, act: () -> Unit) {
-        val snap = if (settings.reduceMotion || chrome.overlay != null) null else chrome.capture(150)
+    suspend fun slideAway(fromRight: Boolean, act: () -> Unit) {
+        val snap = if (settings.reduceMotion || chrome.overlay != null) null else chrome.capture()
         if (snap == null) {
             act()
             return
         }
         chrome.backFromRight = fromRight
         chrome.back.snapTo(0f)
-        chrome.overlay = PageOverlay(snap, behind, title, PageOverlay.Kind.Back)
+        chrome.overlay = PageOverlay(snap, null, kind = PageOverlay.Kind.Back)
         act()
         chrome.back.animateTo(1f, Motion.smooth())
-        chrome.overlay = behind?.let { PageOverlay(it, null, kind = PageOverlay.Kind.Cover) }
+        chrome.overlay = null
+        chrome.back.snapTo(0f)
+    }
+
+    // A step back lands: the page is gone from view, so the step is taken and what was behind holds the place until
+    // the page paints it. Closing back to the tab that opened this one shows that tab's own live page at once.
+    suspend fun stepBack(current: TabState, behind: Bitmap?) {
+        if (current.canGoBack) {
+            container.browser.goBack()
+            chrome.overlay = PageOverlay(behind, null, kind = PageOverlay.Kind.Cover)
+        } else {
+            container.browser.close(current.id)
+            chrome.overlay = null
+        }
         chrome.back.snapTo(0f)
     }
 
@@ -284,17 +304,15 @@ fun BrowserScreen() {
     PredictiveBackHandler(enabled = canGoBack) { events: Flow<BackEventCompat> ->
         val current = tab ?: return@PredictiveBackHandler
         val (entry, behind) = backTarget(current)
-        val captureJob = scope.launch {
-            val snap = chrome.capture(150)
-            chrome.overlay = PageOverlay(snap, behind, entry?.title, PageOverlay.Kind.Back)
-        }
+        // the live page itself follows the finger, over what is behind it
+        chrome.back.snapTo(0f)
+        chrome.overlay = PageOverlay(null, behind, entry?.title, PageOverlay.Kind.Back)
         try {
             events.collect { e ->
                 chrome.backFromRight = e.swipeEdge == BackEventCompat.EDGE_RIGHT
                 chrome.back.snapTo(e.progress)
             }
         } catch (e: CancellationException) {
-            captureJob.cancel()
             scope.launch {
                 chrome.back.animateTo(0f, Motion.smooth())
                 if (chrome.overlay?.kind == PageOverlay.Kind.Back) chrome.overlay = null
@@ -302,14 +320,11 @@ fun BrowserScreen() {
             throw e
         }
         try {
-            captureJob.join()
             chrome.back.animateTo(1f, Motion.snappy())
         } finally {
             // the gesture is over: a back pressed during the slide cancels it, but must not undo it
-            if (current.canGoBack) container.browser.goBack() else container.browser.close(current.id)
+            stepBack(current, behind)
         }
-        chrome.overlay = behind?.let { PageOverlay(it, null, kind = PageOverlay.Kind.Cover) }
-        chrome.back.snapTo(0f)
     }
 
     val appDark = settings.theme.isDark(isSystemInDarkTheme())
@@ -327,7 +342,10 @@ fun BrowserScreen() {
         val onPage = tab != null && tab.url.isNotEmpty()
         // the chrome wears the app's own tone, never one read from the site: the frost alone carries the page
         val barDark = colors.isDark
-        val lightStatusIcons = barDark
+        // over a page, the status icons read on what the page shows under them; pages darkened for the theme are dark there
+        val tones by container.sessions.tones.collectAsStateWithLifecycle()
+        val pageTone = tab?.id?.let(tones::get)?.takeIf { onPage && !fullscreen }
+        val lightStatusIcons = pageTone?.let { settings.darkPages && appDark || Color(it).luminance() < 0.5f } ?: barDark
         val barColors = when {
             !barDark -> LightColors
             private -> PrivateColors
@@ -357,37 +375,45 @@ fun BrowserScreen() {
             )
             // the page runs under the status area too: it starts below it and scrolls up beneath it
             val head = if (onPage && !fullscreen) statusTop.value.toInt() else 0
-            LaunchedEffect(barRoom, head) { container.sessions.setBarInset(barRoom.inset, barRoom.room, head) }
+            // the page draws its own edge there, lightly blurred and thinning as the start page's veil does (fall: how far past the status area)
+            val fall = (statusTop * (VeilReach - 1)).value.toInt()
+            LaunchedEffect(barRoom, head, fall) {
+                container.sessions.setBarInset(barRoom.inset, barRoom.room, head, fall, EdgeSigma.value.toInt(), EdgeVeil, VeilCover)
+            }
             val frost = rememberFrost()
             Box(
                 Modifier
                     .fillMaxSize()
                     .then(if (keyboardForPage) Modifier.imePadding() else Modifier)
                     .onGloballyPositioned { chrome.pageRect = it.boundsInRoot() }
-                    .frostSource(frost, BarMetrics.zone + navBottom, crown = if (fullscreen) 0.dp else statusTop * VeilReach),
+                    .frostSource(frost, BarMetrics.zone + navBottom, crown = if (head > 0 || fullscreen) 0.dp else statusTop * VeilReach),
             ) {
-                EngineView(
-                    tab = tab,
-                    modifier = Modifier.fillMaxSize(),
-                    hidden = locked,
-                )
-                if (tab == null || tab.url.isEmpty()) {
-                    HomePage(
-                        private = private,
-                        contentPadding = PaddingValues(top = statusTop, bottom = BarMetrics.zone + navBottom + 16.dp),
-                        onOpen = { container.browser.submit(it) },
-                        onSearch = {
-                            if (locked) {
-                                unlockPrivate()
-                            } else {
-                                editText = ""
-                                chrome.editing = true
-                            }
-                        },
+                BackReveal(chrome)
+                // the page is see-through where a site paints nothing, so it carries the ground it sits on as it slides
+                Box(Modifier.fillMaxSize().backSlide(chrome).background(colors.background)) {
+                    EngineView(
+                        tab = tab,
+                        modifier = Modifier.fillMaxSize(),
+                        hidden = locked,
                     )
-                }
-                if (tab?.crashed == true) {
-                    CrashedPage(onReload = { container.browser.reload() })
+                    if (tab == null || tab.url.isEmpty()) {
+                        HomePage(
+                            private = private,
+                            contentPadding = PaddingValues(top = statusTop, bottom = BarMetrics.zone + navBottom + 16.dp),
+                            onOpen = { container.browser.submit(it) },
+                            onSearch = {
+                                if (locked) {
+                                    unlockPrivate()
+                                } else {
+                                    editText = ""
+                                    chrome.editing = true
+                                }
+                            },
+                        )
+                    }
+                    if (tab?.crashed == true) {
+                        CrashedPage(onReload = { container.browser.reload() })
+                    }
                 }
                 PageOverlayLayer(
                     chrome = chrome,
@@ -400,7 +426,7 @@ fun BrowserScreen() {
             }
 
             // The page passes under the status area; the frost in the app's tone keeps the clock and battery readable.
-            if (!fullscreen) StatusVeil(statusTop, frost, dark = barDark, ground = colors.background)
+            if (!fullscreen && head == 0) StatusVeil(statusTop, frost, dark = barDark, ground = colors.background)
 
             // A fullscreen video brings its own view; it goes above everything.
             val customView by container.sessions.customView.collectAsStateWithLifecycle()
@@ -447,11 +473,16 @@ fun BrowserScreen() {
                         },
                         onBack = {
                             tab?.let { t ->
+                                if (!t.canGoBack && t.parentId == null) return@let
                                 val (entry, behind) = backTarget(t)
                                 scope.launch {
-                                    slideAway(fromRight = false, behind, entry?.title) {
-                                        if (t.canGoBack) container.browser.goBack() else if (t.parentId != null) container.browser.close(t.id)
+                                    if (!settings.reduceMotion && chrome.overlay == null) {
+                                        chrome.backFromRight = false
+                                        chrome.back.snapTo(0f)
+                                        chrome.overlay = PageOverlay(null, behind, entry?.title, PageOverlay.Kind.Back)
+                                        chrome.back.animateTo(1f, Motion.smooth())
                                     }
+                                    stepBack(t, behind)
                                 }
                             }
                         },
@@ -463,7 +494,7 @@ fun BrowserScreen() {
                         onSwipeStart = { _ ->
                             swipeCapture[0]?.cancel()
                             swipeCapture[0] = scope.launch {
-                                val snap = chrome.capture(120)
+                                val snap = chrome.capture()
                                 // The swipe may be over by now: a snapshot arriving late must not be left on screen.
                                 if (isActive) chrome.overlay = PageOverlay(snap, null, kind = PageOverlay.Kind.TabSwipe)
                             }
@@ -528,7 +559,7 @@ fun BrowserScreen() {
                     onNewTab = { p ->
                         scope.launch {
                             // a blank tab already is a new tab, so there is nothing to slide away from
-                            if (tab?.url.isNullOrEmpty()) container.browser.newTab(p) else slideAway(fromRight = true, behind = null) { container.browser.newTab(p) }
+                            if (tab?.url.isNullOrEmpty()) container.browser.newTab(p) else slideAway(fromRight = true) { container.browser.newTab(p) }
                             editText = ""
                             chrome.editing = true
                         }
@@ -565,7 +596,6 @@ private suspend fun captureInto(container: app.pane.browser.AppContainer, chrome
     val bitmap = chrome.capture() ?: return
     val current = container.store.state.value.selectedTab
     if (current?.id != tab.id || current.url != tab.url) return
-    container.snapshots.put(tab.id, tab.url, bitmap)
     container.thumbnails.put(tab.id, bitmap, tab.isPrivate)
     container.store.updateTab(tab.id) { it.copy(thumbnailVersion = it.thumbnailVersion + 1) }
 }

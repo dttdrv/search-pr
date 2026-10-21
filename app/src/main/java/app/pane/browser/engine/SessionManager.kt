@@ -103,9 +103,7 @@ class SessionManager(
     private val httpAllowed = HashSet<String>()
 
     private val barInsetScripts = java.util.WeakHashMap<PaneWebView, ScriptHandler>()
-    private var barInset = 0
-    private var barRoom = 0
-    private var barHead = 0
+    private var barArgs = BarArgs(0, 0, 0, 0, 0, 0f, 0f)
     private val barInsetJs by lazy { context.assets.open("bar-inset.js").bufferedReader().use { it.readText() } }
 
     /**
@@ -113,27 +111,32 @@ class SessionManager(
      * fixed and sticky bottom ui sits [inset] above the page's bottom edge, and the end of the page keeps
      * [room] clear (the full bar, so it doesn't jump when the bar folds to its label). Both are 0 when the
      * bar is away. [head] is what the status area covers at the top: the page starts below it, scrolls up
-     * under it, and keeps what it holds at the top below it.
+     * under it, and keeps what it holds at the top below it. Under the status area the page fades into its
+     * own background ([veil] of it over the page blurred by [blur], thinning from [cover]), [fall] further down once scrolled.
      */
-    fun setBarInset(inset: Int, room: Int, head: Int) {
-        if (inset == barInset && room == barRoom && head == barHead) return
+    fun setBarInset(inset: Int, room: Int, head: Int, fall: Int, blur: Int, veil: Float, cover: Float) {
+        val args = BarArgs(inset, room, head, fall, blur, veil, cover)
+        if (args == barArgs) return
         // the bar folding to its label only moves the lift: pages already running are told, and what pages load with stays
-        val folded = room == barRoom && head == barHead
-        barInset = inset
-        barRoom = room
-        barHead = head
+        val folded = args.copy(inset = barArgs.inset) == barArgs
+        barArgs = args
         pages.values.forEach { page ->
-            if (folded) page.evaluateJavascript("window.__paneBar && __paneBar($barInset,$barRoom,$barHead)", null) else applyBarInset(page)
+            if (folded) page.evaluateJavascript("window.__paneBar && __paneBar($args)", null) else applyBarInset(page)
         }
     }
 
     private fun applyBarInset(page: PaneWebView) {
-        page.evaluateJavascript("($barInsetJs)($barInset,$barRoom,$barHead)", null)
+        page.evaluateJavascript("($barInsetJs)($barArgs)", null)
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
         barInsetScripts.remove(page)?.remove()
         // a page loads with the bar open (a load opens it), whatever it is now
-        runCatching { WebViewCompat.addDocumentStartJavaScript(page, "($barInsetJs)($barRoom,$barRoom,$barHead)", setOf("*")) }
+        runCatching { WebViewCompat.addDocumentStartJavaScript(page, "($barInsetJs)(${barArgs.copy(inset = barArgs.room)})", setOf("*")) }
             .onSuccess { barInsetScripts[page] = it }
+    }
+
+    /** The page script's arguments, written as its argument list. */
+    private data class BarArgs(val inset: Int, val room: Int, val head: Int, val fall: Int, val blur: Int, val veil: Float, val cover: Float) {
+        override fun toString() = "$inset,$room,$head,$fall,$blur,$veil,$cover"
     }
 
     /** The `navigator.globalPrivacyControl` script each page currently carries, so it can be taken off again. */
@@ -159,6 +162,9 @@ class SessionManager(
     private val _scroll = MutableSharedFlow<ScrollUpdate>(extraBufferCapacity = 64)
     val scroll: SharedFlow<ScrollUpdate> = _scroll.asSharedFlow()
 
+    /** Tab -> the colour its page shows under the status area (see [PageTone]), as opaque ARGB. */
+    private val _tones = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val tones: StateFlow<Map<String, Int>> = _tones
 
     /** A fullscreen video's own view, while there is one. The screen puts it above everything. */
     private val _customView = MutableStateFlow<View?>(null)
@@ -274,6 +280,7 @@ class SessionManager(
     private val privateIds = HashSet<String>()
 
     private fun release(tabId: String) {
+        _tones.value -= tabId
         backEntries.remove(tabId)
         upgraded.remove(tabId)
         httpOffers.remove(tabId)
@@ -447,23 +454,8 @@ class SessionManager(
         }
     }
 
-    /** A snapshot of the visible page, scaled so its longer side is at most [maxSide] pixels. */
-    fun capture(tabId: String, maxSide: Int): Bitmap? {
-        val page = pages[tabId] ?: return null
-        if (page.width <= 0 || page.height <= 0) return null
-        val scale = (maxSide.toFloat() / maxOf(page.width, page.height)).coerceAtMost(1f)
-        val w = (page.width * scale).toInt().coerceAtLeast(1)
-        val h = (page.height * scale).toInt().coerceAtLeast(1)
-        return runCatching {
-            Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { bitmap ->
-                val canvas = android.graphics.Canvas(bitmap)
-                canvas.scale(scale, scale)
-                // a view draws in its own scrolled coordinates; its parent is what brings the part on screen back to the origin
-                canvas.translate(-page.scrollX.toFloat(), -page.scrollY.toFloat())
-                page.draw(canvas)
-            }
-        }.getOrNull()
-    }
+    /** A snapshot of the visible page at full resolution. */
+    suspend fun capture(tabId: String): Bitmap? = pages[tabId]?.let { PageCapture.of(it) }
 
     /** Clears the HTTP cache. Needs a live view; borrows one when every page has been released. */
     fun clearCache() {
@@ -511,7 +503,7 @@ class SessionManager(
             if (!Profiles.supported) _events.tryEmit(EngineEvent.Message(tabId, "Update Android System WebView to keep private tabs fully separate."))
         }
         page.tabId = tabId
-        page.onScroll = { y -> _scroll.tryEmit(ScrollUpdate(tabId, y)) }
+        page.onScroll = { y, held -> _scroll.tryEmit(ScrollUpdate(tabId, y, held)) }
         configure(page, desktop)
         wire(page, tabId, private)
         pages[tabId] = page
@@ -656,6 +648,7 @@ class SessionManager(
         page.webChromeClient = Chrome(tabId, private)
         bridge.attach(page)
         PressFeedback.attach(page)
+        PageTone.attach(page) { tone -> _tones.value += tabId to tone }
         page.setDownloadListener { url, userAgent, disposition, mime, length ->
             val request = DownloadRequest(tabId, url, userAgent, disposition, mime, length, private, page.url, bridge.reader(page))
             bridge.about(page, url) { name, form -> onDownload(request.copy(name = name, form = form)) }
@@ -731,6 +724,7 @@ class SessionManager(
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            store.state.value.tab(tabId)?.url?.takeIf { it.isNotEmpty() && it != url }?.let { _events.tryEmit(EngineEvent.Leaving(tabId, it)) }
             store.updateTab(tabId) {
                 it.copy(
                     url = url, loading = true, progress = 5, crashed = false,

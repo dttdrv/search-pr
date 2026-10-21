@@ -40,8 +40,8 @@ Commun): take its restraint and polish, not its logo.
    (`Modifier.frosted(shape)`): the page behind them blurred, its colour deepened, under a white veil
    (black in the dark theme) and then 10% of the opposite pole (a light bar reads 10% darker than a
    white page, a dark one 10% lighter than a black page, so it never melts into either), with ink
-   glyphs, no shadow and no outline. The bar and the status area wear the app's theme and nothing
-   else: no colour is ever read from the site, which only shows through the frost. The same frost, over the tab grid, is the tab overview's
+   glyphs, no shadow and no outline. The bar wears the app's theme and nothing else: no colour is
+   ever read from the site, which only shows through the frost. The same frost, over the tab grid, is the tab overview's
    Private / Tabs switch and plus button; over the page, the menu sheet's panel (its cards stay
    solid, a wash of white on dark). Other menus and sheets float as flat solid surfaces
    (`Modifier.floating(shape)`) with one standard platform elevation shadow (`FloatingElevation`,
@@ -63,12 +63,17 @@ Commun): take its restraint and polish, not its logo.
    people need, in plain words, 56dp rows. The rest sits under an "Advanced" row that expands in
    place. Nothing is removed, only tiered.
 9. **Respect the site.** The page runs truly edge to edge, under the status bar and the floating
-   pill. Under the status bar the page itself shows through a light veil with no edge to it,
-   blurred and tinted in the app's tone (a fade in the app's ground where the device can't blur),
-   strongest at the very top and gone just below the icons, as in the Play Store. The page still
-   starts below the status bar and scrolls up under it. What a site holds at the top (a header,
-   and whatever it stacks under it) stays below the status bar, and when the site slides it away it
-   goes out at the status bar's edge, as under an opaque one, never resting in it. The pill covers
+   pill. The status area follows WebKit (Safari's `fixedContainerEdges` and scroll edge effect),
+   drawn by the page itself so it moves with the page's own frames on every device: what passes
+   under it stays mostly visible, blurred progressively (most at the very top, less further down)
+   under a light veil of the page's own background, thinning to nothing with no edge to it, and
+   reaching a little below the icons once the page scrolls; a header the site holds at the top
+   (fixed or sticky, across the width) carries its own colour on up under the icons instead, as it
+   shows: dimmed by a backdrop over it, or over what it lets through. At rest the page's first row
+   goes on up the same way, as Safari tints it. The status icons read on whichever it is. The page still starts below the status
+   bar and scrolls up under it. What a site holds at the top (a header, and whatever it stacks under
+   it) stays below the status bar, and when the site slides it away it goes out at the status bar's
+   edge, never resting in it. The pill covers
    the bottom of the page's layout viewport, as on iOS: fixed and sticky bottom ui, sheets and
    full-height boxes sit above it, the end of the page and of full-height scrollers clears it.
    A page that doesn't scroll runs on under the pill too: the box across its bottom keeps its

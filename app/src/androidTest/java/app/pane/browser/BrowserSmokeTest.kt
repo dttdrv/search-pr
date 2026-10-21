@@ -12,6 +12,7 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -54,7 +55,8 @@ class BrowserSmokeTest {
             shot("02-start-page")
 
             openPage()
-            node(By.text("Example Domain"), 60_000)
+            // the page's own words, which example.com has kept through its redesigns; its heading went in one
+            node(By.textStartsWith("This domain is for use"), 60_000)
             shot("03-page")
             device.executeShellCommand("screencap -p ${File(shots, "03-page-shell.png").absolutePath}")
             tap(By.desc("Menu"))
@@ -131,7 +133,7 @@ class BrowserSmokeTest {
             device.pressBack()
             openPage()
             node(By.desc("Menu"))
-            node(By.text("Example Domain"))
+            node(By.textStartsWith("This domain is for use"))
             assertSecureWindow(false)
             shot("14-return-from-private")
 
@@ -169,10 +171,19 @@ class BrowserSmokeTest {
     private fun openPage(url: String = "https://example.com") = launch(url)
 
     private fun node(selector: BySelector, timeout: Long = 15_000): UiObject2 {
-        val control = device.wait(Until.findObject(selector), timeout) ?: throw AssertionError("Missing control: $selector")
-        // Let this control's entrance or layout settle without waiting for the live web page.
-        control.waitForStable(requireStableScreenshot = false)
-        return control
+        val deadline = SystemClock.uptimeMillis() + timeout
+        while (true) {
+            val left = deadline - SystemClock.uptimeMillis()
+            val control = device.wait(Until.findObject(selector), left.coerceAtLeast(0)) ?: throw AssertionError("Missing control: $selector")
+            // Let this control's entrance or layout settle without waiting for the live web page; a control rebuilt
+            // while it settles (a screen still arriving) is found again, within the same time.
+            try {
+                control.waitForStable(requireStableScreenshot = false)
+                return control
+            } catch (e: StaleObjectException) {
+                if (SystemClock.uptimeMillis() >= deadline) throw e
+            }
+        }
     }
 
     private fun tap(selector: BySelector) = node(selector).click()

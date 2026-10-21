@@ -15,6 +15,9 @@ sealed interface EngineEvent {
 
     data class FirstPaint(override val tabId: String) : EngineEvent
 
+    /** The page at [url] is about to give way to another; it still shows, as it was left. */
+    data class Leaving(override val tabId: String, val url: String) : EngineEvent
+
     /** Good moment to refresh the tab's thumbnail. */
     data class PageSettled(override val tabId: String) : EngineEvent
 
@@ -23,5 +26,5 @@ sealed interface EngineEvent {
     data class Message(override val tabId: String?, val text: String) : EngineEvent
 }
 
-/** Vertical scroll position of a tab's page, in CSS-ish device pixels. */
-data class ScrollUpdate(val tabId: String, val scrollY: Int)
+/** Vertical scroll position of a tab's page, in CSS-ish device pixels, and whether a finger is holding the page. */
+data class ScrollUpdate(val tabId: String, val scrollY: Int, val held: Boolean)

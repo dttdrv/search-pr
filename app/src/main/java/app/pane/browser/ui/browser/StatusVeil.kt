@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import app.pane.browser.ui.theme.Frost
 import app.pane.browser.ui.theme.frostTint
 
@@ -20,7 +21,11 @@ import app.pane.browser.ui.theme.frostTint
 internal const val VeilReach = 1.5f
 
 /** How much the veil covers at the very top; it thins from there to nothing, with no edge to see. */
-private const val Cover = 0.75f
+internal const val VeilCover = 0.75f
+
+/** How a page blurs under its own status area: lighter than the start page's veil, so the page mostly shows through. */
+internal val EdgeSigma = 10.dp
+internal const val EdgeVeil = 0.10f
 
 /**
  * What is drawn over the page in the status area: the page itself, blurred and tinted in the app's tone
@@ -38,9 +43,9 @@ fun StatusVeil(statusTop: Dp, frost: Frost, dark: Boolean, ground: Color) {
                 if (blurred != null) {
                     drawLayer(blurred)
                     drawRect(frostTint(dark))
-                    drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = Cover), Color.Transparent)), blendMode = BlendMode.DstIn)
+                    drawRect(Brush.verticalGradient(listOf(Color.Black.copy(alpha = VeilCover), Color.Transparent)), blendMode = BlendMode.DstIn)
                 } else {
-                    drawRect(Brush.verticalGradient(listOf(ground.copy(alpha = Cover), ground.copy(alpha = 0f))))
+                    drawRect(Brush.verticalGradient(listOf(ground.copy(alpha = VeilCover), ground.copy(alpha = 0f))))
                 }
             },
     )

@@ -36,8 +36,10 @@ class PaneWebView(window: Context) : WebView(window) {
         return insets
     }
 
-    /** Called with the vertical scroll position whenever it changes. */
-    var onScroll: ((Int) -> Unit)? = null
+    /** Called with the vertical scroll position whenever it changes, and whether a finger holds the page; again when the finger lifts. */
+    var onScroll: ((Int, Boolean) -> Unit)? = null
+
+    private var held = false
 
     /**
      * The host of the page being loaded, set from the request thread (hence volatile) so the ad
@@ -52,13 +54,20 @@ class PaneWebView(window: Context) : WebView(window) {
 
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
-        onScroll?.invoke(t)
+        onScroll?.invoke(t, held)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-            touchX = event.rawX.toInt()
-            touchY = event.rawY.toInt()
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchX = event.rawX.toInt()
+                touchY = event.rawY.toInt()
+                held = true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                held = false
+                onScroll?.invoke(scrollY, false)
+            }
         }
         return super.onTouchEvent(event)
     }
